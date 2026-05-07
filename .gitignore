@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local env
+.env
+.env.*
+model.py
+
+# Agent run outputs (regenerated locally)
+examples/runs/
+examples/runs_mvp_e2e/
+
+# Frontend dependencies (optional local UI under ui/analyst_ui)
+ui/analyst_ui/node_modules/

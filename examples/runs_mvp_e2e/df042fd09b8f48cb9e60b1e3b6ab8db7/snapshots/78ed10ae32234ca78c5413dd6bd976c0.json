@@ -1,0 +1,10 @@
+{
+  "run_id": "df042fd09b8f48cb9e60b1e3b6ab8db7",
+  "objective": "Check alternative hypothesis from saved state",
+  "plan": {
+    "1": {
+      "description": "Inspect available context and produce a report.",
+      "status": "completed"
+    }
+  }
+}
