@@ -48,10 +48,14 @@ from ..services.prompt_trace_service import write_prompt_trace
 from ..tools.artifact_read_tools import build_artifact_read_tools
 
 
-RESPONDER_MAX_CHARS_PER_TASK = 80_000
-RESPONDER_PROMPT_BUDGET_CHARS = 250_000
-RESPONDER_CONSOLE_BLOCK_MAX_LENGTH = 700_000
-RESPONDER_REACT_RECURSION_LIMIT = 28
+RESPONDER_MAX_CHARS_PER_TASK = 3_000
+RESPONDER_PROMPT_BUDGET_CHARS = 60_000
+RESPONDER_CONSOLE_BLOCK_MAX_LENGTH = 80_000
+RESPONDER_REACT_RECURSION_LIMIT = 40
+RESPONDER_MAX_ARTIFACTS_IN_CONTEXT = 20
+RESPONDER_ARTIFACT_SUMMARY_MAX_CHARS = 300
+RESPONDER_GENERATED_CODE_MAX_CHARS = 4_000
+RESPONDER_FALLBACK_COMPLETED_MAX_CHARS = 20_000
 
 
 class SubmitFinalReportInput(BaseModel):
@@ -278,7 +282,7 @@ def _format_task_for_responder(
         lines,
         "Generated code",
         task.generated_code,
-        max_chars=20_000,
+        max_chars=RESPONDER_GENERATED_CODE_MAX_CHARS,
     )
     return "\n".join(lines)
 
@@ -460,9 +464,14 @@ def _format_artifact_names_lines(artifacts: list[Artifact]) -> str:
     lines: list[str] = []
     for artifact in artifacts:
         filename = Path(artifact.uri).name if artifact.uri else ""
+        summary = _clip_section(
+            artifact.summary or "",
+            RESPONDER_ARTIFACT_SUMMARY_MAX_CHARS,
+            "artifact summary truncated",
+        )
         lines.append(
             f"- artifact_id={artifact.artifact_id} | kind={artifact.kind} | "
-            f"summary={artifact.summary or ''} | file={filename} | "
+            f"summary={summary} | file={filename} | "
             f"mime_type={artifact.mime_type or ''}"
         )
     return "\n".join(lines)
@@ -484,12 +493,16 @@ def _build_responder_artifact_names_context(
     )
     if not artifacts:
         return ""
+    shown_artifacts = artifacts[:RESPONDER_MAX_ARTIFACTS_IN_CONTEXT]
+    hidden_count = max(0, len(artifacts) - len(shown_artifacts))
 
     header = (
         "Artifacts linked from plan tasks (names and metadata only; "
         "file contents are not included — use artifact_* tools when needed)."
     )
-    return header + "\n" + _format_artifact_names_lines(artifacts)
+    if hidden_count:
+        header += f"\nHidden artifacts outside prompt budget: {hidden_count}."
+    return header + "\n" + _format_artifact_names_lines(shown_artifacts)
 
 
 def _select_responder_artifacts(
@@ -659,6 +672,11 @@ def _append_responder_react_policy(system_prompt: str) -> str:
 3. Не придумывай факты, которых нет в выводах worker-ов или в прочитанных через tools artifacts.
 4. Когда отчёт готов, один раз вызови инструмент submit_final_report с полным markdown для пользователя (можно со своими заголовками; система добавит стандартный префикс при необходимости).
 5. Не завершай работу только общим комментарием в тексте — итог должен быть передан через submit_final_report.
+6. Не читай artifacts массово. Читай только те artifacts, которые нужны для
+   проверки ключевых выводов, точных чисел, полей, ошибок или доказательств,
+   явно важных для запроса пользователя. Если full_result worker-а уже
+   достаточен и самодостаточен, формируй отчет вместо лишних tool calls по
+   дублирующим техническим traces.
 </responder_react_execution>
 """
     return system_prompt.rstrip() + appendix
@@ -735,7 +753,11 @@ def _format_fallback_message(
         + str(exc)
         + Formatting.SECTION_SEPARATOR
         + ReportTemplate.COMPLETED_TASKS_LABEL
-        + completed_text
+        + _clip_section(
+            completed_text,
+            RESPONDER_FALLBACK_COMPLETED_MAX_CHARS,
+            "fallback completed tasks truncated",
+        )
     )
 
 

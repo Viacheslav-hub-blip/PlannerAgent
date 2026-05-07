@@ -55,7 +55,7 @@ WORKER_LOG_MAX_LEN: int = 4_000
 ARTIFACT_SUMMARY_MAX_LEN: int = 500
 
 # Максимальное количество внутренних шагов ReAct worker-а.
-REACT_AGENT_RECURSION_LIMIT: int = 18
+REACT_AGENT_RECURSION_LIMIT: int = 36
 
 # Максимальная длина блока, который выводится в терминал.
 CONSOLE_BLOCK_MAX_LENGTH: int = 10_000
