@@ -23,7 +23,7 @@ from ..runtime.sandbox import PythonSandboxProtocol
 from ..schemas.lineage import StateNode
 from ..services.artifact_service import ArtifactService
 from ..services.lineage_service import LineageService
-from ..services.prompt_trace_service import write_prompt_trace
+from ..services.prompt_trace_service import write_prompt_trace, write_tool_calls_trace
 from ..services.skills_service import SkillsService
 from ..tools.artifact_read_tools import build_artifact_read_tools
 from ..tools.artifact_wrappers import wrap_tools_for_artifacts
@@ -333,9 +333,6 @@ def _format_task_contract(task: Task) -> str:
     blocks: list[str] = []
     if task.expected_output:
         blocks.append(f"expected_output: {task.expected_output}")
-    if task.validation_criteria:
-        blocks.append("validation_criteria:")
-        blocks.extend(f"- {item}" for item in task.validation_criteria)
     if task.required_artifacts:
         blocks.append("required_artifacts:")
         blocks.extend(f"- {item}" for item in task.required_artifacts)
@@ -818,6 +815,16 @@ async def worker_node(
         )
         messages = response.get("messages", [])
         react_message_tool_calls = extract_react_tool_calls_from_messages(messages)
+        tool_call_artifacts = write_tool_calls_trace(
+            artifact_service=artifact_service,
+            run_id=payload.run_id,
+            node_id=worker_started_node_id,
+            stage="worker",
+            tool_calls=react_message_tool_calls,
+            task_id=task_id,
+        )
+        if tool_call_artifacts:
+            artifact_index.update(tool_call_artifacts)
 
         last_tool_msg = _get_last_message(messages, ToolMessage)
         last_ai_msg = _get_last_message(messages, AIMessage)

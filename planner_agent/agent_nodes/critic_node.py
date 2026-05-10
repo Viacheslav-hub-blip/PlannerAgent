@@ -5,8 +5,9 @@
 - critic_node: анализирует результат одной worker-задачи перед validator.
 - _build_worker_critic_human_prompt: формирует входной prompt для LLM-критика.
 - _format_available_tools_for_critic: подготавливает список доступных tools.
-- _format_tool_traces_for_critic: подготавливает компактное описание tool traces.
+- _format_tool_traces_for_critic: подготавливает имя tool и аргументы без вывода.
 - _format_react_message_tool_calls_for_critic: вызовы из AIMessage/ToolMessage.
+- _format_artifacts_for_critic: data-artifacts без служебных prompt/tool traces.
 - _create_worker_critic_lineage: сохраняет critic node в lineage.
 """
 
@@ -43,6 +44,11 @@ MAX_TOOL_TRACES: Final[int] = 8
 MAX_REACT_MESSAGE_TOOL_CALLS: Final[int] = 50
 MAX_ARTIFACTS: Final[int] = 12
 CONSOLE_BLOCK_MAX_LENGTH: Final[int] = 8_000
+# Артефакты prompt/tool trace пишутся в тот же artifact_index, что и данные worker-а;
+# их summary содержит копию system prompt — в critic их не показываем.
+_PROMPT_DIAGNOSTIC_ARTIFACT_ROLES: Final[frozenset[str]] = frozenset(
+    {"prompt_trace", "prompt_payload", "tool_calls_trace"},
+)
 
 
 async def _print_content_block(title: str, content: str) -> None:
@@ -335,10 +341,6 @@ def _build_worker_critic_human_prompt(
             f"Описание задачи:\n{task.description}",
             f"Expected output:\n{task.expected_output or '(empty)'}",
             f"Validation criteria:\n{json.dumps(task.validation_criteria, ensure_ascii=False)}",
-            f"Config:\n{json.dumps(task.config or {}, ensure_ascii=False)}",
-            f"Retry count before this review: {task.retry_count}",
-            f"Previous dependency results:\n{worker_payload.previous_results[:MAX_TEXT_PREVIEW]}",
-            f"Resolved inputs:\n{json.dumps(worker_payload.resolved_inputs, ensure_ascii=False)[:MAX_TEXT_PREVIEW]}",
             f"Dependency context:\n{json.dumps(worker_payload.dependency_context, ensure_ascii=False)[:MAX_TEXT_PREVIEW]}",
             f"Worker status: {task.status.value}",
             f"Worker answer source: {worker_answer_source}",
@@ -410,7 +412,7 @@ def _format_react_message_tool_calls_for_critic(
     """Форматирует вызовы инструментов, извлечённые из сообщений ReAct-агента.
 
     Args:
-        records: Элементы с ``tool_name``, ``arguments``, ``tool_result_preview``.
+        records: Элементы с ``tool_name``, ``arguments`` (без вывода инструмента).
 
     Returns:
         Многострочное описание для critic LLM.
@@ -430,15 +432,11 @@ def _format_react_message_tool_calls_for_critic(
             args_str = str(args)
         if len(args_str) > MAX_TEXT_PREVIEW:
             args_str = f"{args_str[:MAX_TEXT_PREVIEW]}..."
-        preview = str(rec.get("tool_result_preview") or "")
-        if len(preview) > MAX_TEXT_PREVIEW:
-            preview = f"{preview[:MAX_TEXT_PREVIEW]}..."
         lines.append(
             (
                 f"{i}. tool={rec.get('tool_name')}; "
                 f"tool_call_id={rec.get('tool_call_id')}; "
-                f"arguments={args_str}; "
-                f"tool_result_preview={preview}"
+                f"arguments={args_str}"
             )
         )
     if len(records) > MAX_REACT_MESSAGE_TOOL_CALLS:
@@ -449,13 +447,13 @@ def _format_react_message_tool_calls_for_critic(
 
 
 def _format_tool_traces_for_critic(tool_traces: list[dict[str, Any]]) -> str:
-    """Форматирует последние tool traces для critic prompt.
+    """Форматирует последние tool traces для critic prompt (имя + параметры, без вывода).
 
     Args:
         tool_traces: Список trace-записей из состояния агента.
 
     Returns:
-        JSON-строки последних trace-записей в компактном виде.
+        Компактные строки с ``tool_name`` и аргументами вызова.
     """
 
     if not tool_traces:
@@ -463,8 +461,32 @@ def _format_tool_traces_for_critic(tool_traces: list[dict[str, Any]]) -> str:
 
     lines: list[str] = []
     for trace in tool_traces[-MAX_TOOL_TRACES:]:
-        lines.append(json.dumps(trace, ensure_ascii=False)[:MAX_TEXT_PREVIEW])
+        if not isinstance(trace, dict):
+            continue
+        slim: dict[str, Any] = {}
+        for key in ("trace_id", "tool_name", "args_preview"):
+            if trace.get(key) is not None:
+                slim[key] = trace[key]
+        lines.append(json.dumps(slim, ensure_ascii=False)[:MAX_TEXT_PREVIEW])
     return "\n".join(lines)
+
+
+def _is_internal_prompt_trace_artifact(artifact: dict[str, Any]) -> bool:
+    """True, если artifact — служебный prompt/tool trace (не данные задачи).
+
+    ``write_prompt_trace`` / ``write_tool_calls_trace`` кладут в индекс записи
+    с ``metadata.artifact_role``; их ``summary`` дублирует system/human prompt
+    worker-а, поэтому блок «Artifacts последнего запуска» в critic их не включает.
+    """
+
+    metadata = artifact.get("metadata")
+    if isinstance(metadata, dict):
+        role = metadata.get("artifact_role")
+        if role in _PROMPT_DIAGNOSTIC_ARTIFACT_ROLES:
+            return True
+    uri = str(artifact.get("uri") or "").replace("\\", "/").lower()
+    filename = str(artifact.get("filename") or "").replace("\\", "/").lower()
+    return "prompt_traces/" in uri or "prompt_traces/" in filename
 
 
 def _format_artifacts_for_critic(artifact_index: dict[str, Any]) -> str:
@@ -480,10 +502,22 @@ def _format_artifacts_for_critic(artifact_index: dict[str, Any]) -> str:
     if not artifact_index:
         return "(empty)"
 
-    lines: list[str] = []
-    for artifact_id, artifact in list(artifact_index.items())[-MAX_ARTIFACTS:]:
+    selected: list[tuple[str, dict[str, Any]]] = []
+    for artifact_id, artifact in reversed(list(artifact_index.items())):
         if not isinstance(artifact, dict):
             continue
+        if _is_internal_prompt_trace_artifact(artifact):
+            continue
+        selected.append((artifact_id, artifact))
+        if len(selected) >= MAX_ARTIFACTS:
+            break
+    selected.reverse()
+
+    if not selected:
+        return "(empty — только служебные prompt/tool traces, без data artifacts)"
+
+    lines: list[str] = []
+    for artifact_id, artifact in selected:
         metadata = artifact.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}
