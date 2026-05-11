@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_gigachat import GigaChat
 
 model = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -33,6 +34,14 @@ embeddings = OpenAIEmbeddings(
 )
 
 
+gigachat  = GigaChat(
+    credentials="ZTk3ZjdmYjMtNmMwOC00NGE1LTk0MzktYzA3ZjU4Yzc2YWI3OmY5YmQwYjEzLTE0MDctNGNhOC1iYmViLTA1YjlkNTk3OTA0Yg==",
+    model="GigaChat-2",
+    verify_ssl_certs=False,
+)
+
+""
+
 def get_answer(prompt: str, model, prompt_params: dict = None) -> str:
     if prompt_params is None:
         prompt_params = {}
@@ -41,4 +50,4 @@ def get_answer(prompt: str, model, prompt_params: dict = None) -> str:
 
 
 if __name__ == "__main__":
-    print(model.invoke("hi"))
+    print(gigachat.invoke("hi"))

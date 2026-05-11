@@ -418,7 +418,7 @@ async def scheduler_node(
             resolved_inputs=dependency_context.get("resolved_inputs", {}),
             dependency_context=dependency_context,
             filesystem_context=state.filesystem_context,
-            skill_previews=state.skill_previews,
+            skill_previews=_select_task_skill_previews(state.skill_previews, task),
             artifact_context=_build_artifact_context(state, task),
         )
 
@@ -558,6 +558,33 @@ def _build_artifact_context(state: AgentState, task: Task) -> dict[str, Any]:
         "hidden_artifact_count": max(0, len(selected_ids) - len(artifacts)),
         "max_artifacts_in_context": MAX_ARTIFACTS_IN_WORKER_CONTEXT,
     }
+
+
+def _select_task_skill_previews(
+    skill_previews: dict[str, str],
+    task: Task,
+) -> dict[str, str]:
+    """Выбирает preview skills, явно назначенных текущей задаче.
+
+    Args:
+        skill_previews: Полный индекс кратких описаний skills из состояния агента.
+        task: Задача, для которой формируется payload worker-а.
+
+    Returns:
+        Словарь ``{skill_name: preview}`` только для skills из
+        ``task.suggested_skills``. Если задача не содержит явных skills,
+        возвращается пустой словарь.
+    """
+
+    if not skill_previews or not task.suggested_skills:
+        return {}
+
+    selected: dict[str, str] = {}
+    for skill_name in task.suggested_skills:
+        key = str(skill_name).strip()
+        if key and key in skill_previews:
+            selected[key] = skill_previews[key]
+    return selected
 
 
 def _select_artifact_ids(state: AgentState, task: Task) -> list[str]:

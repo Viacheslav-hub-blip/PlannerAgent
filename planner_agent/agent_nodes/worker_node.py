@@ -28,11 +28,15 @@ from ..services.prompt_trace_service import write_prompt_trace, write_tool_calls
 from ..services.skills_service import SkillsService
 from ..tools.artifact_read_tools import build_artifact_read_tools
 from ..tools.artifact_wrappers import wrap_tools_for_artifacts
+from ..tools.python_analysis_tool import PYTHON_ANALYSIS_TOOL_NAME
 from ..tools.skill_tools import build_skill_read_tools
 
 # Ключи LangGraph Pregel для чтения актуального AgentState из worker-узла (см. CONFIG_KEY_*).
 _CONFIGURABLE_KEY = "configurable"
 _PREGEL_READ_KEY = "__pregel_read"
+LEGACY_CODE_TOOL_ALIASES: dict[str, str] = {
+    "generate_python_code": PYTHON_ANALYSIS_TOOL_NAME,
+}
 
 
 def _initial_user_query_from_graph_state(config: RunnableConfig | None) -> str:
@@ -307,6 +311,10 @@ def _select_task_tools(tools: list[BaseTool], task: Task) -> list[BaseTool]:
     if not requested_names:
         return []
 
+    requested_names = {
+        LEGACY_CODE_TOOL_ALIASES.get(tool_name, tool_name)
+        for tool_name in requested_names
+    }
     return [tool for tool in tools if tool.name in requested_names]
 
 
@@ -356,7 +364,7 @@ def _format_installed_packages(packages: dict[str, str]) -> str:
     lines = [
         "<available_python_packages>",
         "Ниже перечислены библиотеки, доступные для импорта в sandbox-окружении. "
-        "Используй их при генерации Python-кода (generate_python_code).",
+        "Используй их при выполнении Python-кода через инструмент python_analysis.",
         "",
     ]
     package_names = _select_installed_package_names(packages)
@@ -761,6 +769,107 @@ def _get_last_message(messages: list[Any], message_type: type) -> Any | None:
     )
 
 
+def _format_react_message_for_console(message: Any) -> tuple[str, str] | None:
+    """Форматирует одно сообщение ReAct worker-а для потокового вывода.
+
+    Args:
+        message: Сообщение LangChain из внутреннего ReAct-агента worker-а.
+
+    Returns:
+        Пара ``(title, content)`` для консольного блока или ``None`` для
+        сообщений, которые не нужно выводить.
+    """
+
+    if isinstance(message, AIMessage):
+        tool_calls = getattr(message, "tool_calls", None) or []
+        lines: list[str] = []
+        content = str(message.content or "").strip()
+        if content:
+            lines.append(content)
+        for raw_call in tool_calls:
+            call = _tool_call_record_to_dict(raw_call)
+            name = call.get("name") or "unknown_tool"
+            args = _normalize_ai_tool_arguments(call)
+            args_text = (
+                json.dumps(args, ensure_ascii=False, indent=2)
+                if isinstance(args, (dict, list))
+                else str(args)
+            )
+            lines.extend(
+                [
+                    "",
+                    f"tool: {name}",
+                    f"tool_call_id: {call.get('id') or call.get('tool_call_id') or ''}",
+                    "args:",
+                    args_text,
+                ]
+            )
+        if not lines:
+            return None
+        return "WORKER STREAM: AI MESSAGE", "\n".join(lines)
+
+    if isinstance(message, ToolMessage):
+        tool_name = getattr(message, "name", None) or "unknown_tool"
+        tool_call_id = getattr(message, "tool_call_id", None) or ""
+        content = str(message.content or "")
+        return (
+            f"WORKER STREAM: TOOL RESULT {tool_name}",
+            f"tool_call_id: {tool_call_id}\nresult:\n{content}",
+        )
+
+    return None
+
+
+async def _astream_react_agent_to_console(
+        agent: Any,
+        invoke_payload: dict[str, Any],
+        *,
+        config: dict[str, Any],
+        task_id: str,
+) -> dict[str, Any]:
+    """Запускает ReAct worker-а в stream-режиме и печатает новые сообщения.
+
+    Args:
+        agent: ReAct-agent, созданный через ``create_react_agent``.
+        invoke_payload: Payload вызова с начальными сообщениями.
+        config: Config ReAct-агента, включая recursion limit.
+        task_id: Идентификатор задачи worker-а для заголовков консоли.
+
+    Returns:
+        Финальное состояние ReAct-агента в том же формате, что возвращает
+        ``ainvoke``: словарь с ключом ``messages``.
+    """
+
+    if not callable(getattr(agent, "astream", None)):
+        return await agent.ainvoke(invoke_payload, config=config)
+
+    final_state: dict[str, Any] | None = None
+    printed_count = 0
+    try:
+        async for chunk in agent.astream(
+                invoke_payload,
+                config=config,
+                stream_mode="values",
+        ):
+            if not isinstance(chunk, dict):
+                continue
+            final_state = chunk
+            messages = list(chunk.get("messages", []) or [])
+            for message in messages[printed_count:]:
+                printed_count += 1
+                if isinstance(message, HumanMessage):
+                    continue
+                block = _format_react_message_for_console(message)
+                if block is None:
+                    continue
+                title, content = block
+                await _print_content_block(f"{title}: task {task_id}", content)
+    except TypeError:
+        return await agent.ainvoke(invoke_payload, config=config)
+
+    return final_state or {"messages": []}
+
+
 def _tool_call_record_to_dict(tool_call: Any) -> dict[str, Any]:
     """Приводит элемент ``tool_calls`` AIMessage к словарю."""
 
@@ -900,8 +1009,7 @@ async def worker_node(
         lineage_events=lineage_events,
     )
 
-    # suggested_tools from planner are treated as prompt guidance, not a hard runtime filter.
-    selected_tools = list(tools)
+    selected_tools = _select_task_tools(tools, task)
     runtime_tools = _with_artifact_read_tools(
         tools=selected_tools,
         artifact_service=artifact_service,
@@ -963,9 +1071,11 @@ async def worker_node(
     )
 
     try:
-        response = await agent.ainvoke(
+        response = await _astream_react_agent_to_console(
+            agent,
             {"messages": [HumanMessage(content=human_invoke)]},
             config={"recursion_limit": REACT_AGENT_RECURSION_LIMIT},
+            task_id=task_id,
         )
         messages = response.get("messages", [])
         react_message_tool_calls = extract_react_tool_calls_from_messages(messages)

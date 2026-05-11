@@ -6,6 +6,7 @@ from asyncio import run
 
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import HumanMessage
+from pydantic import ValidationError
 from pathlib import Path
 
 from planner_agent.agent_nodes.planner_node import (
@@ -22,6 +23,14 @@ from planner_agent.services.skills_service import SkillsService
 
 class PlannerLineageTests(unittest.TestCase):
     """Проверяет создание плана и фильтрацию задач планировщика."""
+
+    def test_full_plan_rejects_empty_task_list(self) -> None:
+        """Проверяет, что структурированная схема планировщика запрещает пустой план."""
+
+        with self.assertRaises(ValidationError):
+            FullPlan(objective="Analyze case", tasks=[])
+        with self.assertRaises(ValidationError):
+            FullPlan(objective="Analyze case")
 
     def test_planner_creates_plan_created_node(self) -> None:
         """Проверяет, что planner создает plan_created node."""

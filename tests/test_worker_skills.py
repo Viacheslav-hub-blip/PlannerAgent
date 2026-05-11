@@ -19,6 +19,7 @@ from planner_agent.models import FullPlan, PlannedTask, Task, WorkerPayload
 from planner_agent.services.lineage_service import LineageService
 from planner_agent.services.skills_service import SkillsService
 from planner_agent.tools.skill_tools import build_skill_read_tools
+from planner_agent.tools.python_analysis_tool import build_python_analysis_tool
 
 
 class WorkerSkillLoadingTests(unittest.TestCase):
@@ -67,6 +68,41 @@ class WorkerSkillLoadingTests(unittest.TestCase):
         )
 
         self.assertEqual(no_suggestions, [])
+
+    def test_worker_maps_legacy_code_tool_name_to_python_analysis(self) -> None:
+        """Проверяет совместимость старых планов с новым инструментом python_analysis."""
+
+        class FakeSandbox:
+            """Минимальная sandbox для проверки выбора инструмента."""
+
+            globals = {}
+            last_dataframe_variable = None
+
+            async def get_all_variable_previews(self) -> dict[str, str]:
+                """Возвращает пустые previews переменных."""
+
+                return {}
+
+            async def add_variable(self, name: str, value: object) -> None:
+                """Добавляет переменную в sandbox."""
+
+                self.globals[name] = value
+
+            async def get_variable(self, name: str) -> object:
+                """Возвращает переменную из sandbox."""
+
+                return self.globals.get(name)
+
+        selected = _select_task_tools(
+            [build_python_analysis_tool(FakeSandbox())],
+            Task(
+                task_id="1",
+                description="Run code",
+                suggested_tools=["generate_python_code"],
+            ),
+        )
+
+        self.assertEqual([item.name for item in selected], ["python_analysis"])
 
     def test_planner_preserves_suggested_skills_in_task(self) -> None:
         plan = build_full_plan(

@@ -145,7 +145,8 @@ class FullPlan(BaseModel):
         description="Short objective that the full plan is intended to satisfy.",
     )
     tasks: List[PlannedTask] = Field(
-        default_factory=list,
+        ...,
+        min_length=1,
         description="Complete plan with all steps that should remain in execution graph",
     )
 

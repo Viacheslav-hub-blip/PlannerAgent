@@ -30,13 +30,12 @@ from .services.lineage_service import LineageService
 from .services.memory_service import MemoryService
 from .services.skills_service import SkillsService
 from .toolkits.workspace_toolkit import build_workspace_tools
+from .tools.python_analysis_tool import (
+    PYTHON_ANALYSIS_TOOL_NAME,
+    build_python_analysis_tool,
+)
 from .tools.registry import ToolRegistry
 from .tools.skill_tools import build_skill_read_tools
-
-try:
-    from sandbox.executor import BaseCodeExecutorTool
-except ModuleNotFoundError:  # pragma: no cover - host integration dependency
-    BaseCodeExecutorTool = None
 
 
 def _resolve_directory(
@@ -80,39 +79,38 @@ def _prepare_worker_tools(
         Список tools, где генераторы кода заменены на tools-исполнители.
     """
 
-    prepared: list[BaseTool] = []
-
-    for tool in tools:
-        if BaseCodeExecutorTool is not None and isinstance(tool, BaseCodeExecutorTool):
-            prepared.append(tool)
-            continue
-
-        if tool.name in code_generator_tool_names:
-            if BaseCodeExecutorTool is None:
-                raise ImportError(
-                    "The local 'sandbox' package is required to wrap code generator tools."
-                )
-            wrapped = BaseCodeExecutorTool(
-                name=tool.name,
-                description=(
-                    f"Code executor wrapper for '{tool.name}'. Use this tool only "
-                    "when a task explicitly requires calculations, aggregations, joins, "
-                    "statistical analysis, tabular transformations or visualizations "
-                    "over data that is already available in variables, artifacts or "
-                    "tool results. The tool request must name the input variables, "
-                    "artifact ids/uris or previous tool results to compute over. "
-                    "Do not use it as a substitute for source/export "
-                    "tools and do not use it to create sample input data. "
-                    f"Original tool description: {tool.description}"
-                ),
-                mcp_tool=tool,
-                sandbox=sandbox,
-            )
-            prepared.append(wrapped)
-        else:
-            prepared.append(tool)
-
+    prepared = [
+        tool
+        for tool in tools
+        if tool.name not in code_generator_tool_names
+        and tool.name != PYTHON_ANALYSIS_TOOL_NAME
+    ]
+    prepared.append(build_python_analysis_tool(sandbox))
     return prepared
+
+
+def _normalize_enabled_tool_names(
+        enabled_tool_names: Optional[Set[str]],
+        code_generator_tool_names: set[str],
+) -> Optional[Set[str]]:
+    """Нормализует список разрешенных tools после замены генератора кода.
+
+    Args:
+        enabled_tool_names: Явный набор разрешенных tools или ``None``.
+        code_generator_tool_names: Legacy-имена внешних генераторов кода.
+
+    Returns:
+        Набор имен, где legacy-генераторы заменены на ``python_analysis``,
+        или ``None`` при отсутствии явного фильтра.
+    """
+
+    if enabled_tool_names is None:
+        return None
+    normalized = set(enabled_tool_names)
+    if normalized.intersection(code_generator_tool_names):
+        normalized.difference_update(code_generator_tool_names)
+        normalized.add(PYTHON_ANALYSIS_TOOL_NAME)
+    return normalized
 
 
 def planner_agent(
@@ -218,7 +216,12 @@ def planner_agent(
     )
     final_tool_registry = tool_registry or ToolRegistry()
     final_tool_registry.register_many(final_worker_tools)
-    final_worker_tools = final_tool_registry.enabled(enabled_tool_names)
+    final_worker_tools = final_tool_registry.enabled(
+        _normalize_enabled_tool_names(
+            enabled_tool_names,
+            set(code_generator_tool_names),
+        )
+    )
 
     fs_context = {
         "workspace_root": str(workspace_path),

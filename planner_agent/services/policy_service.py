@@ -44,7 +44,7 @@ DEFAULT_DENIED_TOOLS = {
 }
 
 DEFAULT_ALLOWED_TOOLS = {
-    "generate_python_code",
+    "python_analysis",
     "list_loaded_dataframes_in_virtual_environment",
     "show_current_dataframe",
     "workspace_read_file",

@@ -8,6 +8,7 @@ from planner_agent.agent_nodes.scheduler_node import (
     _build_artifact_context,
     _collect_ancestor_data,
     _select_artifact_ids,
+    _select_task_skill_previews,
     scheduler_node,
 )
 from planner_agent.models import AgentState, Task, TaskStatus
@@ -15,6 +16,32 @@ from planner_agent.services.lineage_service import LineageService
 
 
 class SchedulerLineageTests(unittest.TestCase):
+    def test_scheduler_selects_only_task_skill_previews(self) -> None:
+        """Проверяет, что worker payload получает только явно назначенные skill previews."""
+
+        task = Task(
+            task_id="1",
+            description="Analyze transactions",
+            suggested_skills=["case-analysis"],
+        )
+
+        selected = _select_task_skill_previews(
+            {
+                "case-analysis": "Analyze cases.",
+                "chart-design": "Build charts.",
+            },
+            task,
+        )
+
+        self.assertEqual(selected, {"case-analysis": "Analyze cases."})
+        self.assertEqual(
+            _select_task_skill_previews(
+                {"case-analysis": "Analyze cases."},
+                Task(task_id="2", description="No skill"),
+            ),
+            {},
+        )
+
     def test_scheduler_creates_task_scheduled_node_for_ready_batch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             lineage = LineageService(tmp)
@@ -252,6 +279,7 @@ class SchedulerLineageTests(unittest.TestCase):
                     task_id="1",
                     description="Analyze case",
                     status=TaskStatus.PENDING,
+                    suggested_skills=["case-analysis"],
                 )
             },
         )

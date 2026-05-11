@@ -1,15 +1,14 @@
-"""Запуск UI API вместе с ResearchAgent и инструментами генерации кода.
+"""Запуск UI API вместе с ResearchAgent и нативным инструментом выполнения кода.
 
 Содержит:
-- _load_code_generator_tools: загрузка MCP tools генерации кода.
 - _build_sandbox: создание пустой Python-песочницы с разрешенными библиотеками.
-- _build_agent_with_code_tools: сборка ResearchAgent с sandbox и tools.
+- _build_agent: сборка ResearchAgent с sandbox, fake Spark tools и python_analysis.
 - _run_async_before_server_start: синхронный запуск async-кода до старта uvicorn.
 - create_app_with_agent: factory FastAPI приложения для `uvicorn --factory`.
 
 Файл нужен для локального запуска analyst UI так, чтобы кнопка запуска анализа
 работала через реальные endpoints `/api/v1/runs/invoke` и `/api/v1/branches/invoke`,
-а worker мог вызывать MCP-инструмент `generate_python_code` на порту 8201.
+а worker мог выполнять Python-код через нативный инструмент `python_analysis`.
 """
 
 from __future__ import annotations
@@ -21,8 +20,6 @@ from typing import Any
 
 import pandas as pd
 import plotly.express as px
-from langchain_core.tools import BaseTool
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from examples.fake_spark_tools import build_fake_spark_tools
 from model import model as deepseek_model
@@ -34,34 +31,6 @@ from planner_agent.http_api.config import ApiServices
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 EXAMPLE_ROOT = PROJECT_ROOT / "examples"
-CODE_MCP_URL = "http://127.0.0.1:8201/mcp"
-
-
-async def _load_code_generator_tools() -> list[BaseTool]:
-    """Загружает LangChain tools из MCP-сервера генерации Python-кода.
-
-    Args:
-        Отсутствуют. URL MCP-сервера берется из константы `CODE_MCP_URL`.
-
-    Returns:
-        Список LangChain tools, опубликованных MCP-сервером на порту 8201.
-
-    Raises:
-        RuntimeError: Если MCP-сервер недоступен или не вернул tools.
-    """
-
-    client = MultiServerMCPClient(
-        {
-            "generate_python_code": {
-                "transport": "streamable_http",
-                "url": CODE_MCP_URL,
-            }
-        }
-    )
-    tools = await client.get_tools()
-    if not tools:
-        raise RuntimeError(f"MCP code generator server returned no tools: {CODE_MCP_URL}")
-    return tools
 
 
 def _build_sandbox() -> ClientPythonSandbox:
@@ -77,32 +46,30 @@ def _build_sandbox() -> ClientPythonSandbox:
     return ClientPythonSandbox(allowed_libraries={"pd": pd, "px": px})
 
 
-async def _build_agent_with_code_tools() -> ResearchAgent:
-    """Собирает ResearchAgent для UI с fake Spark tools и MCP code-generator tool.
+async def _build_agent() -> ResearchAgent:
+    """Собирает ResearchAgent для UI с fake Spark tools и python_analysis.
 
     Args:
         Отсутствуют.
 
     Returns:
         ResearchAgent, совместимый с LangChain Runnable API и подключенный к
-        локальной Python-песочнице.
+        локальной Python-песочнице. Нативный инструмент ``python_analysis``
+        добавляется внутри фабрики агента.
     """
 
     sandbox = _build_sandbox()
-    code_tools = await _load_code_generator_tools()
     spark_tools = build_fake_spark_tools(
         delay_seconds=0.5,
         transaction_count=120,
         day_event_count=40,
     )
-    tools = [*spark_tools, *code_tools]
-    code_tool_names = {tool.name for tool in code_tools}
 
     return ResearchAgent(
         model=deepseek_model,
         sandbox=sandbox,
-        tools=tools,
-        code_generator_tool_names=code_tool_names,
+        tools=spark_tools,
+        code_generator_tool_names=set(),
         enable_workspace_tools=True,
         workspace_root=str(PROJECT_ROOT),
         sources_dir=str(EXAMPLE_ROOT / "data"),
@@ -110,6 +77,7 @@ async def _build_agent_with_code_tools() -> ResearchAgent:
         skills_dir=str(PROJECT_ROOT / "skills"),
         memory_dir=str(EXAMPLE_ROOT / "memory"),
         runs_dir=str(EXAMPLE_ROOT / "runs"),
+        stream_console=True,
     )
 
 
@@ -158,14 +126,14 @@ def create_app_with_agent():
 
     Args:
         Отсутствуют. Агент собирается из текущего проекта, `model.py`,
-        fake Spark tools и MCP code-generator tool на `http://127.0.0.1:8201/mcp`.
+        fake Spark tools и нативного инструмента `python_analysis`.
 
     Returns:
         FastAPI приложение, которое раздает статический UI по `/app/` и умеет
         запускать агента через API endpoints.
     """
 
-    agent = _run_async_before_server_start(_build_agent_with_code_tools())
+    agent = _run_async_before_server_start(_build_agent())
     services = ApiServices(
         lineage_service=agent.lineage_service,
         artifact_service=agent.artifact_service,

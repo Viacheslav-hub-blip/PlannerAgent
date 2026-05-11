@@ -107,6 +107,7 @@ class ResearchAgent(Runnable[Any, list[BaseMessage]]):
         tool_registry: Опциональный registry LangChain tools.
         enabled_tool_names: Подмножество tool names, которое будет доступно worker.
         graph: Готовый скомпилированный graph для тестов или внешней сборки.
+        stream_console: Включает потоковый диагностический вывод graph в консоль.
 
     Returns:
         Экземпляр ResearchAgent, совместимый с LangChain Runnable API.
@@ -134,6 +135,7 @@ class ResearchAgent(Runnable[Any, list[BaseMessage]]):
             tool_registry: ToolRegistry | None = None,
             enabled_tool_names: set[str] | None = None,
             graph: Any | None = None,
+            stream_console: bool = False,
     ) -> None:
         workspace_path = Path(workspace_root).resolve()
         resolved_runs_dir = _resolve_directory(workspace_path, runs_dir, "runs")
@@ -150,6 +152,7 @@ class ResearchAgent(Runnable[Any, list[BaseMessage]]):
         )
         self.dialog_context_service = DialogContextService(self.inspection_service)
         self._last_state: AgentState | None = None
+        self.stream_console = stream_console
 
         if graph is not None:
             self.graph = graph
@@ -230,7 +233,12 @@ class ResearchAgent(Runnable[Any, list[BaseMessage]]):
         """
 
         state = self._coerce_input_to_state(input, **kwargs)
-        result = await run_agent_from_state(self.graph, state, config=config)
+        result = await run_agent_from_state(
+            self.graph,
+            state,
+            config=config,
+            stream_console=self.stream_console,
+        )
         return self._finalize_output(result.state)
 
     def batch(
