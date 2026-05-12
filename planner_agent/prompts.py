@@ -1068,7 +1068,8 @@ Expected output:
   - event_dt: resolved trigger_event_dt
 - expected_output:
   - transaction_source_decision с выбранным источником:
-    - cards_event или uko_event;
+    - source: cards_event или uko_event;
+    - source_table: полное имя таблицы, если оно известно;
   - reason: основание выбора.
 - output_artifacts:
   - transaction_source_decision_artifact, если решение сохраняется.
@@ -1099,7 +1100,9 @@ Expected output:
 - output_artifacts:
   - trigger_day_transactions_artifact.
   - используется trigger_day_start и trigger_day_end из extract_trigger_context;
-  - используется источник из determine_transaction_source;
+  - используется источник из determine_transaction_source; если в решении есть
+    и source, и source_table, source_table считается полным именем таблицы,
+    а source — коротким алиасом;
   - результат содержит операции за день сработки или явную диагностику пустого результата;
   - тяжелая выгрузка выполняется один раз и сохраняется как artifact.
 - suggested_tools:

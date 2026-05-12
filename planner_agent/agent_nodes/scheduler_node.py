@@ -16,13 +16,12 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command, Send
 
 # Локальные импорты
-from ..models import AgentState, Task, TaskStatus, WorkerPayload
+from ..models import AgentState, Task, TaskStatus, ValidatorPayload, WorkerPayload
 from ..services.lineage_service import LineageService
 
 
 # Константы для статусов задач
 TERMINAL_STATUSES = {TaskStatus.COMPLETED, TaskStatus.SKIPPED, TaskStatus.FAILED}
-WAITING_STATUSES = {TaskStatus.RUNNING, TaskStatus.NEEDS_VALIDATION}
 
 # Сообщения об ошибках и состояниях
 MSG_EMPTY_PLAN = "Planner returned an empty plan."
@@ -43,6 +42,7 @@ EXCLUDED_WORKER_CONTEXT_ARTIFACT_ROLES = {
 }
 
 GOTO_REPLANNER = "replanner"
+GOTO_VALIDATOR = "validator"
 
 
 def _collect_ancestor_data(
@@ -341,6 +341,37 @@ def _build_blocked_plan_feedback(blocked_tasks: list[dict[str, Any]]) -> dict[st
     }
 
 
+def _build_validation_recovery_sends(
+    *,
+    state: AgentState,
+) -> list[Send]:
+    """Создает команды восстановления для задач, ожидающих валидацию.
+
+    Args:
+        state: Текущее состояние агента с планом и lineage-родителями.
+
+    Returns:
+        Список ``Send`` в validator для задач со статусом ``needs_validation``.
+    """
+
+    sends: list[Send] = []
+    for task in (state.plan or {}).values():
+        if task.status != TaskStatus.NEEDS_VALIDATION:
+            continue
+        sends.append(
+            Send(
+                GOTO_VALIDATOR,
+                ValidatorPayload(
+                    task=task,
+                    run_id=state.run_id,
+                    parent_node_ids=state.parent_node_ids
+                    or ([state.current_node_id] if state.current_node_id else []),
+                ),
+            )
+        )
+    return sends
+
+
 async def scheduler_node(
     state: AgentState,
     lineage_service: LineageService | None = None,
@@ -470,9 +501,13 @@ async def scheduler_node(
         ]
         return Command(update=update_payload, goto=tasks_to_schedule)
 
-    # Ожидание выполнения других задач
-    if any(task.status in WAITING_STATUSES for task in plan.values()):
+    # Ожидание выполнения задач, которые еще реально работают.
+    if any(task.status == TaskStatus.RUNNING for task in plan.values()):
         return Command(update={})
+
+    validation_recovery_sends = _build_validation_recovery_sends(state=state)
+    if validation_recovery_sends:
+        return Command(goto=validation_recovery_sends)
 
     blocked_tasks = _find_tasks_blocked_by_unfinished_dependencies(plan)
     if blocked_tasks:

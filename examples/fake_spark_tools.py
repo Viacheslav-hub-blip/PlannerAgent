@@ -8,6 +8,7 @@
 - _load_spark_table: загрузка таблицы по логическому имени.
 - _get_table_registry: создание реестра доступных Spark-like таблиц.
 - _get_table_schema: получение схемы таблицы.
+- _parse_select_columns: разбор строки колонок select_columns в список имен полей.
 - _validate_select_columns_present: проверка, что агент явно указал нужные поля.
 - _validate_query_columns: проверка наличия полей в таблице.
 - _apply_filters: применение списка фильтров к DataFrame.
@@ -117,7 +118,7 @@ class SparkTableQueryInput(BaseModel):
 
     Args:
         table_name: Логическое имя таблицы из списка доступных таблиц.
-        select_columns: Минимально достаточный непустой список полей для выборки.
+        select_columns: Минимально достаточный непустой список полей в формате строки "col1, col2, col3".
         filters: Ограничения для отбора строк.
         max_rows: Максимальное число строк в ответе.
         include_schema: Если True, добавить схему таблицы даже при успешной выборке.
@@ -127,9 +128,12 @@ class SparkTableQueryInput(BaseModel):
     """
 
     table_name: str = Field(description="Имя Spark-like таблицы, например hits_extra_info, uko_event или cards_event.")
-    select_columns: list[str] = Field(
-        default_factory=list,
-        description="Минимально достаточный список полей для выборки. Выгрузка всех полей запрещена.",
+    select_columns: str = Field(
+        default="",
+        description=(
+            "Минимально достаточный список полей для выборки в формате строки 'col1, col2, col3'. "
+            "Выгрузка всех полей запрещена."
+        ),
     )
     filters: list[SparkTableFilter] = Field(
         default_factory=list,
@@ -171,7 +175,7 @@ def build_fake_spark_tools(
 
     async def spark_query_table(
             table_name: str,
-            select_columns: list[str] | None = None,
+            select_columns: str | None = None,
             filters: list[SparkTableFilter] | None = None,
             max_rows: int = 50,
             include_schema: bool = False,
@@ -180,7 +184,7 @@ def build_fake_spark_tools(
 
         Args:
             table_name: Имя таблицы.
-            select_columns: Минимально достаточный список полей результата.
+            select_columns: Минимально достаточный список полей результата в формате строки "col1, col2, col3".
             filters: Ограничения выборки.
             max_rows: Максимальное число строк.
             include_schema: Признак возврата схемы таблицы.
@@ -191,7 +195,7 @@ def build_fake_spark_tools(
 
         return await _spark_query_table(
             table_name=table_name,
-            select_columns=select_columns or [],
+            select_columns=select_columns or "",
             filters=filters or [],
             max_rows=max_rows,
             include_schema=include_schema,
@@ -207,7 +211,7 @@ def build_fake_spark_tools(
                 "spark_query_table\n"
                 "---\n"
                 "Описание: универсальная выборка из Spark-like таблиц. "
-                "Инструмент принимает имя таблицы, список полей, фильтры и лимит строк, "
+                "Инструмент принимает имя таблицы, строку со списком полей, фильтры и лимит строк, "
                 "а при успешной выборке возвращает pandas DataFrame.\n"
                 "Если в select_columns или filters указанного поля нет в таблице, инструмент "
                 "вернет ok=False, описание ошибки и актуальную схему таблицы. "
@@ -215,8 +219,8 @@ def build_fake_spark_tools(
                 "минимально достаточный набор колонок.\n\n"
                 "Параметры:\n"
                 "  table_name (str, обяз.) — имя таблицы или алиас.\n"
-                "  select_columns (list[str], обяз.) — минимально достаточные поля результата. "
-                "Пустой список, '*' и 'all' запрещены.\n"
+                "  select_columns (str, обяз.) — минимально достаточные поля результата "
+                "в формате 'col1, col2, col3'. Пустая строка, '*' и 'all' запрещены.\n"
                 "  filters (list[dict], опц.) — фильтры вида "
                 "{column, operator, value/values}. Операторы: eq, ne, gt, gte, lt, lte, "
                 "contains, in, between, is_null, not_null.\n"
@@ -231,7 +235,7 @@ def build_fake_spark_tools(
 async def _spark_query_table(
         *,
         table_name: str,
-        select_columns: list[str],
+        select_columns: str,
         filters: list[SparkTableFilter],
         max_rows: int,
         include_schema: bool,
@@ -242,7 +246,7 @@ async def _spark_query_table(
 
     Args:
         table_name:  имя таблицы.
-        select_columns: Минимально достаточные поля результата.
+        select_columns: Минимально достаточные поля результата в формате строки "col1, col2, col3".
         filters: Список фильтров.
         max_rows: Максимальное число строк.
         include_schema: Признак возврата схемы при успешном ответе.
@@ -269,7 +273,8 @@ async def _spark_query_table(
 
     table = _load_spark_table(data_dir=data_dir, table_name=normalized_table_name)
     schema = _get_table_schema(table_name=normalized_table_name, source_file=table_meta["file"], table=table)
-    select_error = _validate_select_columns_present(select_columns)
+    parsed_select_columns = _parse_select_columns(select_columns)
+    select_error = _validate_select_columns_present(parsed_select_columns)
     if select_error is not None:
         return {
             "ok": False,
@@ -278,7 +283,7 @@ async def _spark_query_table(
             "error": select_error,
             "schema": schema,
         }
-    missing_columns = _validate_query_columns(table=table, select_columns=select_columns, filters=filters)
+    missing_columns = _validate_query_columns(table=table, select_columns=parsed_select_columns, filters=filters)
     if missing_columns:
         return {
             "ok": False,
@@ -293,7 +298,7 @@ async def _spark_query_table(
         }
 
     filtered = _apply_filters(table=table, filters=filters)
-    result_columns = select_columns
+    result_columns = parsed_select_columns
     result = filtered.loc[:, result_columns].head(max(0, int(max_rows))).copy()
     if include_schema:
         result.attrs["spark_schema"] = schema
@@ -386,6 +391,19 @@ def _get_table_schema(*, table_name: str, source_file: str, table: pd.DataFrame)
             for column in table.columns
         ],
     }
+
+
+def _parse_select_columns(select_columns: str) -> list[str]:
+    """Разбирает строку колонок select_columns в список имен полей.
+
+    Args:
+        select_columns: Строка с колонками в формате "col1, col2, col3".
+
+    Returns:
+        Список имен колонок без пробелов по краям и пустых элементов.
+    """
+
+    return [column.strip() for column in select_columns.split(",") if column.strip()]
 
 
 def _validate_select_columns_present(select_columns: list[str]) -> dict[str, Any] | None:

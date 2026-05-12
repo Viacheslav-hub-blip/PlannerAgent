@@ -439,7 +439,7 @@ async def _validate_spark_tool_reads_dataset() -> list[str]:
     result = await tool.ainvoke(
         {
             "table_name": "hits",
-            "select_columns": ["event_id", "event_time", "user_id", "epk_id"],
+            "select_columns": "event_id, event_time, user_id, epk_id",
             "filters": [{"column": "event_id", "operator": "eq", "value": KEY_EVENT_ID}],
             "max_rows": 5,
         }

@@ -53,7 +53,7 @@ class FakeSparkToolsTests(unittest.TestCase):
             tool.ainvoke(
                 {
                     "table_name": "hits",
-                    "select_columns": ["event_id", "epk_id"],
+                    "select_columns": "event_id, epk_id",
                     "max_rows": 3,
                 }
             )
@@ -79,7 +79,7 @@ class FakeSparkToolsTests(unittest.TestCase):
             tool.ainvoke(
                 {
                     "table_name": "hits_extra_info",
-                    "select_columns": ["event_id", "epk_id"],
+                    "select_columns": "event_id, epk_id",
                     "filters": [
                         {
                             "column": "epk_id",
@@ -112,7 +112,7 @@ class FakeSparkToolsTests(unittest.TestCase):
             tool.ainvoke(
                 {
                     "table_name": "hits",
-                    "select_columns": ["missing_field"],
+                    "select_columns": "missing_field",
                     "max_rows": 1,
                 }
             )
@@ -152,7 +152,7 @@ class FakeSparkToolsTests(unittest.TestCase):
         """
 
         tool = build_fake_spark_tools(delay_seconds=0.0)[0]
-        result = asyncio.run(tool.ainvoke({"table_name": "hits", "select_columns": []}))
+        result = asyncio.run(tool.ainvoke({"table_name": "hits", "select_columns": ""}))
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"]["code"], "select_columns_required")
@@ -169,7 +169,7 @@ class FakeSparkToolsTests(unittest.TestCase):
         """
 
         tool = build_fake_spark_tools(delay_seconds=0.0)[0]
-        result = asyncio.run(tool.ainvoke({"table_name": "hits", "select_columns": ["*"]}))
+        result = asyncio.run(tool.ainvoke({"table_name": "hits", "select_columns": "*"}))
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"]["code"], "select_all_forbidden")
@@ -188,7 +188,7 @@ class FakeSparkToolsTests(unittest.TestCase):
         filter_item = SparkTableFilter(column="epk_id", operator="eq", value="2099007770421986000001")
         schema = SparkTableQueryInput(
             table_name="hits",
-            select_columns=["event_id"],
+            select_columns="event_id",
             filters=[filter_item],
             max_rows=5,
         )
