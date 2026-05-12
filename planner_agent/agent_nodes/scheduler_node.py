@@ -430,7 +430,7 @@ async def scheduler_node(
             resolved_inputs=dependency_context.get("resolved_inputs", {}),
             dependency_context=dependency_context,
             filesystem_context=state.filesystem_context,
-            skill_previews=_select_task_skill_previews(state.skill_previews, task),
+            skill_previews={},
             artifact_context=_build_artifact_context(state, task),
             initial_user_query=state.initial_user_query,
         )

@@ -40,7 +40,7 @@ class WorkerSkillLoadingTests(unittest.TestCase):
         self.assertNotIn("metadata:", block)
         self.assertNotIn("[artifact_usage_rules]", block)
 
-    def test_worker_selects_only_task_suggested_tools(self) -> None:
+    def test_worker_selects_all_non_skill_tools(self) -> None:
         """Проверяет, что worker получает только явно назначенные domain tools."""
 
         @tool
@@ -50,26 +50,40 @@ class WorkerSkillLoadingTests(unittest.TestCase):
             return "source"
 
         @tool
-        def generate_python_code() -> str:
+        def another_source_tool() -> str:
             """Вернуть тестовый результат code tool."""
 
-            return "code"
+            return "another"
 
         selected = _select_task_tools(
-            [source_tool, generate_python_code],
+            [source_tool, another_source_tool],
             Task(task_id="1", description="Use source", suggested_tools=["source_tool"]),
         )
 
-        self.assertEqual([item.name for item in selected], ["source_tool"])
+        self.assertEqual(
+            [item.name for item in selected],
+            ["source_tool", "another_source_tool"],
+        )
 
         no_suggestions = _select_task_tools(
-            [source_tool, generate_python_code],
+            [source_tool, another_source_tool],
             Task(task_id="2", description="Analyze from context"),
         )
 
-        self.assertEqual(no_suggestions, [])
+        self.assertEqual(
+            [item.name for item in no_suggestions],
+            ["source_tool", "another_source_tool"],
+        )
 
-    def test_worker_maps_legacy_code_tool_name_to_python_analysis(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            skill_tools = build_skill_read_tools(SkillsService(tmp))
+            with_skill_tools = _select_task_tools(
+                [source_tool, *skill_tools],
+                Task(task_id="3", description="Analyze from context"),
+            )
+            self.assertEqual([item.name for item in with_skill_tools], ["source_tool"])
+
+    def test_worker_includes_python_analysis_without_suggested_tool_match(self) -> None:
         """Проверяет совместимость старых планов с новым инструментом python_analysis."""
 
         class FakeSandbox:
@@ -98,7 +112,7 @@ class WorkerSkillLoadingTests(unittest.TestCase):
             Task(
                 task_id="1",
                 description="Run code",
-                suggested_tools=["generate_python_code"],
+                suggested_tools=["missing_legacy_tool"],
             ),
         )
 
@@ -190,14 +204,13 @@ class WorkerSkillLoadingTests(unittest.TestCase):
             self.assertIn("<ARTIFACT df_transactions>", prompt)
             self.assertIn("schema: event_id:str, amount:float", prompt)
             self.assertNotIn("C:/workspace/data/transactions.csv", prompt)
-            self.assertIn("<available_skill_previews>", prompt)
-            self.assertIn("skill_view", prompt)
-            self.assertIn("Build behavioral insights.", prompt)
+            self.assertNotIn("<available_skill_previews>", prompt)
+            self.assertNotIn("skill_view", prompt)
             self.assertIn("<loaded_skills>", prompt)
             self.assertIn("<skill name=\"insight-design\">", prompt)
             self.assertIn("Separate observed facts", prompt)
 
-    def test_worker_auto_loads_available_skill_when_task_has_no_suggestions(self) -> None:
+    def test_worker_does_not_auto_load_skill_without_planner_suggestion(self) -> None:
         """Проверяет fallback-загрузку skill из previews без suggested_skills."""
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -217,11 +230,9 @@ class WorkerSkillLoadingTests(unittest.TestCase):
             loaded = _load_task_skills(
                 Task(task_id="1", description="Analyze case"),
                 SkillsService(tmp),
-                available_skill_names=["case-analysis"],
             )
 
-            self.assertEqual(list(loaded), ["case-analysis"])
-            self.assertIn("Use domain evidence", loaded["case-analysis"])
+            self.assertEqual(loaded, {})
 
     def test_skill_view_uses_frontmatter_name_and_runtime_tool_loads_content(self) -> None:
         """Проверяет загрузку skill по имени из frontmatter через сервис и runtime tool."""

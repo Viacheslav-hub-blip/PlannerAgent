@@ -271,7 +271,7 @@ class SchedulerLineageTests(unittest.TestCase):
             ["artifact-transactions", "artifact-trigger"],
         )
 
-    def test_scheduler_passes_skill_previews_to_worker_payload(self) -> None:
+    def test_scheduler_does_not_pass_skill_previews_to_worker_payload(self) -> None:
         """Проверяет передачу preview skills из state в WorkerPayload."""
 
         state = AgentState(
@@ -291,10 +291,7 @@ class SchedulerLineageTests(unittest.TestCase):
 
         self.assertEqual(len(sends), 1)
         payload = sends[0].arg
-        self.assertEqual(
-            payload.skill_previews,
-            {"case-analysis": "Domain analysis skill preview."},
-        )
+        self.assertEqual(payload.skill_previews, {})
 
     def test_scheduler_redirects_blocked_plan_to_replanner(self) -> None:
         """Проверяет переход к replanner при блокировке failed-зависимостью."""

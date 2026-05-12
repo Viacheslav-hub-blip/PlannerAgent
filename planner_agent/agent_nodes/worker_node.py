@@ -27,15 +27,11 @@ from ..services.prompt_trace_service import write_prompt_trace, write_tool_calls
 from ..services.skills_service import SkillsService
 from ..tools.artifact_read_tools import build_artifact_read_tools
 from ..tools.artifact_wrappers import wrap_tools_for_artifacts
-from ..tools.python_analysis_tool import PYTHON_ANALYSIS_TOOL_NAME
-from ..tools.skill_tools import build_skill_read_tools
 
 # Ключи LangGraph Pregel для чтения актуального AgentState из worker-узла (см. CONFIG_KEY_*).
 _CONFIGURABLE_KEY = "configurable"
 _PREGEL_READ_KEY = "__pregel_read"
-LEGACY_CODE_TOOL_ALIASES: dict[str, str] = {
-    "generate_python_code": PYTHON_ANALYSIS_TOOL_NAME,
-}
+SKILL_READ_TOOL_NAMES: frozenset[str] = frozenset({"skill_list", "skill_view"})
 
 
 def _initial_user_query_from_graph_state(config: RunnableConfig | None) -> str:
@@ -167,12 +163,6 @@ REACT_AGENT_RECURSION_LIMIT: int = 36
 # Максимальная длина блока, который выводится в терминал.
 CONSOLE_BLOCK_MAX_LENGTH: int = 10_000
 
-# Максимальное число skills, автоматически загружаемых worker-ом из previews.
-MAX_AUTO_LOADED_SKILLS: int = 5
-
-# Максимальная длина preview одного skill в prompt worker-а.
-SKILL_PREVIEW_MAX_LEN: int = 800
-
 # Максимальная длина полного текста одного skill в prompt worker-а.
 LOADED_SKILL_MAX_LEN: int = 8_000
 
@@ -274,44 +264,25 @@ def _supports_with_context(tool: BaseTool) -> bool:
 
 
 def _select_task_tools(tools: list[BaseTool], task: Task) -> list[BaseTool]:
-    """Выбирает основные инструменты, явно назначенные текущей задаче.
+    """Выбирает все worker-инструменты, кроме инструментов чтения skills.
 
     Args:
         tools: Полный список domain/source/tools, доступных агенту.
-        task: Текущая задача воркера с полем ``suggested_tools``.
+        task: Текущая задача воркера. Аргумент сохранен для совместимости
+            с прежним контрактом выбора инструментов.
 
     Returns:
-        Список инструментов, имена которых указаны в ``task.suggested_tools``.
-        Если список ``suggested_tools`` пуст, возвращается пустой список: worker
-        сможет использовать только runtime artifact tools, добавляемые отдельно.
+        Список всех инструментов, которые worker может использовать напрямую.
+        ``skill_list`` и ``skill_view`` исключаются: skills выбирает planner,
+        а worker получает только уже загруженные ``suggested_skills``.
     """
 
-    requested_names = {
-        str(tool_name).strip()
-        for tool_name in task.suggested_tools or []
-        if str(tool_name).strip()
-    }
-    if not requested_names:
-        task_text = " ".join(
-            [
-                task.description or "",
-                json.dumps(task.config or {}, ensure_ascii=False),
-            ]
-        )
-        requested_names = {
-            tool.name
-            for tool in tools
-            if tool.name and re.search(rf"\b{re.escape(tool.name)}\b", task_text)
-        }
-
-    if not requested_names:
-        return []
-
-    requested_names = {
-        LEGACY_CODE_TOOL_ALIASES.get(tool_name, tool_name)
-        for tool_name in requested_names
-    }
-    return [tool for tool in tools if tool.name in requested_names]
+    del task
+    return [
+        tool
+        for tool in tools
+        if tool.name not in SKILL_READ_TOOL_NAMES
+    ]
 
 
 async def _prepare_tools(tools: list[BaseTool], task: Task) -> list[BaseTool]:
@@ -426,7 +397,6 @@ async def _create_worker_system_prompt(
             _format_dependency_context(payload.dependency_context),
             _format_filesystem_context(payload.filesystem_context),
             _format_artifact_context(payload.artifact_context),
-            _format_skill_previews(payload.skill_previews),
             _format_loaded_skills(loaded_skills or {}),
             _format_installed_packages(installed_packages or {}),
         )
@@ -595,49 +565,19 @@ def _format_artifact_context(artifact_context: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _format_skill_previews(skill_previews: dict[str, str]) -> str:
-    """Форматирует preview skills для worker prompt.
-
-    Args:
-        skill_previews: Словарь ``{skill_name: preview}`` из состояния агента.
-
-    Returns:
-        XML-подобный блок со списком skills или пустую строку.
-    """
-
-    if not skill_previews:
-        return ""
-
-    lines = [
-        "<available_skill_previews>",
-        "Если skill подходит к задаче, загрузи полный текст через tool skill_view.",
-    ]
-    for skill_name, preview in skill_previews.items():
-        preview_text = _limit_text(
-            str(preview),
-            max_chars=SKILL_PREVIEW_MAX_LEN,
-        )
-        lines.append(f"- {skill_name}: {preview_text}")
-    lines.append("</available_skill_previews>")
-    return "\n".join(lines)
-
-
 def _load_task_skills(
         task: Task,
         skills_service: SkillsService | None,
-        available_skill_names: list[str] | None = None,
 ) -> dict[str, str]:
     """Загружает полный текст skills для текущей worker-задачи.
 
     Args:
         task: Задача worker-а с возможным списком ``suggested_skills``.
         skills_service: Сервис чтения skills или ``None``.
-        available_skill_names: Имена skills, найденные на этапе initialize.
-            Используются как мягкий fallback, если planner не указал
-            ``suggested_skills`` явно.
 
     Returns:
-        Словарь ``{skill_name: skill_content}`` с загруженными skills.
+        Словарь ``{skill_name: skill_content}`` с skills, явно указанными
+        planner-ом в ``task.suggested_skills``.
     """
 
     if skills_service is None:
@@ -648,13 +588,6 @@ def _load_task_skills(
         for skill_name in task.suggested_skills
         if str(skill_name).strip()
     ]
-    if not requested_skills and available_skill_names:
-        requested_skills = [
-            str(skill_name).strip()
-            for skill_name in available_skill_names[:MAX_AUTO_LOADED_SKILLS]
-            if str(skill_name).strip()
-        ]
-
     loaded: dict[str, str] = {}
     for skill_name in dict.fromkeys(requested_skills):
         if not skill_name:
@@ -1032,7 +965,6 @@ async def worker_node(
     loaded_skills = _load_task_skills(
         task,
         skills_service,
-        available_skill_names=list(payload.skill_previews.keys()),
     )
     worker_started_node_id = _create_worker_started_lineage(
         payload=payload,
@@ -1048,11 +980,6 @@ async def worker_node(
         artifact_service=artifact_service,
         run_id=payload.run_id,
     )
-    runtime_tools = _with_skill_read_tools(
-        tools=runtime_tools,
-        skills_service=skills_service,
-    )
-
     # Подготовка инструментов с контекстом текущей задачи
     prepared_tools = await _prepare_tools(runtime_tools, task)
     prepared_tools = wrap_tools_for_artifacts(
@@ -1267,30 +1194,6 @@ def _with_artifact_read_tools(
     return [*tools, *artifact_tools]
 
 
-def _with_skill_read_tools(
-        *,
-        tools: list[BaseTool],
-        skills_service: SkillsService | None,
-) -> list[BaseTool]:
-    """Добавляет runtime tools для самостоятельной загрузки skills worker-ом.
-
-    Args:
-        tools: Базовый список инструментов worker-а.
-        skills_service: Сервис чтения skills или ``None``.
-
-    Returns:
-        Список tools с добавленными ``skill_list`` и ``skill_view`` без дублей.
-    """
-
-    existing_names = {tool.name for tool in tools}
-    skill_tools = [
-        tool
-        for tool in build_skill_read_tools(skills_service)
-        if tool.name not in existing_names
-    ]
-    return [*tools, *skill_tools]
-
-
 def _create_worker_started_lineage(
         *,
         payload: WorkerPayload,
@@ -1318,7 +1221,6 @@ def _create_worker_started_lineage(
             "resolved_inputs": payload.resolved_inputs,
             "dependency_context": payload.dependency_context,
             "filesystem_context": payload.filesystem_context,
-            "skill_previews": payload.skill_previews,
             "artifact_context": payload.artifact_context,
             "loaded_skills": loaded_skills or {},
         },

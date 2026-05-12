@@ -35,7 +35,6 @@ from .tools.python_analysis_tool import (
     build_python_analysis_tool,
 )
 from .tools.registry import ToolRegistry
-from .tools.skill_tools import build_skill_read_tools
 
 
 def _resolve_directory(
@@ -208,12 +207,6 @@ def planner_agent(
         )
         final_worker_tools.extend(workspace_tools)
 
-    existing_tool_names = {tool.name for tool in final_worker_tools}
-    final_worker_tools.extend(
-        tool
-        for tool in build_skill_read_tools(final_skills_service)
-        if tool.name not in existing_tool_names
-    )
     final_tool_registry = tool_registry or ToolRegistry()
     final_tool_registry.register_many(final_worker_tools)
     final_worker_tools = final_tool_registry.enabled(
