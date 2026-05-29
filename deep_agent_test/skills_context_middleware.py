@@ -30,9 +30,8 @@ from pydantic import BaseModel, Field
 
 from deepagents.middleware._utils import append_to_system_message
 
-from deep_agent_test.agent_logging import DeepAgentEventLogger
-from deep_agent_test.plan_approval_middleware import AnalyticsPlanState
-from deep_agent_test.prompts import PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE
+from deep_agent_test.agent_state import AnalyticsAgentState
+from deep_agent_test.prompts import PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE, SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE
 
 
 class SelectedSkillPaths(BaseModel):
@@ -42,11 +41,17 @@ class SelectedSkillPaths(BaseModel):
         paths: Виртуальные пути выбранных файлов ``SKILL.md``.
     """
 
-    paths: list[str] = Field(default_factory=list, description="Виртуальные пути выбранных skill-файлов.")
+    paths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Виртуальные пути выбранных skill-файлов. Для многошаговых задач включай "
+            "все потенциально нужные skills, а не один наиболее похожий."
+        ),
+    )
 
 
 @dataclass(frozen=True)
-class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsPlanState]):
+class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
     """Автоматически загружает файлы ``SKILL.md`` до первого рассуждения модели.
 
     Args:
@@ -54,7 +59,6 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsPlanState]):
         skills_virtual_dir: Виртуальная папка skills внутри DeepAgents backend.
         max_chars_per_file: Максимальная длина текста одного ``SKILL.md`` в context.
         model: Chat model для выбора релевантных skills по index. Если ``None``, загружаются все skills.
-        event_logger: Файловый логгер для записи загруженных skills.
 
     Returns:
         Middleware, который добавляет compact domain context в state и system message.
@@ -64,13 +68,12 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsPlanState]):
     skills_virtual_dir: str = "/skills/"
     max_chars_per_file: int = 6000
     model: Any | None = None
-    event_logger: DeepAgentEventLogger | None = None
 
-    state_schema = AnalyticsPlanState
+    state_schema = AnalyticsAgentState
 
     def before_agent(
         self,
-        state: AnalyticsPlanState,
+        state: AnalyticsAgentState,
         runtime: Runtime,
     ) -> dict[str, Any] | None:
         """Читает skills и сохраняет context в state перед запуском агента.
@@ -94,20 +97,17 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsPlanState]):
             model=self.model,
             user_query=user_query,
         )
-        if self.event_logger is not None:
-            self.event_logger.log_loaded_skills(
-                {
-                    "loaded_paths": loaded_paths,
-                    "loaded_count": len(loaded_paths),
-                    "context_chars": len(context),
-                    "skills_root": str(self.skills_root.resolve()),
-                }
-            )
+        skills_index = build_skills_index(
+            skill_files=discover_skill_context_files(self.skills_root),
+            skills_root=self.skills_root,
+            skills_virtual_dir=self.skills_virtual_dir,
+        )
         return {
             "skills_context_loaded": True,
             "preloaded_skills_selection_user_key": user_query,
             "preloaded_skill_paths": loaded_paths,
             "preloaded_skills_context": context,
+            "preloaded_skills_index": skills_index,
         }
 
     def wrap_model_call(
@@ -126,13 +126,22 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsPlanState]):
         """
 
         context = request.state.get("preloaded_skills_context")
-        if not context:
+        skills_index = request.state.get("preloaded_skills_index") or []
+        if not context and not skills_index:
             return handler(request)
 
-        system_message = append_to_system_message(
-            request.system_message,
-            PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE.format(context=context),
-        )
+        system_message = request.system_message
+        if skills_index:
+            skills_index_text = json.dumps(skills_index, ensure_ascii=False, indent=2)
+            system_message = append_to_system_message(
+                system_message,
+                SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE.format(skills_index=skills_index_text),
+            )
+        if context:
+            system_message = append_to_system_message(
+                system_message,
+                PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE.format(context=context),
+            )
         return handler(request.override(system_message=system_message))
 
 
@@ -216,11 +225,12 @@ def select_relevant_skill_paths_with_llm(
             [
                 SystemMessage(
                     content=(
-                        "Ты выбираешь domain skills для аналитического агента. "
+                        "Ты выбираешь domain skills для предварительного preview middleware. "
                         "Используй только пути из переданного index. "
-                        "Выбери минимальный набор skills, достаточный для понимания запроса, "
-                        "выбора источников, полей и ключей связи. Не добавляй знания вне index. "
-                        "Верни только paths."
+                        "Для многошаговых запросов выбирай все skills, которые могут понадобиться "
+                        "на разных этапах: hit-table, cards-event-table, uko-event-table, "
+                        "field-descriptions и профильные skills по типу задачи. "
+                        "Лучше включить лишний релевантный skill, чем пропустить нужный downstream-источник."
                     )
                 ),
                 HumanMessage(
@@ -310,7 +320,7 @@ def _read_context_file(path: Path, max_chars: int) -> str | None:
     return _truncate_text(content, max_chars)
 
 
-def _latest_user_query(state: AnalyticsPlanState) -> str:
+def _latest_user_query(state: AnalyticsAgentState) -> str:
     """Извлекает последний пользовательский запрос из state.
 
     Args:

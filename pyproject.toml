@@ -46,4 +46,4 @@ ignore = ["E501"]
 include = ["planner_agent*", "sandbox", "deep_agent_test*"]
 
 [tool.setuptools.package-data]
-deep_agent_test = ["config/*.json", "few_shot_examples/*.md", "data/*.csv", "skills/**/*.md"]
+deep_agent_test = ["config/*.json", "data/*.csv", "skills/**/*.md"]

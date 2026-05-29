@@ -63,10 +63,10 @@ description: "Справочник полей из таблиц hits, cards_even
 - `epk_id` - идентификатор клиента ЕПК.
 - `event_channel` - канал события.
 - `event_description` - текстовое описание события.
-- `event_dt` - дата события в формате `YYYYMMDD`.
-- `event_dttm_readable` - читаемая дата-время события.
+- `event_dt` - дата события в формате `YYYYMMDD` (например, `20260124`). Основное поле для фильтрации по дню и связи hits ↔ raw-таблицы.
+- `event_dttm_readable` - читаемая дата-время события в формате `YYYY-MM-DD HH:MM:SS`. В `uko_event` используй для точного времени вместо `event_time`.
 - `event_id` - идентификатор события. В hits это идентификатор сработки/события; в raw-таблицах это идентификатор исходного события, который может совпадать с hits.
-- `event_time` - время события.
+- `event_time` - поле времени события. В hits и `cards_event` — читаемый datetime `YYYY-MM-DD HH:MM:SS`; в `uko_event` — Unix epoch в миллисекундах. **Не переноси значение `event_time` из hits в фильтр `uko_event.event_time`.** Для дневного поиска используй `event_dt`.
 - `event_type` - тип события.
 - `final_marker_payer` - итоговый маркер плательщика.
 - `fio` - ФИО клиента.

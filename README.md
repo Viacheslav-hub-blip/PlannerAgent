@@ -51,6 +51,19 @@ API не вызываются.
 python examples\chat_run.py
 ```
 
+## Native DeepAgent demo
+
+Пакет [`deep_agent_test`](deep_agent_test/README.md) — slim DeepAgents supervisor для
+аналитики данных: skills preload, spill больших tool outputs в `.pkl`, subagent
+`data-retrieval-agent` и консольный чат на тестовых CSV.
+
+```powershell
+pip install -e ".[deep-agent-test]"
+python deep_agent_test/run_native_analytics_chat.py
+```
+
+Подробности: [deep_agent_test/README.md](deep_agent_test/README.md).
+
 Тесты:
 
 ```powershell
