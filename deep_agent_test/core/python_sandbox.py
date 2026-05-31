@@ -6,7 +6,7 @@ import pickle
 from pathlib import Path
 from typing import Any
 
-from deep_agent_test.settings import PROJECT_ROOT, DeepAgentSettings
+from deep_agent_test.core.settings import PROJECT_ROOT, DeepAgentSettings
 
 SANDBOX_HELPER_NAMES = frozenset(
     {
@@ -137,7 +137,7 @@ def build_python_sandbox(settings: DeepAgentSettings | None = None) -> DeepAgent
         Готовый ``DeepAgentPythonSandbox`` с seed-helpers.
     """
 
-    from deep_agent_test.settings import load_deep_agent_settings
+    from deep_agent_test.core.settings import load_deep_agent_settings
 
     settings = settings or load_deep_agent_settings()
     readable_roots = (PROJECT_ROOT.resolve(), settings.tool_outputs_dir.resolve())

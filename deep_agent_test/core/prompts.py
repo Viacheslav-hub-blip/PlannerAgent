@@ -467,9 +467,9 @@ DATA_RETRIEVAL_CRITIC_PROMPT = """
 Верни structured `DataRetrievalCriticVerdict`:
 - `approved` — можно ли отдавать результат supervisor;
 - `reasoning` — кратко, со ссылкой на проверенные факты;
-- `issues` — список проблем;
+- `issues` — проблемы одной строкой через точку с запятой;
 - `revision_instructions` — императив для retrieval (если `approved=false`);
-- `checks_performed` — какие проверки/tools выполнил critic.
+- `checks_performed` — какие проверки/tools выполнил critic, одной строкой через точку с запятой.
 </output>
 """
 

@@ -23,8 +23,8 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
-from deep_agent_test.settings import DeepAgentSettings
-from deep_agent_test.skills_context_middleware import (
+from deep_agent_test.core.settings import DeepAgentSettings
+from deep_agent_test.middlewares.skills_context import (
     _parse_skill_index_entry,
     _read_context_file,
     _virtual_skill_path,

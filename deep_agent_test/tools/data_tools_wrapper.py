@@ -18,8 +18,8 @@
 модели (код запроса + счётчики + данные), ``artifact`` — структура с ``rows`` и метаданными,
 которую читает ``ToolOutputFileMiddleware`` для офлоада больших таблиц.
 
-Сам базовый инструмент (например ``examples.fake_spark_tools``) не меняется — он общий с
-другими частями проекта; вся прозрачность добавляется здесь, в слое deep_agent_test.
+Сам базовый инструмент не меняется: вся прозрачность добавляется здесь, в слое
+``deep_agent_test``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def wrap_data_tools_with_query_code(tools: list[BaseTool]) -> list[BaseTool]:
     """Оборачивает инструменты чтения данных в слой прозрачности запроса.
 
     Args:
-        tools: Базовые data-tools (например результат ``build_fake_spark_tools``).
+        tools: Базовые data-tools (например результат ``build_spark_data_tools``).
 
     Returns:
         Список инструментов с тем же ``name``/``description``/``args_schema``, но с
@@ -104,7 +104,7 @@ def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
         rows = _dataframe_to_rows(raw)
         returned_rows = len(raw)
         columns = [str(column) for column in raw.columns]
-        is_aggregation = bool(_as_list(_get(kwargs, "aggregations")))
+        is_aggregation = bool(_split_instruction_text(_get(kwargs, "aggregations")))
         content = _build_success_content(
             query_code=query_code,
             returned_rows=returned_rows,
@@ -196,19 +196,15 @@ def _build_query_code(kwargs: dict[str, Any]) -> str:
     table_name = _get(kwargs, "table_name") or "<table>"
     select_columns = _parse_columns(_get(kwargs, "select_columns"))
     group_by = _parse_columns(_get(kwargs, "group_by"))
-    aggregations = _as_list(_get(kwargs, "aggregations"))
-    filters = _as_list(_get(kwargs, "filters"))
-    derived_columns = _as_list(_get(kwargs, "derived_columns"))
-    order_by = _as_list(_get(kwargs, "order_by"))
+    aggregations = _split_instruction_text(_get(kwargs, "aggregations"))
+    filters = _get(kwargs, "filters")
+    derived_columns = _split_instruction_text(_get(kwargs, "derived_columns"))
+    order_by = _split_instruction_text(_get(kwargs, "order_by"))
     max_rows = _get(kwargs, "max_rows")
 
     if aggregations:
         select_parts = [*group_by]
-        for aggregation in aggregations:
-            function = _get(aggregation, "function")
-            column = _get(aggregation, "column")
-            alias = _get(aggregation, "alias") or f"{function}_{column}"
-            select_parts.append(f"{function}({column}) AS {alias}")
+        select_parts.extend(aggregations)
         select_clause = ", ".join(select_parts) or "*"
     else:
         select_clause = ", ".join(select_columns) or "*"
@@ -216,10 +212,7 @@ def _build_query_code(kwargs: dict[str, Any]) -> str:
     lines = [f"SELECT {select_clause}", f"FROM {table_name}"]
 
     for derived in derived_columns:
-        name = _get(derived, "name")
-        source = _get(derived, "source_column")
-        operation = _get(derived, "operation")
-        lines.append(f"-- derived: {name} = {operation}({source})")
+        lines.append(f"-- derived: {derived}")
 
     where_clause = _build_where_clause(filters)
     if where_clause:
@@ -227,22 +220,24 @@ def _build_query_code(kwargs: dict[str, Any]) -> str:
     if group_by:
         lines.append(f"GROUP BY {', '.join(group_by)}")
     if order_by:
-        order_parts = [f"{_get(item, 'column')} {(_get(item, 'direction') or 'asc').upper()}" for item in order_by]
-        lines.append(f"ORDER BY {', '.join(order_parts)}")
+        lines.append(f"ORDER BY {', '.join(order_by)}")
     if isinstance(max_rows, int):
         lines.append(f"LIMIT {max_rows}")
     return "\n".join(lines)
 
 
-def _build_where_clause(filters: list[Any]) -> str:
-    """Преобразует список фильтров в SQL-подобное условие WHERE."""
+def _build_where_clause(filters: Any) -> str:
+    """Преобразует строковые фильтры в SQL-подобное условие WHERE."""
 
-    predicates = [_build_predicate(filter_item) for filter_item in filters]
+    predicates = [_build_predicate(filter_item) for filter_item in _split_instruction_text(filters)]
     return " AND ".join(predicate for predicate in predicates if predicate)
 
 
 def _build_predicate(filter_item: Any) -> str:
     """Строит один SQL-подобный предикат из фильтра."""
+
+    if isinstance(filter_item, str):
+        return filter_item
 
     column = _get(filter_item, "column")
     operator = _get(filter_item, "operator") or "eq"
@@ -283,6 +278,17 @@ def _parse_columns(value: Any) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [str(item).strip() for item in value if str(item).strip()]
     return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def _split_instruction_text(value: Any) -> list[str]:
+    """Разбирает строку инструкций через ``;`` или перенос строки."""
+
+    if not value:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    normalized = str(value).replace("\n", ";")
+    return [part.strip() for part in normalized.split(";") if part.strip()]
 
 
 def _as_list(value: Any) -> list[Any]:

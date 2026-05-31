@@ -23,7 +23,7 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Command
 
-from deep_agent_test.agent_state import extract_state_messages
+from deep_agent_test.core.state import extract_state_messages
 
 
 @dataclass(frozen=True)

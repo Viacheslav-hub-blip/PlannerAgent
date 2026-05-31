@@ -6,11 +6,11 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 Как редактировать/кастомизировать (подробности — в ``README.md``):
 - Данные: передай свои ``data_tools=[...]`` в :func:`build_analytics_deep_agent` или укажи
-  ``data_tools_factory`` в конфиге (``config/defaults.json`` / override через
+  ``data_tools_factory`` в конфиге (``resources/config/defaults.json`` / override через
   ``DEEP_AGENT_CONFIG_PATH``).
-- Конфиг и пороги: ключи в ``config/defaults.json`` (offload, skills, лимиты, логирование).
-- Поведение supervisor/critic: правь общие prompts в ``prompts.py`` (без доменной логики).
-- Доменные знания: добавляй/редактируй ``skills/<name>/SKILL.md`` — менять код не нужно.
+- Конфиг и пороги: ключи в ``resources/config/defaults.json`` (offload, skills, лимиты).
+- Поведение supervisor/critic: правь общие prompts в ``core/prompts.py`` (без доменной логики).
+- Доменные знания: добавляй/редактируй ``resources/skills/<name>/SKILL.md`` — менять код не нужно.
 - Внутренний critic: включается флагом ``enable_retrieval_critic`` (см. шаг 5). При
   ``false`` critic не подключается и не влияет на сборку.
 - Новые subagents: расширь ``build_analytics_subagent_specs`` в ``retrieval_subagents.py``.
@@ -32,18 +32,18 @@ from langchain.agents.middleware import (
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
 
-from deep_agent_test.agent_specs import DATA_RETRIEVAL_CRITIC_AGENT_NAME
-from deep_agent_test.critic_loop_cap_middleware import CriticLoopCapMiddleware
-from deep_agent_test.retrieval_subagents import build_analytics_subagent_specs
-from deep_agent_test.data_tools_wrapper import wrap_data_tools_with_query_code
-from deep_agent_test.execute_python_code_tool import build_execute_python_code_tool
-from deep_agent_test.load_skills_tool import build_load_skills_tool
-from deep_agent_test.prompts import SYSTEM_PROMPT
-from deep_agent_test.python_sandbox import build_python_sandbox
-from deep_agent_test.settings import DeepAgentSettings, load_deep_agent_settings
-from deep_agent_test.skills_context_middleware import PreloadedSkillsContextMiddleware
-from deep_agent_test.tool_loop_guard_middleware import ToolLoopGuardMiddleware
-from deep_agent_test.tool_output_file_middleware import ToolOutputFileMiddleware
+from deep_agent_test.core.agent_specs import DATA_RETRIEVAL_CRITIC_AGENT_NAME
+from deep_agent_test.middlewares.critic_loop_cap import CriticLoopCapMiddleware
+from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
+from deep_agent_test.tools.data_tools_wrapper import wrap_data_tools_with_query_code
+from deep_agent_test.tools.execute_python_code import build_execute_python_code_tool
+from deep_agent_test.tools.load_skills import build_load_skills_tool
+from deep_agent_test.core.prompts import SYSTEM_PROMPT
+from deep_agent_test.core.python_sandbox import build_python_sandbox
+from deep_agent_test.core.settings import DeepAgentSettings, load_deep_agent_settings
+from deep_agent_test.middlewares.skills_context import PreloadedSkillsContextMiddleware
+from deep_agent_test.middlewares.tool_loop_guard import ToolLoopGuardMiddleware
+from deep_agent_test.middlewares.tool_output_file import ToolOutputFileMiddleware
 
 
 def build_data_tools(settings: DeepAgentSettings | None = None) -> list[BaseTool]:
@@ -54,7 +54,7 @@ def build_data_tools(settings: DeepAgentSettings | None = None) -> list[BaseTool
         raise ValueError(
             "Не настроена фабрика tools чтения данных. "
             "Передайте data_tools в build_analytics_deep_agent или укажите "
-            "data_tools_factory в deep_agent_test/config/defaults.json или override-конфиге."
+            "data_tools_factory в deep_agent_test/resources/config/defaults.json или override-конфиге."
         )
     factory = _load_callable_from_path(settings.data_tools_factory)
     return _normalize_data_tools(factory(**settings.data_tools_factory_kwargs))
@@ -109,7 +109,7 @@ def build_analytics_deep_agent(
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
 
-    1. Settings — все пороги и пути. Кастомизация: `config/defaults.json`, override-файл
+    1. Settings — все пороги и пути. Кастомизация: `resources/config/defaults.json`, override-файл
        через env `DEEP_AGENT_CONFIG_PATH`, либо готовый ``settings`` в аргументе.
     2. Data tools — инструменты чтения данных (`read_table`). Кастомизация: передай свои
        ``BaseTool`` в ``data_tools`` или укажи фабрику в ``data_tools_factory`` конфига.

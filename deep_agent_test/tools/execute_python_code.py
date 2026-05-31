@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
-from deep_agent_test.python_sandbox import DeepAgentPythonSandbox, SANDBOX_HELPER_NAMES
+from deep_agent_test.core.python_sandbox import DeepAgentPythonSandbox, SANDBOX_HELPER_NAMES
 from planner_agent.tools.execute_python_code_tool import (
     EXECUTE_PYTHON_CODE_TOOL_NAME,
     PythonExecutionResult,

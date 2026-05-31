@@ -13,6 +13,7 @@
 - _parse_skill_index_entry: извлечение имени и описания skill.
 - _virtual_skill_path: построение виртуального пути skills для найденного файла.
 - _normalize_virtual_dir: нормализация виртуальной папки skills.
+- _split_text_list: разбор строкового списка путей.
 - _truncate_text: ограничение длины текста skill.
 """
 
@@ -30,22 +31,22 @@ from pydantic import BaseModel, Field
 
 from deepagents.middleware._utils import append_to_system_message
 
-from deep_agent_test.agent_state import AnalyticsAgentState
-from deep_agent_test.prompts import PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE, SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE
+from deep_agent_test.core.state import AnalyticsAgentState
+from deep_agent_test.core.prompts import PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE, SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE
 
 
 class SelectedSkillPaths(BaseModel):
     """Результат выбора релевантных skills перед запуском агента.
 
     Attributes:
-        paths: Виртуальные пути выбранных файлов ``SKILL.md``.
+        paths: Виртуальные пути выбранных файлов ``SKILL.md`` одной строкой через запятую.
     """
 
-    paths: list[str] = Field(
-        default_factory=list,
+    paths: str = Field(
+        default="",
         description=(
-            "Виртуальные пути выбранных skill-файлов. Для многошаговых задач включай "
-            "все потенциально нужные skills, а не один наиболее похожий."
+            "Виртуальные пути выбранных skill-файлов одной строкой через запятую. "
+            "Для многошаговых задач включай все потенциально нужные skills."
         ),
     )
 
@@ -298,7 +299,7 @@ def select_relevant_skill_paths_with_llm(
         return all_paths
 
     allowed = set(all_paths)
-    selected = [path for path in result.paths if path in allowed]
+    selected = [path for path in _split_text_list(result.paths) if path in allowed]
     return selected or all_paths
 
 
@@ -331,6 +332,21 @@ def build_skills_index(
             }
         )
     return index
+
+
+def _split_text_list(raw: str) -> list[str]:
+    """Разбирает строковый список значений через запятую или перенос строки.
+
+    Args:
+        raw: Строка со значениями.
+
+    Returns:
+        Список непустых значений без пробелов по краям.
+    """
+
+    if not raw:
+        return []
+    return [item.strip() for item in raw.replace("\n", ",").split(",") if item.strip()]
 
 
 def discover_skill_context_files(skills_root: Path) -> list[Path]:

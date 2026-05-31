@@ -1,4 +1,18 @@
-"""Конфигурация аналитического DeepAgent."""
+"""Конфигурация аналитического DeepAgent.
+
+Содержит:
+- DeepAgentSettings: типизированные настройки сборки агента.
+- DeepAgentSettings.from_mapping: сборка настроек из словаря.
+- load_deep_agent_settings: загрузка defaults-конфига и override-конфига.
+- _load_config_payload: чтение и объединение JSON-конфигов.
+- _read_json_file: чтение JSON-файла.
+- _validate_required_config_keys: проверка обязательных ключей.
+- _resolve_project_path: приведение пути к абсолютному.
+- _int_from_config: чтение целого числа из конфига.
+- _bool_from_config: чтение булевого значения из конфига.
+- _dict_from_config: чтение словаря из конфига.
+- _optional_str_from_config: чтение опциональной строки из конфига.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "defaults.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "resources" / "config" / "defaults.json"
 CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
 REQUIRED_CONFIG_KEYS = (
     "thread_id",
@@ -204,6 +219,7 @@ def _optional_str_from_config(payload: dict[str, Any], key: str) -> str | None:
 __all__ = [
     "CONFIG_ENV_VAR",
     "DEFAULT_CONFIG_PATH",
+    "PACKAGE_ROOT",
     "PROJECT_ROOT",
     "REQUIRED_CONFIG_KEYS",
     "DeepAgentSettings",

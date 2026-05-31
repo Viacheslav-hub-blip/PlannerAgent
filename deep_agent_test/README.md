@@ -1,226 +1,250 @@
-# Native Analytics DeepAgent
+# Аналитический DeepAgent
 
-Тонкая обёртка над LangChain/DeepAgents для аналитики табличных данных. Агент собран
-**нативно**: supervisor получает встроенные tools DeepAgents и минимум custom-кода. Все
-доменные знания вынесены в skills, а не в prompts.
+Этот пакет содержит готовую надстройку над базовым `deepagents`. Цель пакета простая:
+дать агенту доменные инструкции, безопасные инструменты чтения данных, контроль больших
+ответов инструментов и понятную точку запуска в других проектах.
 
-## Принцип разделения ответственности
+Запуск проекта рассчитан на один файл:
 
-| Где | Что лежит |
-|---|---|
-| **prompts** (`prompts.py`) | только общие инструкции: роль, использование `write_todos`, механизм skills, использование critic, стиль финального ответа. Никакой бизнес-логики, имён таблиц/полей и жёстких проверок. |
-| **skills** (`skills/**/SKILL.md`) | всё доменное знание: имена таблиц, поля, форматы дат/времени, ключи связи, правила маршрутизации между источниками, ограничения. |
-| **tool outputs** | фактическая схема и значения; имеют приоритет над skills, если расходятся. |
-
-Три (и только три) custom-механизма поверх нативного DeepAgents:
-
-1. **Offload файлов** — каждый табличный результат `read_table` сохраняется в `.pkl`
-   (`ToolOutputFileMiddleware`); в контекст большие выборки по-прежнему приходят как preview,
-   маленькие — inline + путь к файлу для переиспользования без повторного Spark-запроса.
-2. **Принудительная загрузка skills** — LLM выбирает релевантные skills по запросу и их
-   контент кладётся в system prompt до первого хода модели (`PreloadedSkillsContextMiddleware`
-   + tool `load_skills`).
-3. **Critic-агент** — внутренний `data-retrieval-critic` проверяет правдивость и
-   достаточность шага чтения данных. Опционален: включается флагом
-   `enable_retrieval_critic` (по умолчанию `true`). При `false` `data-retrieval-agent`
-   отдаёт отчёт supervisor-у напрямую — без `task(data-retrieval-critic)` и без critic loop cap.
-
-Поверх них подключены три **нативных** middleware LangChain/DeepAgents (без custom-логики):
-
-- **Context editing** (`ContextEditingMiddleware` + `ClearToolUsesEdit`) — при достижении
-  лимита токенов очищает старые tool-результаты, оставляя последние N (дополняет offload).
-- **File search** (`FilesystemFileSearchMiddleware`) — добавляет glob/grep поиск по папке
-  spill-файлов (`tool_outputs_dir`), чтобы находить нужные `.pkl` без полного перебора.
-- **Loop guard** (`ToolLoopGuardMiddleware`, `tool_loop_guard_middleware.py`) — блокирует
-  серию подряд идущих вызовов одного и того же tool после `max_consecutive_tool_calls`
-  повторов (учитывает именно повторы подряд, а не идентичность аргументов, поэтому ловит и
-  «варьирующие» циклы) и просит модель сменить подход или завершить шаг — без аварийного
-  завершения прогона.
-- **Critic loop cap** (`CriticLoopCapMiddleware`, `critic_loop_cap_middleware.py`) — ограничивает
-  число циклов `task(data-retrieval-critic)` внутри `data-retrieval-agent` лимитом
-  `max_critic_iterations` (по умолчанию 3); сверх лимита вызов критика блокируется, и агент
-  обязан отдать финальный отчёт по уже полученным tool results. Подключается только при
-  включённом critic (`enable_retrieval_critic: true`).
-- **Subagent step limit** (нативный `ModelCallLimitMiddleware`) — ограничивает число ходов
-  модели за один запуск `data-retrieval-agent` лимитом `max_subagent_model_calls` (по
-  умолчанию 19); по исчерпании субагент мягко завершается (`exit_behavior="end"`) и
-  возвращает supervisor-у уже собранный результат, не упираясь в recursion limit графа.
-
-Loop guard и offload применяются и к supervisor, и к `data-retrieval-agent`; critic loop cap
-и subagent step limit — только к `data-retrieval-agent`.
-
-## Структура
-
-- `analytics_deep_agent.py` — главная сборка: `build_analytics_deep_agent` с пошаговой
-  инициализацией, backend skills и permissions.
-- `prompts.py` — общие prompts supervisor, subagent и critic (без доменной логики).
-- `agent_specs.py` — имена агентов и structured output `DataRetrievalCriticVerdict`.
-- `retrieval_subagents.py` — сборка `data-retrieval-agent` с внутренним `task(data-retrieval-critic)`.
-- `inspect_artifact_tool.py` — фактическая проверка spill-файлов для critic (без вердикта).
-- `agent_state.py` — расширенный state для skills middleware.
-- `skills_context_middleware.py` — LLM-выбор и preload skills по запросу пользователя.
-- `tool_output_file_middleware.py` — offload больших tabular tool outputs в `.pkl`.
-- `tool_loop_guard_middleware.py` — защита от зацикливания на повторных вызовах tool.
-- `data_tools_wrapper.py` — слой прозрачности над `read_table`: возвращает агенту сгенерированный SQL-подобный код запроса и счётчики строк (всего/подошло/возвращено).
-- `trace_logging.py` — `FileTraceCallbackHandler`: пишет в один txt-файл (в правильной последовательности, без обрезаний) system prompt, набор инструментов, ответы агента и ответы инструментов (только аргументы/content, без метаданных).
-- `python_sandbox.py` — persistent sandbox с helpers `read_pickle_file`, `describe_pickle_file`, `rows_to_dataframe`.
-- `execute_python_code_tool.py` — выполнение Python-кода с белым списком импортов и информативным JSON при ошибках.
-- `load_skills_tool.py` — пакетная загрузка skills одним вызовом вместо нескольких `read_file`.
-- `settings.py` + `config/defaults.json` — типизированная загрузка настроек.
-- `run_native_analytics_chat.py` — терминальный запуск на тестовых CSV.
-- `skills/` — domain skills (`SKILL.md`), доступные через `/skills/`.
-- `data/` — тестовые CSV: `hits`, `cards_event`, `uko_event`.
-
-## Архитектура и поток
-
-```mermaid
-flowchart TD
-    User[User query] --> Supervisor
-    subgraph supervisor [Supervisor create_deep_agent]
-        Supervisor[supervisor LLM] --> Todos[write_todos]
-        Supervisor --> LoadSkills[load_skills]
-        Supervisor --> Python[execute_python_code]
-        Supervisor --> Task["task(data-retrieval-agent)"]
-    end
-    Task --> Retrieval[data-retrieval-agent]
-    Retrieval --> ReadTable[read_table]
-    Retrieval --> Critic["task(data-retrieval-critic)"]
-    Critic --> Inspect[inspect_artifact_path]
-    ReadTable --> Offload[ToolOutputFileMiddleware spill .pkl]
-    Skills[PreloadedSkillsContextMiddleware] -. system prompt .-> Supervisor
-    Skills -. system prompt .-> Retrieval
+```bash
+python run.py
 ```
 
-- Supervisor планирует через `write_todos`, делегирует чтение в `data-retrieval-agent`,
-  считает через `execute_python_code`, отвечает текстом.
-- `data-retrieval-agent` читает через `read_table` и (если `enable_retrieval_critic: true`)
-  перед ответом прогоняет внутренний `data-retrieval-critic` (supervisor этот цикл не видит).
-  При `false` критик не подключается, и субагент отдаёт отчёт напрямую.
-- `read_table` обёрнут слоем прозрачности (`data_tools_wrapper.py`): вместе с данными
-  агент получает сгенерированный SQL-подобный код запроса и счётчики строк
-  (всего в таблице / подошло под фильтры / возвращено). Если подошло больше, чем
-  возвращено, агент видит предупреждение о неполной выборке. Для полного перечня
-  уникальных значений нужно использовать `group_by` + `aggregations`, а не выборку строк.
-- Каждый результат `read_table` сохраняется в `.pkl`; урезанные выборки из уже загруженного
-  набора делаются через `execute_python_code` по pickle, а не повторным `read_table`
-  (см. «Экономия Spark-запросов» в `prompts.py`). Большие выборки в контекст — preview;
-  в summary офлоада — код запроса и путь к файлу.
+В `run.py` нет параметров командной строки. В нем создается Spark session, собирается
+инструмент `read_table`, собирается агент и выполняется один `invoke`.
 
-## Шаги инициализации `build_analytics_deep_agent`
+## Что добавлено к базовому DeepAgent
 
-Функция в `analytics_deep_agent.py` собрана по нумерованным шагам (см. комментарии в коде):
+Базовый `deepagents` уже умеет вызывать инструменты, запускать subagent-ов, читать файлы
+и вести список задач. В этом проекте поверх него добавлены конкретные вещи для
+аналитики таблиц.
 
-1. **Settings** — пути skills, папка spill-файлов, пороги offload, `thread_id`.
-2. **Data tools** — инструменты чтения данных (`read_table`).
-3. **Middleware** — принудительная загрузка skills + offload tool outputs + нативные
-   context editing, file search и кастомный loop guard.
-4. **Backend + permissions** — read-only доступ к `/skills/**` и `/tool_outputs/**`.
-5. **Subagents** — `data-retrieval-agent`; внутренний `data-retrieval-critic` подключается по флагу `enable_retrieval_critic`.
-6. **Custom tools** — `execute_python_code` и `load_skills`.
-7. **Сборка** — `create_deep_agent(...)` со всеми частями.
+1. Предзагрузка skills.
 
-## Как кастомизировать и модифицировать агента
+   Перед первым ответом агент выбирает нужные файлы `SKILL.md` из
+   `deep_agent_test/resources/skills` и добавляет их в system prompt. Эти же skills
+   передаются в `data-retrieval-agent`, поэтому supervisor и subagent работают с одним
+   набором доменных правил.
 
-- **Свои данные**: передай `data_tools=[...]` (`BaseTool`) в `build_analytics_deep_agent`,
-  либо укажи `data_tools_factory` (import path) и `data_tools_factory_kwargs` в конфиге.
-- **Свой конфиг**: переопредели значения в `config/defaults.json` или подключи отдельный
-  файл через `DEEP_AGENT_CONFIG_PATH` (он мёржится поверх defaults).
-- **Новые домены**: добавь папку `skills/<name>/SKILL.md` с front matter `name`/`description`.
-  Index и preload подхватят skill автоматически — менять prompts не нужно.
-- **Поведение supervisor/critic**: правь только общие инструкции в `prompts.py`. Доменные
-  правила в prompts не добавляй — их место в skills. Чтобы временно отключить внутренний
-  critic, выстави `enable_retrieval_critic: false` в конфиге.
-- **Новые subagents**: расширь `build_analytics_subagent_specs` в `retrieval_subagents.py`.
-- **Пороги offload / размер skill-preview**: ключи `tool_output_*` и `max_chars_per_skill`
-  в конфиге.
-- **Context editing / file search / loop guard / лимиты**: ключи `context_edit_*`,
-  `file_search_use_ripgrep`, `max_consecutive_tool_calls`, `max_subagent_model_calls` в
-  конфиге. Если в рантайме доступен `rg`, можно включить `file_search_use_ripgrep: true`
-  для ускорения поиска.
+2. Data-retrieval subagent.
 
-## Запуск
+   Основной агент не читает таблицы напрямую. Для чтения данных он вызывает
+   `data-retrieval-agent`. Этот subagent получает задачу, вызывает `read_table` и
+   возвращает supervisor-у короткий структурированный отчет.
 
-Демо использует тестовые CSV из `deep_agent_test/data` через `examples.fake_spark_tools`.
-Модель берётся из корневого `model.py` (нужны API-ключи).
+3. Опциональный critic для чтения данных.
 
-```powershell
-uv run --extra deep-agent-test python deep_agent_test/run_native_analytics_chat.py
+   Внутри `data-retrieval-agent` можно включить `data-retrieval-critic`. Он проверяет,
+   что ответ действительно основан на результатах инструментов и что заявленные файлы
+   существуют. Флаг включения находится в конфиге: `enable_retrieval_critic`.
+
+4. Инструмент чтения Spark-таблиц.
+
+   `build_spark_data_tools(spark)` создает tool `read_table`. Tool принимает простые
+   строковые аргументы. В схемах инструмента нет входных `list[]`: списки колонок,
+   фильтров, агрегаций и сортировок передаются строкой и разбираются внутри инструмента.
+
+5. Прозрачный ответ `read_table`.
+
+   Обертка над data-tools добавляет к результату SQL-подобное описание запроса:
+   какие поля читались, из какой таблицы, какие фильтры применялись. Это снижает риск,
+   что агент перепутает пример строк с полным результатом.
+
+6. Offload больших таблиц.
+
+   Если tool возвращает много строк или слишком большой текст, результат сохраняется в
+   pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
+   путь к файлу и preview. Полный файл можно читать через `execute_python_code`.
+
+7. Безопасный Python sandbox.
+
+   Tool `execute_python_code` нужен для расчетов по выгруженным данным, чтения pickle,
+   join, фильтрации и подготовки итоговых таблиц. Перед выполнением код проходит
+   простую проверку: запрещены `eval`, `exec`, shell-вызовы и удаление файлов.
+
+8. Защита от циклов инструментов.
+
+   `ToolLoopGuardMiddleware` останавливает серию одинаковых tool-вызовов, если агент
+   зациклился на одном инструменте.
+
+## Структура пакета
+
+```text
+deep_agent_test/
+  core/
+    analytics_deep_agent.py   # сборка агента
+    retrieval_subagents.py    # data-retrieval-agent и critic
+    settings.py               # загрузка настроек
+    prompts.py                # общие промпты supervisor/subagent/critic
+    state.py                  # дополнительные поля state
+    python_sandbox.py         # persistent Python namespace
+    agent_specs.py            # имена агентов и structured output critic-а
+
+  middlewares/
+    skills_context.py         # предзагрузка skills
+    tool_output_file.py       # сохранение больших результатов tool в pickle
+    tool_loop_guard.py        # защита от повторяющихся tool-вызовов
+    critic_loop_cap.py        # лимит проверок critic-а
+
+  tools/
+    spark_data.py             # read_table поверх Spark session
+    data_tools_wrapper.py     # прозрачное описание запросов к data-tools
+    execute_python_code.py    # безопасное выполнение Python-кода
+    load_skills.py            # ручная дозагрузка skills
+    inspect_artifact.py       # проверка файлов для critic-а
+
+  resources/
+    config/defaults.json      # настройки по умолчанию
+    skills/**/SKILL.md        # доменные инструкции для агента
 ```
 
-`main()` делает один `invoke` с demo-запросом и печатает все сообщения (`[Tool call]`,
-`[Tool result]`, текст агента). Интерактивный режим: вызови `run_chat()` из Python.
+В старой версии были отдельный терминальный demo-runner, trace-логгер и локальные CSV.
+Они удалены из пакета, потому что целевой запуск теперь идет через `python run.py` и
+реальную Spark session.
 
-## Логирование хода агента
+## Минимальный запуск
 
-Полный человекочитаемый лог хода агента пишется в один txt-файл через
-`FileTraceCallbackHandler` (`trace_logging.py`). В нём в правильной последовательности и без
-обрезаний фиксируются: system prompt (с учётом preload skills), набор инструментов (имя,
-описание, схема аргументов), ответы агента (текст + вызовы инструментов с аргументами) и
-ответы инструментов (content). Метаданные (run_id, usage, id) не пишутся.
-
-Runner (`main()` / `run_chat()`) подключает логгер автоматически и печатает путь к файлу.
-Папка задаётся ключом `trace_log_dir`. Чтобы подключить логгер к своему агенту, передай
-handler в `config.callbacks` — он распространяется на supervisor, subagent-ов, critic и tools:
+Файл `run.py` находится в корне проекта. В нем должен быть только код запуска:
 
 ```python
-from deep_agent_test.trace_logging import build_file_trace_handler
+from pyspark.sql import SparkSession
 
-handler = build_file_trace_handler("runs/deep_agent_traces", label="my-run")
-agent.invoke(
-    {"messages": [{"role": "user", "content": "..."}]},
-    config={"configurable": {"thread_id": "t1"}, "callbacks": [handler]},
+from deep_agent_test import build_analytics_deep_agent, build_spark_data_tools, load_deep_agent_settings
+from model import model
+
+USER_MESSAGE = "текст запроса пользователя"
+
+spark = SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
+settings = load_deep_agent_settings()
+data_tools = build_spark_data_tools(spark)
+agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": USER_MESSAGE}]},
+    config={
+        "configurable": {"thread_id": settings.thread_id},
+        "recursion_limit": settings.graph_recursion_limit,
+    },
 )
-print("Лог:", handler.file_path)
 ```
 
-Альтернативный конфиг:
+В репозитории уже есть готовый `run.py` с таким сценарием. Чтобы задать другой запрос,
+измените константу `USER_MESSAGE`.
 
-```powershell
-$env:DEEP_AGENT_CONFIG_PATH="C:\path\to\deep_agent_config.json"
-uv run --extra deep-agent-test python deep_agent_test/run_native_analytics_chat.py
+## Конфигурация
+
+Основной конфиг лежит здесь:
+
+```text
+deep_agent_test/resources/config/defaults.json
 ```
 
-## Конфигурация (`config/defaults.json`)
+Главные параметры:
 
-| Ключ | Назначение |
-|---|---|
-| `thread_id` | thread id LangGraph для чата |
-| `skills_virtual_dir` | виртуальный путь skills в backend |
-| `skills_root` | локальная папка skills |
-| `data_tools_factory` | import path фабрики production tools (может быть `null`) |
-| `data_tools_factory_kwargs` | kwargs для фабрики |
-| `tool_outputs_dir` | папка для `.pkl` с большими tool outputs |
-| `max_chars_per_skill` | лимит символов одного skill в preload context |
-| `tool_output_min_rows_to_save` | порог строк для offload |
-| `tool_output_min_content_chars_to_save` | порог символов content для offload |
-| `tool_output_preview_rows` | число строк preview в summary |
-| `tool_output_inline_original_chars` | лимит дублирования исходного content |
-| `context_edit_trigger_tokens` | порог токенов, при котором context editing чистит старые tool-результаты |
-| `context_edit_keep_tool_results` | сколько последних tool-результатов сохранять при очистке |
-| `file_search_use_ripgrep` | использовать ли бинарник `rg` для file search (по умолчанию `false`) |
-| `max_consecutive_tool_calls` | лимит подряд идущих вызовов одного tool (loop guard) |
-| `max_subagent_model_calls` | бюджет ходов модели на один запуск data-retrieval-agent (native step limit) |
-| `max_critic_iterations` | лимит циклов `task(data-retrieval-critic)` внутри data-retrieval-agent |
-| `enable_retrieval_critic` | включать ли внутренний `data-retrieval-critic` (по умолчанию `true`; при `false` субагент отвечает supervisor-у напрямую) |
-| `graph_recursion_limit` | бюджет супершагов графа на один `invoke`; при исчерпании runner отдаёт частичный прогресс вместо краха |
-| `trace_log_dir` | папка для txt-логов хода агента (`FileTraceCallbackHandler`) |
+- `skills_root` - локальная папка со skills.
+- `skills_virtual_dir` - виртуальный путь, который видит DeepAgent.
+- `tool_outputs_dir` - папка для pickle-файлов с большими результатами.
+- `max_chars_per_skill` - максимальный размер одного skill в prompt.
+- `tool_output_min_rows_to_save` - после какого числа строк сохранять результат в файл.
+- `context_edit_trigger_tokens` - когда чистить старые tool results из контекста.
+- `max_consecutive_tool_calls` - сколько одинаковых вызовов tool подряд разрешено.
+- `max_subagent_model_calls` - лимит шагов модели внутри data-retrieval-agent.
+- `max_critic_iterations` - лимит проверок critic-а.
+- `enable_retrieval_critic` - включать ли внутренний critic.
 
-## execute_python_code
+Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
+`DEEP_AGENT_CONFIG_PATH`. Значения из этого файла переопределят defaults.
 
-Persistent sandbox между вызовами в одной сессии. Helpers (импорт не нужен):
-`read_pickle_file(path)`, `describe_pickle_file(path)`, `rows_to_dataframe(rows)`,
-`PROJECT_ROOT`, `TOOL_OUTPUTS_DIR`, `pd`, `np`.
+## Формат `read_table`
 
-Импорт ограничен белым списком; запрещены `eval`/`exec`/`os.system` и удаление файлов.
-При ошибке tool возвращает JSON с `error`, `traceback`, `execution_output`,
-`possible_causes`, `solution_options`, `retry_guidance`, `available_variables`,
-`sandbox_helpers`, `readable_roots` — этого достаточно, чтобы исправить код и повторить.
+Все сложные параметры передаются строками.
 
-## Тесты
+Пример обычной выборки:
 
-```powershell
-python -m pytest tests/test_retrieval_critic.py tests/test_supervisor_prompt_context.py `
-  tests/test_native_analytics_chat_runner.py tests/test_execute_python_code_tool.py `
-  tests/test_sandbox_code_executor.py tests/test_tool_output_file_middleware.py `
-  tests/test_data_tools_wrapper.py tests/test_fake_spark_tools.py -q
+```text
+table_name: csp_afpc_sss_inc.uko_event
+select_columns: event_id, event_dt, event_dttm_readable, epk_id, event_description, transaction_amount
+filters: epk_id eq 2099007770421989000001; event_dt in 20260123,20260124
+order_by: event_dt asc; event_dttm_readable asc
 ```
+
+Пример агрегации:
+
+```text
+table_name: csp_afpc_sss_inc.cards_event
+select_columns:
+filters: event_dt between 20260101,20260131
+group_by: event_description
+aggregations: count(event_id) as events_count; sum(transaction_amount_in_rub) as amount_rub
+order_by: events_count desc
+```
+
+Пример вычисляемой колонки:
+
+```text
+derived_columns: event_month = year_month(event_dt)
+filters: event_month eq 202601
+```
+
+Поддерживаемые операторы фильтра:
+
+```text
+eq, ne, gt, gte, lt, lte, contains, in, between, is_null, not_null
+```
+
+Поддерживаемые операции для `derived_columns`:
+
+```text
+year, month, year_month, date, lower, upper, length, abs
+```
+
+Поддерживаемые агрегаты:
+
+```text
+count, count_distinct, min, max, sum, mean
+```
+
+## Skills
+
+Skills лежат в:
+
+```text
+deep_agent_test/resources/skills
+```
+
+Каждый skill - это папка с файлом `SKILL.md`. Skill должен описывать один понятный
+участок домена: таблицу, группу полей, правило поиска или тип аналитического запроса.
+
+Пример структуры:
+
+```text
+resources/skills/uko-event-table/SKILL.md
+resources/skills/cards-event-table/SKILL.md
+resources/skills/hit-table/SKILL.md
+```
+
+Когда добавлять новый skill:
+
+- появилась новая таблица;
+- появились новые поля с важными правилами интерпретации;
+- агент часто ошибается в одном и том же типе запроса;
+- нужно зафиксировать правила связи между источниками.
+
+Когда не добавлять новый skill:
+
+- правило нужно только для одного конкретного запуска;
+- это временная подсказка;
+- это можно выразить в пользовательском запросе.
+
+## Как переиспользовать в другом проекте
+
+1. Скопируйте пакет `deep_agent_test` и корневой `run.py`.
+2. Подключите свою модель в `model.py`.
+3. Настройте Spark session в `run.py`.
+4. Проверьте, что `spark.table(table_name)` видит нужные таблицы.
+5. Обновите `resources/skills` под свой домен.
+6. При необходимости переопределите `resources/config/defaults.json` через
+   `DEEP_AGENT_CONFIG_PATH`.
+
+Код агента не должен знать бизнес-смысл таблиц. Этот смысл должен жить в `SKILL.md`.
+Так пакет проще переносить между проектами: код отвечает за механику, skills отвечают
+за домен.

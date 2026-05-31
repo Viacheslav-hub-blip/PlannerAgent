@@ -7,19 +7,19 @@ from typing import Any
 from deepagents import FilesystemPermission
 from deepagents.middleware.subagents import SubAgentMiddleware
 
-from deep_agent_test.agent_specs import (
+from deep_agent_test.core.agent_specs import (
     DATA_RETRIEVAL_AGENT_NAME,
     DATA_RETRIEVAL_CRITIC_AGENT_NAME,
     DataRetrievalCriticVerdict,
 )
-from deep_agent_test.inspect_artifact_tool import build_inspect_artifact_tool
-from deep_agent_test.prompts import (
+from deep_agent_test.tools.inspect_artifact import build_inspect_artifact_tool
+from deep_agent_test.core.prompts import (
     DATA_RETRIEVAL_CRITIC_PROMPT,
     DATA_RETRIEVAL_INNER_TASK_PROMPT,
     DATA_RETRIEVAL_PROMPT,
     DATA_RETRIEVAL_PROMPT_WITHOUT_CRITIC,
 )
-from deep_agent_test.settings import DeepAgentSettings
+from deep_agent_test.core.settings import DeepAgentSettings
 
 
 def build_data_retrieval_critic_tools(settings: DeepAgentSettings) -> list[Any]:

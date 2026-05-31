@@ -10,7 +10,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from deep_agent_test.settings import DeepAgentSettings, PROJECT_ROOT
+from deep_agent_test.core.settings import DeepAgentSettings, PROJECT_ROOT
 
 
 class InspectArtifactPathInput(BaseModel):
@@ -46,7 +46,7 @@ def inspect_artifact_path(
 ) -> str:
     """Возвращает только наблюдаемые факты о пути; интерпретацию оставляет LLM-critic."""
 
-    from deep_agent_test.settings import load_deep_agent_settings
+    from deep_agent_test.core.settings import load_deep_agent_settings
 
     settings = settings or load_deep_agent_settings()
     target = Path(path.strip())
@@ -110,7 +110,7 @@ def build_inspect_artifact_tool(settings: DeepAgentSettings | None = None) -> St
         ``StructuredTool``, возвращающий факты о файле для суждения critic-а.
     """
 
-    from deep_agent_test.settings import load_deep_agent_settings
+    from deep_agent_test.core.settings import load_deep_agent_settings
 
     settings = settings or load_deep_agent_settings()
 

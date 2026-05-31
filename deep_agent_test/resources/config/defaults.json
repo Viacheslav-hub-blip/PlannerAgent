@@ -1,7 +1,7 @@
 {
   "thread_id": "native-analytics-chat-001",
   "skills_virtual_dir": "/skills/",
-  "skills_root": "deep_agent_test/skills",
+  "skills_root": "deep_agent_test/resources/skills",
   "data_tools_factory": null,
   "data_tools_factory_kwargs": {},
   "tool_outputs_dir": "runs/deep_agent_tool_outputs",
