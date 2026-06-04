@@ -21,8 +21,8 @@ from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_t
 from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
 from model import model
 
-#USER_MESSAGE = "что делал клиент в день сработки и за день до сработки? id сработки 3486d84b-4eba-4ba4-b044-94764fc9e7a4"
-USER_MESSAGE = "найди все сработки связанные с образованием за январь 2026"
+USER_MESSAGE = "что делал клиент в день сработки и за день до сработки? id сработки 3486d84b-4eba-4ba4-b044-94764fc9e7a4"
+#USER_MESSAGE = "найди все сработки связанные с образованием за январь 2026"
 #USER_MESSAGE = "построй график распределения количества сработок по age category за январь 2026"
 
 TOOL_STATUS_LABELS = {

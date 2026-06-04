@@ -11,8 +11,8 @@ subagents -> custom tools -> ``create_deep_agent``).
 - Конфиг и пороги: ключи в ``resources/config/defaults.json`` (offload, skills, лимиты).
 - Поведение supervisor/critic: правь общие prompts в ``core/prompts.py`` (без доменной логики).
 - Доменные знания: добавляй/редактируй ``resources/skills/<name>/SKILL.md`` — менять код не нужно.
-- Внутренний critic: включается флагом ``enable_retrieval_critic`` (см. шаг 5). При
-  ``false`` critic не подключается и не влияет на сборку.
+- Prompt v2: supervisor и data-retrieval-agent используют ``core/prompts_v2.py``; внутренний
+  critic не подключается.
 - Новые subagents: расширь ``build_analytics_subagent_specs`` в ``retrieval_subagents.py``.
 
 Служебные функции:
@@ -47,18 +47,16 @@ from langchain.agents.middleware import (
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
 
-from deep_agent_test.core.agent_specs import DATA_RETRIEVAL_CRITIC_AGENT_NAME
-from deep_agent_test.middlewares.critic_loop_cap import CriticLoopCapMiddleware
 from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
+from deep_agent_test.core.python_sandbox import build_python_sandbox
 from deep_agent_test.tools.data_tools_wrapper import wrap_data_tools_with_query_code
 from deep_agent_test.tools.execute_python_code import build_execute_python_code_tool
 from deep_agent_test.tools.load_skills import build_load_skills_tool
-from deep_agent_test.core.prompts import (
+from deep_agent_test.core.prompts_v2 import (
     BUILTIN_TOOLS_PROMPT_APPEND_RU,
     RUSSIAN_TOOL_DESCRIPTION_OVERRIDES,
     SYSTEM_PROMPT,
 )
-from deep_agent_test.core.python_sandbox import build_python_sandbox
 from deep_agent_test.core.settings import DeepAgentSettings, load_deep_agent_settings
 from deep_agent_test.middlewares.skills_context import PreloadedSkillsContextMiddleware
 from deep_agent_test.middlewares.tool_loop_guard import ToolLoopGuardMiddleware
@@ -124,8 +122,8 @@ def build_analytics_deep_agent(
     """Собирает аналитический DeepAgent supervisor по шагам инициализации.
 
     Это главная точка сборки агента. Сборка нативная для DeepAgents: supervisor получает
-    встроенные tools (`write_todos`, filesystem, `task`), два custom middleware, custom
-    tools `execute_python_code` и `load_skills`, и один subagent с внутренним critic.
+    встроенные tools (`write_todos`, `task`), middleware, custom tools `execute_python_code` и `load_skills`
+    и один subagent без внутреннего critic.
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
 
@@ -138,19 +136,16 @@ def build_analytics_deep_agent(
        ContextEditingMiddleware (очистка старых tool-результатов при лимите токенов),
        FilesystemFileSearchMiddleware (glob/grep поиск по spill-файлам),
        ToolLoopGuardMiddleware (защита от зацикливания на повторных вызовах tool),
-       CriticLoopCapMiddleware (лимит циклов critic — только при включённом critic) и
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
     4. Backend — где DeepAgents видит skills и spill-файлы.
-    5. Subagents — `data-retrieval-agent`; внутренний `data-retrieval-critic` подключается
-       по флагу ``settings.enable_retrieval_critic`` (при ``false`` субагент отдаёт отчёт
-       supervisor-у напрямую). Кастомизация: ``build_analytics_subagent_specs``.
-    6. Custom tools supervisor — `execute_python_code` (расчёты, чтение `.pkl`) и
-       `load_skills` (пакетная загрузка skills).
+    5. Subagents — `data-retrieval-agent` без внутреннего critic; субагент отдаёт отчёт
+       supervisor-у напрямую. Кастомизация: ``build_analytics_subagent_specs``.
+    6. Custom tools supervisor — `execute_python_code` (расчёты, чтение `.pkl`) и `load_skills` (пакетная загрузка skills).
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
-        model: Chat model LangChain для supervisor, subagent и critic.
+        model: Chat model LangChain для supervisor и subagent.
         settings: Готовые настройки; если ``None`` — загружаются из JSON-конфига.
         data_tools: Готовые tools чтения данных; если ``None`` — берутся из фабрики конфига.
 
@@ -226,12 +221,6 @@ def build_analytics_deep_agent(
         tool_descriptions=RUSSIAN_TOOL_DESCRIPTION_OVERRIDES,
         system_prompt_append=BUILTIN_TOOLS_PROMPT_APPEND_RU,
     )
-    # 3g. Critic loop cap: ограничивает число циклов task(data-retrieval-critic) внутри
-    #     data-retrieval-agent, чтобы он не зацикливался на проверках до лимита рекурсии.
-    critic_loop_cap_middleware = CriticLoopCapMiddleware(
-        critic_subagent_type=DATA_RETRIEVAL_CRITIC_AGENT_NAME,
-        max_critic_iterations=settings.max_critic_iterations,
-    )
     # 3h. Бюджет шагов субагента: нативный ModelCallLimitMiddleware ограничивает число
     #     ходов модели внутри одного запуска data-retrieval-agent. По исчерпании лимита
     #     (exit_behavior="end") субагент мягко завершается и возвращает supervisor-у то,
@@ -240,7 +229,7 @@ def build_analytics_deep_agent(
         run_limit=settings.max_subagent_model_calls,
         exit_behavior="end",
     )
-    # Базовые middleware без skills — общие для supervisor, data-retrieval-agent и critic.
+    # Базовые middleware без skills — общие для supervisor и data-retrieval-agent.
     base_middleware = [
         tool_output_file_middleware,
         context_editing_middleware,
@@ -248,37 +237,34 @@ def build_analytics_deep_agent(
         tool_loop_guard_middleware,
         tool_descriptions_middleware,
     ]
-    # Supervisor выбирает skills; data-retrieval-agent переиспользует тот же выбор, ограничен
-    # лимитом циклов critic и бюджетом шагов на запуск; critic — без skills, без cap и без
-    # step-бюджета (сам критика не вызывает и работает в отдельном вложенном запуске).
-    # Critic loop cap нужен только когда critic включён; при отключённом critic он бесполезен.
+    # Supervisor выбирает skills; data-retrieval-agent переиспользует тот же выбор и ограничен
+    # бюджетом шагов на запуск. В v2 critic не подключается.
     supervisor_middleware = [supervisor_skills_middleware, *base_middleware]
     subagent_middleware = [
         subagent_skills_middleware,
         *base_middleware,
-        *([critic_loop_cap_middleware] if settings.enable_retrieval_critic else []),
         subagent_step_limit_middleware,
     ]
-    critic_middleware = list(base_middleware)
 
     # Шаг 4. Backend skills/spill-файлов.
     backend = build_skills_backend(settings, tool_outputs_dir=session_tool_outputs_dir)
 
-    # Шаг 5. Subagent чтения данных с внутренним critic (critic отключается флагом
-    # settings.enable_retrieval_critic — тогда subagent отдаёт отчёт supervisor-у напрямую).
+    # Python-tool нужен supervisor-у и subagent-у для обработки offload `.pkl` без вызова generic `execute`.
+    python_sandbox = build_python_sandbox(settings, tool_outputs_dir=session_tool_outputs_dir)
+    python_tool = build_execute_python_code_tool(python_sandbox)
+
+    # Шаг 5. Subagent чтения данных без внутреннего critic: он отдаёт отчёт supervisor-у напрямую.
     subagents = build_analytics_subagent_specs(
         settings=settings,
-        data_tools=data_tools,
+        data_tools=[*data_tools, python_tool],
         common_middleware=subagent_middleware,
-        critic_middleware=critic_middleware,
+        critic_middleware=None,
         model=model,
         backend=backend,
-        enable_critic=settings.enable_retrieval_critic,
+        enable_critic=False,
     )
 
     # Шаг 6. Custom tools supervisor: выполнение Python-кода и пакетная загрузка skills.
-    python_sandbox = build_python_sandbox(settings)
-    python_tool = build_execute_python_code_tool(python_sandbox)
     load_skills_tool = build_load_skills_tool(settings)
 
     # Шаг 7. Финальная сборка DeepAgents supervisor.
@@ -287,7 +273,6 @@ def build_analytics_deep_agent(
         tools=[python_tool, load_skills_tool],
         system_prompt=SYSTEM_PROMPT,
         subagents=subagents,
-        skills=[settings.skills_virtual_dir],
         backend=backend,
         middleware=supervisor_middleware,
         checkpointer=MemorySaver(),

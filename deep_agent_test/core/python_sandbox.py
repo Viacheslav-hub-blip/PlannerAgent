@@ -124,7 +124,10 @@ class DeepAgentPythonSandbox:
             pass
 
 
-def build_python_sandbox(settings: DeepAgentSettings | None = None) -> DeepAgentPythonSandbox:
+def build_python_sandbox(
+    settings: DeepAgentSettings | None = None,
+    tool_outputs_dir: Path | None = None,
+) -> DeepAgentPythonSandbox:
     """Собирает persistent sandbox для ``execute_python_code``.
 
     Рабочая директория и разрешённые для чтения корни — это ``PROJECT_ROOT`` и папка
@@ -132,6 +135,8 @@ def build_python_sandbox(settings: DeepAgentSettings | None = None) -> DeepAgent
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
+        tool_outputs_dir: Папка текущей сессии для сохранения артефактов; если ``None``,
+            используется базовая папка из настроек.
 
     Returns:
         Готовый ``DeepAgentPythonSandbox`` с seed-helpers.
@@ -140,11 +145,12 @@ def build_python_sandbox(settings: DeepAgentSettings | None = None) -> DeepAgent
     from deep_agent_test.core.settings import load_deep_agent_settings
 
     settings = settings or load_deep_agent_settings()
+    resolved_tool_outputs_dir = (tool_outputs_dir or settings.tool_outputs_dir).resolve()
     readable_roots = (PROJECT_ROOT.resolve(), settings.tool_outputs_dir.resolve())
     return DeepAgentPythonSandbox(
         working_directory=PROJECT_ROOT.resolve(),
         readable_roots=readable_roots,
-        tool_outputs_dir=settings.tool_outputs_dir,
+        tool_outputs_dir=resolved_tool_outputs_dir,
     )
 
 

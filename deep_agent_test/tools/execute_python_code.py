@@ -195,6 +195,50 @@ class PythonExecutionResult:
         return json.dumps(payload, ensure_ascii=False, default=_json_default)
 
 
+EXECUTE_PYTHON_CODE_DESCRIPTION = """
+Runs Python code for calculations, filtering, joins, aggregations, normalization, parsing pickle/CSV/JSON files, and
+preparing tabular results.
+
+Tool name:
+- Use exactly `execute_python_code`.
+- Do not call generic `execute` for Python snippets. Generic `execute` has a different schema and is not this tool.
+
+Use when:
+- a large `.pkl` was saved by middleware after `load_data`;
+- you need to process `list[dict]`, a DataFrame, or a data file;
+- you need to compute metrics, filter rows, sort events, or build a final table;
+- you need to save a requested chart or other generated artifact under `TOOL_OUTPUTS_DIR`;
+- a workflow skill requires working with the full offloaded result instead of preview rows.
+
+Do not use:
+- to read source tables directly; use `load_data` inside `data-retrieval-agent`;
+- as the final user-facing answer.
+
+Available sandbox helpers:
+- `PROJECT_ROOT`: project root;
+- `TOOL_OUTPUTS_DIR`: current session directory for `.pkl` files and generated artifacts;
+- `read_pickle_file(path)`: reads a pickle file by absolute path from tool output;
+- `describe_pickle_file(path)`: returns type, rows_count, columns, and preview without full processing;
+- `rows_to_dataframe(rows)`: converts `list[dict]` to a pandas DataFrame;
+- `pd`, `np`: pandas/numpy when installed.
+
+Example:
+rows = read_pickle_file(r"<saved_file from tool output>")
+df = rows_to_dataframe(rows)
+print(df.shape)
+print(df.head(3).to_string())
+result = df
+
+Rules:
+- pass Python source in the `code` argument;
+- set `target_variable` for a named result, or use `print()` and read `execution_output`;
+- if the tool returns an error JSON, read `error`, `traceback`, `possible_causes`, `solution_options`, and
+  `retry_guidance`, then fix the code and retry;
+- do not delete files or directories;
+- `os` may be imported for directory inspection, but shell calls and deletion are forbidden.
+""".strip()
+
+
 class ExecutePythonCodeInput(BaseModel):
     """Аргументы tool ``execute_python_code``: код, имя переменной результата, описание."""
 

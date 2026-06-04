@@ -20,7 +20,7 @@ from deep_agent_test.core.agent_specs import (
     DataRetrievalCriticVerdict,
 )
 from deep_agent_test.tools.inspect_artifact import build_inspect_artifact_tool
-from deep_agent_test.core.prompts import (
+from deep_agent_test.core.prompts_v2 import (
     DATA_RETRIEVAL_CRITIC_PROMPT,
     DATA_RETRIEVAL_INNER_TASK_PROMPT,
     DATA_RETRIEVAL_PROMPT,

@@ -16,7 +16,7 @@ from langchain_gigachat import GigaChat
 model = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     # api_key="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",
-    api_key="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",
+    api_key="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",
     # model="deepseek/deepseek-v4-pro",
     #model="nvidia/nemotron-3-super-120b-a12b",
     model="qwen/qwen3.5-35b-a3b",

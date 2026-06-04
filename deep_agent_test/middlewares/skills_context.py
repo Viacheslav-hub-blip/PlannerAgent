@@ -32,7 +32,10 @@ from pydantic import BaseModel, Field
 from deepagents.middleware._utils import append_to_system_message
 
 from deep_agent_test.core.state import AnalyticsAgentState
-from deep_agent_test.core.prompts import PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE, SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE
+from deep_agent_test.core.prompts_v2 import (
+    PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE,
+)
 
 
 class SelectedSkillPaths(BaseModel):
@@ -158,6 +161,8 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
             skills_root=self.skills_root,
             skills_virtual_dir=self.skills_virtual_dir,
         )
+        loaded_path_set = set(loaded_paths)
+        skills_index = [item for item in skills_index if item["path"] not in loaded_path_set]
         self.shared_selection["entry"] = {
             "user_query": user_query,
             "context": context,

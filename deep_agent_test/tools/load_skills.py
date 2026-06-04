@@ -34,29 +34,25 @@ from deep_agent_test.middlewares.skills_context import (
 LOAD_SKILLS_TOOL_NAME = "load_skills"
 
 LOAD_SKILLS_DESCRIPTION = """
-Загружает контент выбранных skills (`SKILL.md`) ОДНИМ вызовом.
+Loads selected skill content (`SKILL.md`) in one call.
 
-Когда использовать:
-- нужного skill нет среди предзагруженных (раздел Preloaded Skills);
-- контент предзагруженного skill неполон и нужен дополнительный источник;
-- по Skills Index видно, что для задачи нужен ещё один skill.
+Use when:
+- a required skill is not present in the Preloaded Skills section;
+- a preloaded skill is incomplete and another skill from Skills Index is needed;
+- Skills Index shows that another skill is required for the current task.
 
-Что делает:
-- читает каждый указанный `SKILL.md` и возвращает их дословный контент;
-- перед контентом каждого skill ставит его имя и виртуальный путь;
-- пропускает skills, уже загруженные ранее (middleware preload, прошлые вызовы
-  load_skills и список из `already_loaded`), чтобы не дублировать контекст supervisor.
+What it does:
+- reads each requested `SKILL.md` and returns its verbatim content;
+- prefixes every loaded skill with its name and virtual path;
+- skips skills that were already loaded through middleware preload, previous `load_skills` calls, or `already_loaded`.
 
-Аргументы:
-- `skill_names` — имена или виртуальные пути нужных skills из Skills Index ЧЕРЕЗ ЗАПЯТУЮ
-  в одной строке (например: `skill-a, skill-b` или
-  `/skills/skill-a/SKILL.md, /skills/skill-b/SKILL.md`);
-- `already_loaded` — уже загруженные skills через запятую, которые НЕ нужно грузить
-  повторно. Можно оставить пустым.
+Arguments:
+- `skill_names`: comma-separated skill names or virtual paths from Skills Index in one string, for example
+  `skill-a, skill-b` or `/skills/skill-a/SKILL.md, /skills/skill-b/SKILL.md`;
+- `already_loaded`: comma-separated skills that should not be loaded again. This can be empty.
 
-Для создания, изменения или изучения структуры skill используй стандартные файловые
-инструменты (`ls`, `read_file`, `write_file`). `load_skills` нужен только для удобной
-пакетной загрузки уже известных skills в контекст.
+Use filesystem tools (`ls`, `read_file`, `write_file`) to inspect or edit skill structure. Use `load_skills` only for
+batch loading known skills into the supervisor context.
 """.strip()
 
 
