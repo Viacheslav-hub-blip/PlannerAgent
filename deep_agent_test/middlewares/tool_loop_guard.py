@@ -1,26 +1,23 @@
-"""Middleware защиты от зацикливания на подряд идущих вызовах одного и того же tool.
+"""Middleware защиты от циклов идентичных tool calls.
 
-Назначение: не дать агенту бесконечно дёргать один и тот же инструмент без содержательного
-прогресса. Guard различает косметические повторы и нормальное исправление ошибки: если tool
-вернул ошибку валидации, модель должна сделать один явно исправленный вызов или завершить шаг,
-а не повторять те же аргументы.
-
-Логика: перед выполнением tool middleware считает, сколько раз ПОДРЯД (без иных tool и без
-текстового ответа модели между ними) вызывался этот же tool. Если длина серии достигла
-``max_consecutive_tool_calls``, инструмент НЕ выполняется — вместо результата возвращается
-ToolMessage со статусом error, который просит сменить подход (другой инструмент/шаг плана)
-или завершить шаг по уже полученным данным. Это разрывает цикл, но не убивает прогон.
+Содержит:
+- ToolLoopGuardMiddleware: блокировка серии идентичных вызовов.
+- _count_trailing_identical_tool_calls: подсчёт серии по имени и аргументам.
+- _tool_call_signature: построение канонической сигнатуры вызова.
+- _normalize_tool_value: нормализация вложенных аргументов.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from deep_agent_test.core.state import extract_state_messages
@@ -28,12 +25,11 @@ from deep_agent_test.core.state import extract_state_messages
 
 @dataclass(frozen=True)
 class ToolLoopGuardMiddleware(AgentMiddleware):
-    """Блокирует вызов tool после N подряд идущих вызовов того же tool.
+    """Блокирует вызов tool после N подряд идущих идентичных вызовов.
 
     Args:
-        max_consecutive_tool_calls: Сколько подряд идущих вызовов одного tool разрешено.
-            На следующем вызове того же tool (без других действий между ними) инструмент
-            не выполняется, а модель получает инструкцию сменить подход или завершить шаг.
+        max_consecutive_tool_calls: Сколько идентичных вызовов подряд разрешено.
+            Изменение нормализованных аргументов начинает новую серию.
         exclude_tools: Имена инструментов, к которым guard не применяется.
     """
 
@@ -72,51 +68,137 @@ class ToolLoopGuardMiddleware(AgentMiddleware):
         if not tool_name or tool_name in self.exclude_tools:
             return None
 
-        # Серия включает текущий вызов: его AIMessage уже в истории к моменту wrap_tool_call.
-        consecutive_count = _count_trailing_same_tool_calls(request.state, tool_name)
+        # Текущий AIMessage уже находится в state к моменту wrap_tool_call.
+        consecutive_count = _count_trailing_identical_tool_calls(
+            request.state,
+            tool_call,
+        )
         if consecutive_count <= self.max_consecutive_tool_calls:
             return None
 
-        return ToolMessage(
-            content=(
-                f"Вызов инструмента `{tool_name}` заблокирован: он вызван "
-                f"{self.max_consecutive_tool_calls} раз(а) подряд без других действий "
-                "(обнаружен цикл повторных вызовов). Повторять тот же инструмент с теми же "
-                "аргументами или косметически менять `max_rows` запрещено. "
-                "Если предыдущий результат был ошибкой валидации, разрешён только явно "
-                "исправленный вызов, который устраняет причину ошибки: добавляет обязательные "
-                "`select_columns`, исправляет отсутствующие поля или неверный фильтр. "
-                "Если такого исправления нет, смени подход или заверши шаг и верни результат "
-                "по уже полученным данным, честно отметив ограничение."
+        payload = {
+            "error_category": "technical_loop",
+            "failing_input": {
+                "tool": tool_name,
+                "args": _normalize_tool_value(tool_call.get("args") or {}),
+            },
+            "expected": (
+                "Изменённые аргументы, новый подтверждённый источник контекста "
+                "или завершение шага по уже полученным данным."
             ),
+            "observed": (
+                f"{consecutive_count} идентичных вызовов подряд при разрешённом "
+                f"максимуме {self.max_consecutive_tool_calls}."
+            ),
+            "retryable": False,
+            "correction_hint": (
+                "Не повторяй тот же вызов. Исправь аргументы по фактической ошибке, "
+                "загрузи дополнительный подтверждённый context другим вызовом или заверши шаг."
+            ),
+        }
+        return ToolMessage(
+            content=json.dumps(payload, ensure_ascii=False, sort_keys=True),
             tool_call_id=str(tool_call.get("id") or ""),
             name=tool_name,
             status="error",
         )
 
 
-def _count_trailing_same_tool_calls(state: Any, tool_name: str) -> int:
-    """Считает длину серии подряд идущих вызовов одного tool в конце истории.
+def _count_trailing_identical_tool_calls(
+    state: Any,
+    current_tool_call: dict[str, Any],
+) -> int:
+    """Считает серию идентичных вызовов до текущего tool call включительно.
 
-    Серия прерывается, как только встречается AIMessage, который вызывает другой tool или
-    отвечает текстом без tool_calls. Параллельные вызовы в одном AIMessage учитываются
-    поштучно, только если ВСЕ они адресованы одному и тому же ``tool_name``.
+    Args:
+        state: State агента с историей сообщений.
+        current_tool_call: Текущий вызов с ``id``, ``name`` и ``args``.
+
+    Returns:
+        Число подряд идущих вызовов с той же канонической сигнатурой.
     """
 
     messages = extract_state_messages(state)
-    count = 0
-    for message in reversed(messages):
+    calls: list[dict[str, Any] | None] = []
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            calls.append(None)
+            continue
         if not isinstance(message, AIMessage):
             continue
         tool_calls = getattr(message, "tool_calls", None) or []
         if not tool_calls:
+            calls.append(None)
+            continue
+        calls.extend(tool_call for tool_call in tool_calls if isinstance(tool_call, dict))
+
+    current_id = str(current_tool_call.get("id") or "")
+    current_index = -1
+    if current_id:
+        for index in range(len(calls) - 1, -1, -1):
+            if calls[index] is not None and str(calls[index].get("id") or "") == current_id:
+                current_index = index
+                break
+    if current_index < 0:
+        calls.append(current_tool_call)
+        current_index = len(calls) - 1
+
+    signature = _tool_call_signature(current_tool_call)
+    count = 0
+    for tool_call in reversed(calls[: current_index + 1]):
+        if tool_call is None:
             break
-        names = [str(tool_call.get("name") or "") for tool_call in tool_calls]
-        if all(name == tool_name for name in names):
-            count += len(names)
-        else:
+        if _tool_call_signature(tool_call) != signature:
             break
+        count += 1
     return count
 
 
-__all__ = ["ToolLoopGuardMiddleware"]
+def _tool_call_signature(tool_call: dict[str, Any]) -> tuple[str, str]:
+    """Строит каноническую сигнатуру tool call.
+
+    Args:
+        tool_call: Вызов инструмента с именем и аргументами.
+
+    Returns:
+        Кортеж из имени tool и JSON нормализованных аргументов.
+    """
+
+    tool_name = str(tool_call.get("name") or "")
+    normalized_args = _normalize_tool_value(tool_call.get("args") or {})
+    return tool_name, json.dumps(
+        normalized_args,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def _normalize_tool_value(value: Any) -> Any:
+    """Нормализует вложенное значение аргументов для сравнения.
+
+    Args:
+        value: Скаляр, mapping или последовательность из tool args.
+
+    Returns:
+        JSON-совместимое значение со стабильным порядком ключей и пробелов.
+    """
+
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_tool_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_tool_value(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+__all__ = [
+    "ToolLoopGuardMiddleware",
+    "_count_trailing_identical_tool_calls",
+    "_tool_call_signature",
+]

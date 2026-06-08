@@ -61,8 +61,6 @@
 - `context_edit_*` - очистка старых tool results из контекста.
 - `max_consecutive_tool_calls` - защита от повторяющихся tool-вызовов.
 - `max_subagent_model_calls` - лимит ходов subagent-а.
-- `max_critic_iterations` - лимит внутренних проверок critic-а.
-- `enable_retrieval_critic` - включение или отключение critic-а.
 
 Контрольная точка: ты должен уметь создать override JSON и подключить его через `DEEP_AGENT_CONFIG_PATH`.
 
@@ -96,8 +94,8 @@
 
 - `SYSTEM_PROMPT` - поведение supervisor-а.
 - `DATA_RETRIEVAL_PROMPT` - поведение subagent-а чтения данных.
-- `DATA_RETRIEVAL_PROMPT_WITHOUT_CRITIC` - упрощенное поведение без critic-а.
-- `DATA_RETRIEVAL_CRITIC_PROMPT` - правила проверки ответа subagent-а.
+- `SUPERVISOR_TOOLS_PROMPT_APPEND` - доступные supervisor-у tools.
+- `DATA_RETRIEVAL_TOOLS_PROMPT_APPEND` - доступные data-retrieval-agent tools.
 - prompts для skills context.
 
 Правило разработки: доменные знания о таблицах не добавляй в prompts. Для них есть `resources/skills`.
@@ -119,21 +117,19 @@
 
 Контрольная точка: ты должен понимать, почему middleware не должны напрямую предполагать один формат state.
 
-## 9. Изучи subagents и critic
+## 9. Изучи subagents
 
-Файлы:
+Файл:
 
 - `deep_agent_test/core/retrieval_subagents.py`
-- `deep_agent_test/core/agent_specs.py`
 
-Разбери два режима:
+Разбери:
 
-- `enable_retrieval_critic=false`: `data-retrieval-agent` читает таблицы и сразу возвращает отчет supervisor-у.
-- `enable_retrieval_critic=true`: `data-retrieval-agent` получает внутренний `task(data-retrieval-critic)`, который проверяет результат.
+- как собирается spec `data-retrieval-agent`;
+- какие tools и middleware получает subagent;
+- почему subagent сам проверяет отчёт по skills и tool outputs перед возвратом supervisor-у.
 
-В `agent_specs.py` изучи `DataRetrievalCriticVerdict`. Это structured output critic-а, поэтому его схема должна оставаться понятной и документированной.
-
-Контрольная точка: ты должен уметь объяснить, почему critic не получает skills и почему у него отдельные filesystem permissions.
+Контрольная точка: ты должен уметь объяснить границу ответственности supervisor-а и data-retrieval-agent.
 
 ## 10. Изучи инструмент чтения данных
 
@@ -249,23 +245,27 @@
 Файлы:
 
 - `deep_agent_test/middlewares/tool_loop_guard.py`
-- `deep_agent_test/middlewares/critic_loop_cap.py`
+- `deep_agent_test/middlewares/tool_visibility.py`
+- `deep_agent_test/middlewares/tool_descriptions.py`
 
 `ToolLoopGuardMiddleware` защищает от повторяющихся вызовов одного tool.
 
-`CriticLoopCapMiddleware` ограничивает число вызовов `data-retrieval-critic`.
+`ToolVisibilityMiddleware` оставляет каждому агенту только разрешённые tools.
 
-Контрольная точка: ты должен понимать, какие проблемы решаются лимитами tool calls, model calls и recursion limit, и почему это разные ограничения.
+`PromptToolDescriptionsMiddleware` подменяет descriptions tools и добавляет agent-specific prompt-блок.
 
-## 16. Изучи проверку artifact-ов
+Контрольная точка: ты должен понимать, какие проблемы решаются allowlist tools, лимитами tool calls, model calls и recursion limit.
 
-Файл:
+## 16. Изучи контракт доступных tools
 
-- `deep_agent_test/tools/inspect_artifact.py`
+Вернись в:
 
-Этот tool нужен critic-у, чтобы проверить существование и базовое содержимое файлов, особенно pickle-файлов из `tool_outputs_dir`.
+- `deep_agent_test/core/analytics_deep_agent.py`
+- `deep_agent_test/core/prompts.py`
 
-Контрольная точка: ты должен понимать, почему critic должен иметь только read/list permissions и не должен изменять файлы.
+Сопоставь `SUPERVISOR_TOOL_NAMES`, `DATA_RETRIEVAL_TOOL_NAMES` и prompt-блоки обеих ролей.
+
+Контрольная точка: список реально видимых tools и текст prompt должны совпадать.
 
 ## 17. Изучи backend
 
@@ -365,7 +365,7 @@ python -m compileall deep_agent_test
 
 8. Проверь `execute_python_code` на чтении созданного `.pkl`.
 
-9. Включи `enable_retrieval_critic=true` в override-конфиге и изучи отличие flow.
+9. Проверь, что supervisor и data-retrieval-agent видят только свои allowlist tools.
 
 10. Только после этого меняй архитектуру.
 
@@ -386,29 +386,19 @@ python -m compileall deep_agent_test
   -> итоговый ответ пользователю
 ```
 
-Если включен critic, внутри `data-retrieval-agent` появляется дополнительный шаг:
-
-```text
-data-retrieval-agent
-  -> read_table
-  -> task(data-retrieval-critic)
-  -> inspect_artifact_path
-  -> исправление или финальный отчет supervisor-у
-```
-
 ## 22. Чеклист понимания на 100%
 
 Ты хорошо знаешь проект, если можешь без подсказок:
 
 - Объяснить, как `run.py` собирает агента.
 - Назвать все обязательные поля `defaults.json`.
-- Объяснить разницу между supervisor, data-retrieval-agent и critic.
+- Объяснить разницу между supervisor и data-retrieval-agent.
 - Добавить новый skill без изменения Python-кода.
 - Добавить новый оператор `read_table`.
 - Объяснить, когда результат tool уходит в pickle.
 - Прочитать `.pkl` через `execute_python_code`.
 - Объяснить, как работает shared selection skills между supervisor и subagent.
-- Настроить запуск без critic-а и с critic-ом.
+- Настроить разные allowlist tools для supervisor-а и data-retrieval-agent.
 - Подключить другую фабрику data-tools через config.
 - Найти место, где нужно менять prompts.
 - Найти место, где настраивается backend виртуальных путей.

@@ -1,7 +1,7 @@
-"""Минимальный запуск аналитического DeepAgent на fake-данных.
+"""Минимальный запуск аналитического DeepAgent на настроенном источнике данных.
 
 Содержит:
-- main: инициализация fake-инструмента чтения данных, trace-логгера, агента и один invoke.
+- main: инициализация инструмента чтения данных, trace-логгера, агента и один invoke.
 - main_stream: запуск агента со стримингом человекочитаемых промежуточных шагов.
 - _print_v3_progress: вывод typed-событий ``stream_events(version="v3")``.
 - _print_tool_call_progress: вывод статуса одного tool call.
@@ -17,13 +17,11 @@ import json
 from typing import Any
 
 from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
+from deep_agent_test.core import build_data_tools
 from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
-from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
 from model import model
 
-USER_MESSAGE = "что делал клиент в день сработки и за день до сработки? id сработки 3486d84b-4eba-4ba4-b044-94764fc9e7a4"
-#USER_MESSAGE = "найди все сработки связанные с образованием за январь 2026"
-#USER_MESSAGE = "построй график распределения количества сработок по age category за январь 2026"
+USER_MESSAGE = "найди все сработки связанные с образованием за январь 2026"
 
 TOOL_STATUS_LABELS = {
     "write_todos": "Составляю план",
@@ -31,8 +29,6 @@ TOOL_STATUS_LABELS = {
     "task": "Запускаю subagent",
     "load_data": "Читаю данные",
     "execute_python_code": "Анализирую данные",
-    "write_file": "Сохраняю файл",
-    "edit_file": "Обновляю файл",
 }
 
 
@@ -47,7 +43,7 @@ def main() -> int:
     """
 
     settings = load_deep_agent_settings()
-    data_tools = build_fake_spark_data_tools(query_parser_model=model)
+    data_tools = build_data_tools(settings)
     agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
     trace_file_path = build_trace_file_path(settings.trace_log_dir)
     trace_handler = FileTraceCallbackHandler(trace_file_path)
@@ -75,7 +71,7 @@ def main_stream() -> int:
     """
 
     settings = load_deep_agent_settings()
-    data_tools = build_fake_spark_data_tools(query_parser_model=model)
+    data_tools = build_data_tools(settings)
     agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
     trace_file_path = build_trace_file_path(settings.trace_log_dir)
     trace_handler = FileTraceCallbackHandler(trace_file_path)

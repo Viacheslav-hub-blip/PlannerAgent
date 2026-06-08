@@ -38,8 +38,12 @@ Loads selected skill content (`SKILL.md`) in one call.
 
 Use when:
 - a required skill is not present in the Preloaded Skills section;
-- a preloaded skill is incomplete and another skill from Skills Index is needed;
-- Skills Index shows that another skill is required for the current task.
+- a loaded skill explicitly references another known skill path;
+- the supervisor already knows the exact skill name or virtual path from verified context.
+
+Do not use when:
+- you need `fields.md`, `joins.md`, or another auxiliary file. `load_skills` loads only `SKILL.md` files from the
+  Skills Index. Use filesystem tools for auxiliary files.
 
 What it does:
 - reads each requested `SKILL.md` and returns its verbatim content;
@@ -47,12 +51,12 @@ What it does:
 - skips skills that were already loaded through middleware preload, previous `load_skills` calls, or `already_loaded`.
 
 Arguments:
-- `skill_names`: comma-separated skill names or virtual paths from Skills Index in one string, for example
+- `skill_names`: comma-separated known skill names or virtual paths in one string, for example
   `skill-a, skill-b` or `/skills/skill-a/SKILL.md, /skills/skill-b/SKILL.md`;
 - `already_loaded`: comma-separated skills that should not be loaded again. This can be empty.
 
-Use filesystem tools (`ls`, `read_file`, `write_file`) to inspect or edit skill structure. Use `load_skills` only for
-batch loading known skills into the supervisor context.
+Use `load_skills` only for batch loading verified skills into the supervisor context. Do not guess names and do not
+request every available skill. Do not pass paths like `/skills/name/fields.md`; they are not skills.
 """.strip()
 
 

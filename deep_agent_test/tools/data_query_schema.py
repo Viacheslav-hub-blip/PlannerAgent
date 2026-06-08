@@ -1,6 +1,7 @@
 """Схемы аргументов для инструмента ``load_data``.
 
 Содержит:
+- normalize_filter_operator: нормализация оператора фильтра.
 - FilterCondition: схема одного фильтра строк таблицы.
 - DerivedColumnSpec: схема одной вычисляемой колонки.
 - AggregationSpec: схема одного агрегата.
@@ -224,7 +225,8 @@ class ReadTableInput(BaseModel):
     """Аргументы инструмента чтения данных ``load_data``.
 
     Args:
-        query: SQL-подобный текст запроса с alias таблицы, явным периодом и колонками результата.
+        query: SQL-подобный текст запроса с alias таблицы и колонками результата.
+            Период обязателен, кроме точечного поиска по точному ``event_id``.
 
     Returns:
         Валидированный SQL-подобный запрос для ``load_data``.
@@ -233,7 +235,9 @@ class ReadTableInput(BaseModel):
     query: str = Field(
         description=(
             "SQL-подобный запрос. Обязателен короткий alias таблицы, явный SELECT без '*', "
-            "и обязательный период через PERIOD <date_column> FROM 'YYYYMMDD' TO 'YYYYMMDD'. "
+            "и период через PERIOD <date_column> FROM 'YYYYMMDD' TO 'YYYYMMDD'. "
+            "Период можно не указывать только для точечного WHERE event_id = '<точный_id>'; "
+            "такой lookup нужен, чтобы сначала получить event_dt и клиентский ключ. "
             "Фильтры записывай в WHERE обычными SQL-операторами: =, !=, <>, >, >=, <, <=, "
             "LIKE, CONTAINS, IN, BETWEEN."
         ),

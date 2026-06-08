@@ -4,7 +4,22 @@
 - ReadTableInput: структурированная схема аргументов инструмента ``load_data``.
 - build_spark_data_tools: сборка LangChain tool поверх готовой Spark session.
 - _extract_query_args_with_llm: LLM-разбор SQL-подобного запроса в аргументы выборки.
+- _invoke_query_parser_json_fallback: JSON-fallback вызов LLM-нормализатора.
+- _repair_parsed_query_with_llm: исправление структурированного разбора через LLM.
+- _format_parsed_query_debug: компактное описание результата парсинга.
+- _message_text: извлечение текста из ответа модели.
+- _extract_json_object: извлечение JSON-объекта из текста.
+- _normalize_query_text_for_parser: нормализация query перед LLM-разбором.
+- _parsed_query_to_read_args: преобразование ParsedDataQuery в аргументы чтения.
+- _validate_parsed_query: техническая валидация распарсенного запроса.
+- _normalize_table_alias: нормализация alias таблицы.
+- _normalize_column_name: нормализация имени колонки.
+- _normalize_filter_item: нормализация одного фильтра.
+- _normalize_derived_item: нормализация одной вычисляемой колонки.
+- _normalize_aggregation_item: нормализация одного агрегата.
+- _normalize_order_item: нормализация одного правила сортировки.
 - _read_table: выполнение выборки через Spark DataFrame API.
+- _dump_model: безопасный dump pydantic-модели.
 - _resolve_table_name: преобразование короткого alias таблицы в полное Spark-имя.
 - _available_table_aliases_text: форматирование списка доступных alias таблиц.
 - _apply_derived_columns: добавление вычисляемых колонок.
@@ -17,10 +32,13 @@
 - _parse_columns: разбор списка колонок.
 - _split_items: разбор списка инструкций.
 - _parse_filter_item: разбор одного фильтра.
+- _parse_filter_values: разбор значений фильтра.
 - _parse_derived_item: разбор одной вычисляемой колонки.
 - _parse_aggregation_item: разбор одного агрегата.
 - _parse_order_item: разбор одной сортировки.
 - _parse_scalar: приведение строкового значения к простому типу.
+- _has_required_period: проверка временного интервала.
+- _has_exact_event_id_filter: проверка точечного lookup по event_id.
 - _validate_columns: проверка наличия колонок в DataFrame.
 - _format_empty_select_error: человекочитаемая ошибка для пустой обычной выборки.
 - _format_missing_columns: человекочитаемая ошибка по отсутствующим колонкам.
@@ -47,11 +65,14 @@ READ_TABLE_DESCRIPTION = (
     "Когда использовать:\n"
     "- нужно прочитать строки, события или агрегаты из таблиц hits, cards, uko, history_automarking "
     "или demo_client_timeline;\n"
-    "- известны таблица, период, нужные колонки и фильтры по ключам/значениям;\n"
+    "- известны таблица, нужные колонки и фильтры по ключам/значениям;\n"
+    "- известен точный event_id, но дата события ещё неизвестна: выполни точечный lookup без периода, "
+    "получи event_dt и затем используй период в следующих выборках;\n"
     "- нужно проверить наличие записей, получить фактические поля события или посчитать агрегат "
     "по данным источника.\n\n"
     "Когда не использовать:\n"
-    "- нет периода, даты начала или даты конца: сначала запроси недостающие данные;\n"
+    "- нет периода, даты начала или даты конца и нет точного фильтра event_id = <id>: "
+    "сначала запроси недостающие данные;\n"
     "- нужно обработать уже выгруженный pickle/offload-файл: используй код поверх сохраненного результата, "
     "а не повторный load_data;\n"
     "- нужна произвольная Spark SQL-команда, join нескольких источников, запись данных, удаление данных "
@@ -59,8 +80,8 @@ READ_TABLE_DESCRIPTION = (
     "- требуется SELECT * / SELECT all: перечисли только нужные колонки.\n\n"
     "Параметры:\n"
     "- query (str, обяз.): SQL-подобный запрос. В query обязательно укажи LOAD/FROM с коротким alias, "
-    "PERIOD или date BETWEEN, SELECT с явными колонками или агрегатами, при необходимости WHERE/GROUP BY/"
-    "ORDER BY/LIMIT.\n\n"
+    "SELECT с явными колонками или агрегатами, при необходимости PERIOD, WHERE/GROUP BY/ORDER BY/LIMIT. "
+    "Без PERIOD разрешён только точный WHERE event_id = '<id>'.\n\n"
     "Формат query:\n"
     "  LOAD <table_alias>\n"
     "  PERIOD <date_column> FROM '<YYYYMMDD>' TO '<YYYYMMDD>'\n"
@@ -80,7 +101,7 @@ READ_TABLE_DESCRIPTION = (
     "- списки и интервалы: IN (...), BETWEEN <from> AND <to>;\n"
     "- несколько условий можно соединять через AND и OR.\n\n"
     "Ограничения:\n"
-    "- период обязателен для каждого запроса и задается через PERIOD или WHERE <date_column> BETWEEN '<from>' AND '<to>';\n"
+    "- период обязателен, кроме точечного поиска по exact event_id через оператор равенства;\n"
     "- SELECT * и SELECT all запрещены для обычной выборки, но COUNT(*) разрешен в агрегатах;\n"
     "- длинные идентификаторы передавай строками в кавычках, чтобы не потерять точность."
 )
@@ -125,7 +146,8 @@ def build_spark_data_tools(spark: Any, query_parser_model: Any | None = None) ->
         """Выполняет SQL-подобный запрос к Spark-таблице через переданную Spark session.
 
         Args:
-            query: SQL-подобный запрос с alias таблицы, явным периодом и колонками результата.
+            query: SQL-подобный запрос с alias таблицы и колонками результата.
+                Период можно опустить только при точном фильтре по ``event_id``.
 
         Returns:
             pandas DataFrame с результатом или текст ошибки, который агент может исправить.
@@ -205,7 +227,8 @@ _QUERY_PARSER_SYSTEM_PROMPT = """
 Верни ParsedDataQuery.
 
 Правила извлечения:
-- status="ready" только если есть короткое имя таблицы, явные колонки/агрегации и временной интервал.
+- status="ready" только если есть короткое имя таблицы, явные колонки/агрегации и:
+  временной интервал либо точный фильтр `event_id = '<id>'`.
 - table_name — только короткое имя источника: hits, cards, uko, history_automarking, demo_client_timeline.
 - Если первая строка содержит один из известных alias рядом со служебным словом или опечаткой,
   извлекай известный alias и игнорируй лишний токен.
@@ -213,7 +236,10 @@ _QUERY_PARSER_SYSTEM_PROMPT = """
   означают table_name="hits".
 - Игнорируй SQL-alias и служебные префиксы: `h.event_dt`, `t.event_dt`, `<hits>.event_dt`
   должны стать `event_dt`.
-- Если нет периода начала/конца, верни status="needs_more_input" и missing_inputs.
+- Если нет периода начала/конца и нет точного равенства по event_id, верни
+  status="needs_more_input" и missing_inputs.
+- Точный lookup по event_id без периода допустим. Для него сохрани status="ready" и фильтр
+  {"column": "event_id", "operator": "eq", "value": "<id>"}.
 - Если указана неизвестная таблица, неизвестный синтаксис или неподдерживаемая агрегация,
   верни status="schema_error" и problem.
 - SELECT * как выборка колонок запрещён. Для COUNT(*) используй aggregation:
@@ -479,7 +505,8 @@ def _parsed_query_to_read_args(parsed: ParsedDataQuery) -> dict[str, Any]:
         ValueError: LLM сообщил проблему или вернул неполный запрос.
     """
 
-    if parsed.status != "ready":
+    exact_event_id_lookup = _has_exact_event_id_filter(parsed.filters)
+    if parsed.status != "ready" and not exact_event_id_lookup:
         details = parsed.problem or ", ".join(parsed.missing_inputs) or "query нельзя выполнить."
         raise ValueError(f"{parsed.status}: {details}")
     _validate_parsed_query(parsed)
@@ -525,8 +552,11 @@ def _validate_parsed_query(parsed: ParsedDataQuery) -> None:
         raise ValueError("schema_error: SELECT * и SELECT all запрещены для обычной выборки.")
     if not select_columns and not parsed.aggregations:
         raise ValueError("needs_more_input: в query нет явных колонок результата или агрегаций.")
-    if not _has_required_period(parsed.filters):
-        raise ValueError("needs_more_input: в query нет обязательного временного интервала с двумя границами.")
+    if not _has_required_period(parsed.filters) and not _has_exact_event_id_filter(parsed.filters):
+        raise ValueError(
+            "needs_more_input: в query нет временного интервала с двумя границами "
+            "или точного фильтра event_id = <id>."
+        )
 
 
 def _normalize_table_alias(value: Any) -> str:
@@ -643,6 +673,25 @@ def _has_required_period(filters: list[Any]) -> bool:
         values = _get_field(item, "values") or []
         value = _get_field(item, "value")
         if operator == "between" and len(values) == 2:
+            return True
+    return False
+
+
+def _has_exact_event_id_filter(filters: list[Any]) -> bool:
+    """Проверяет наличие точного непустого фильтра по ``event_id``.
+
+    Args:
+        filters: Фильтры, которые вернул LLM-разбор.
+
+    Returns:
+        ``True`` только для ``event_id`` с оператором ``eq`` и непустым значением.
+    """
+
+    for item in filters:
+        column = _normalize_column_name(_get_field(item, "column"))
+        operator = normalize_filter_operator(_get_field(item, "operator"))
+        value = _get_field(item, "value")
+        if column == "event_id" and operator == "eq" and str(value or "").strip():
             return True
     return False
 
@@ -1305,4 +1354,5 @@ __all__ = [
     "build_spark_data_tools",
     "_extract_query_args_with_llm",
     "_parsed_query_to_read_args",
+    "_has_exact_event_id_filter",
 ]

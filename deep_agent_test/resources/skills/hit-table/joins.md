@@ -4,7 +4,8 @@
 
 ## Общий маршрут
 
-1. Найди сработку в `hits`.
+1. Найди сработку в `hits`. Если известен точный `event_id`, этот lookup выполняется
+   без периода: период является результатом шага, а не входом.
 2. Возьми `event_id`, `epk_id`, `event_dt`, `event_channel`, `sub_channel`, `event_type`, `sub_type`, `type_operation`.
 3. Выбери raw-таблицу:
    - `cards` для карточных операций, POS, e-commerce, ATM, merchant/MCC;
@@ -22,4 +23,3 @@
 
 - Для полей `cards` читай `/skills/cards-event-table/fields.md`.
 - Для полей `uko` читай `/skills/uko-event-table/fields.md`.
-

@@ -9,10 +9,8 @@ subagents -> custom tools -> ``create_deep_agent``).
   ``data_tools_factory`` в конфиге (``resources/config/defaults.json`` / override через
   ``DEEP_AGENT_CONFIG_PATH``).
 - Конфиг и пороги: ключи в ``resources/config/defaults.json`` (offload, skills, лимиты).
-- Поведение supervisor/critic: правь общие prompts в ``core/prompts.py`` (без доменной логики).
+- Поведение supervisor/subagent: правь общие prompts в ``core/prompts.py`` (без доменной логики).
 - Доменные знания: добавляй/редактируй ``resources/skills/<name>/SKILL.md`` — менять код не нужно.
-- Prompt v2: supervisor и data-retrieval-agent используют ``core/prompts_v2.py``; внутренний
-  critic не подключается.
 - Новые subagents: расширь ``build_analytics_subagent_specs`` в ``retrieval_subagents.py``.
 
 Служебные функции:
@@ -41,27 +39,39 @@ from deepagents import create_deep_agent
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
-    FilesystemFileSearchMiddleware,
     ModelCallLimitMiddleware,
 )
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import MemorySaver
 
-from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
+from deep_agent_test.core.harness_profile import register_analytics_harness_profile
 from deep_agent_test.core.python_sandbox import build_python_sandbox
+from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
+from deep_agent_test.core.utf8_filesystem_backend import Utf8FilesystemBackend
 from deep_agent_test.tools.data_tools_wrapper import wrap_data_tools_with_query_code
 from deep_agent_test.tools.execute_python_code import build_execute_python_code_tool
 from deep_agent_test.tools.load_skills import build_load_skills_tool
-from deep_agent_test.core.prompts_v2 import (
-    BUILTIN_TOOLS_PROMPT_APPEND_RU,
-    RUSSIAN_TOOL_DESCRIPTION_OVERRIDES,
+from deep_agent_test.core.prompts import (
+    DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
+    SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    SUPERVISOR_TOOLS_PROMPT_APPEND,
     SYSTEM_PROMPT,
+    TOOL_DESCRIPTION_OVERRIDES,
 )
 from deep_agent_test.core.settings import DeepAgentSettings, load_deep_agent_settings
 from deep_agent_test.middlewares.skills_context import PreloadedSkillsContextMiddleware
 from deep_agent_test.middlewares.tool_loop_guard import ToolLoopGuardMiddleware
 from deep_agent_test.middlewares.tool_output_file import ToolOutputFileMiddleware
 from deep_agent_test.middlewares.tool_descriptions import PromptToolDescriptionsMiddleware
+from deep_agent_test.middlewares.tool_visibility import ToolVisibilityMiddleware
+
+SUPERVISOR_TOOL_NAMES = frozenset(
+    {"task", "execute_python_code", "load_skills", "write_todos"}
+)
+DATA_RETRIEVAL_TOOL_NAMES = frozenset(
+    {"load_data", "execute_python_code", "ls", "read_file", "glob", "grep"}
+)
 
 
 def build_data_tools(settings: DeepAgentSettings | None = None) -> list[BaseTool]:
@@ -134,7 +144,6 @@ def build_analytics_deep_agent(
     3. Middleware — два custom-механизма (принудительная загрузка skills, offload больших
        tool outputs в pickle) плюс нативные/кастомные middleware:
        ContextEditingMiddleware (очистка старых tool-результатов при лимите токенов),
-       FilesystemFileSearchMiddleware (glob/grep поиск по spill-файлам),
        ToolLoopGuardMiddleware (защита от зацикливания на повторных вызовах tool),
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
@@ -155,6 +164,7 @@ def build_analytics_deep_agent(
 
     # Шаг 1. Настройки: пути skills, папка spill-файлов, пороги offload, thread_id.
     settings = settings or load_deep_agent_settings()
+    register_analytics_harness_profile(settings.harness_profile_key)
     session_tool_outputs_dir = create_session_tool_outputs_dir(settings.tool_outputs_dir)
 
     # Шаг 2. Инструменты чтения данных. Аргумент имеет приоритет над фабрикой из конфига.
@@ -177,6 +187,7 @@ def build_analytics_deep_agent(
         model=model,
         select_skills=True,
         shared_selection=shared_skills_selection,
+        prompt_template=SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     )
     subagent_skills_middleware = PreloadedSkillsContextMiddleware(
         skills_root=settings.skills_root,
@@ -185,6 +196,7 @@ def build_analytics_deep_agent(
         model=model,
         select_skills=False,
         shared_selection=shared_skills_selection,
+        prompt_template=DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     )
     # 3b. Offload больших табличных tool outputs в pickle, чтобы не раздувать контекст.
     tool_output_file_middleware = ToolOutputFileMiddleware(
@@ -204,24 +216,22 @@ def build_analytics_deep_agent(
             )
         ]
     )
-    # 3d. File search: glob/grep поиск по папке spill-файлов (.pkl). Папку создаём заранее,
-    #     чтобы root_path существовал. use_ripgrep=False не требует бинарника rg на хосте.
-    file_search_middleware = FilesystemFileSearchMiddleware(
-        root_path=str(session_tool_outputs_dir),
-        use_ripgrep=settings.file_search_use_ripgrep,
-    )
-    # 3e. Loop guard: блокирует серию подряд идущих вызовов одного tool после N повторов
+    # 3d. Loop guard: блокирует серию подряд идущих вызовов одного tool после N повторов
     #     и просит модель сменить подход или завершить шаг (защита от зацикливания).
     tool_loop_guard_middleware = ToolLoopGuardMiddleware(
         max_consecutive_tool_calls=settings.max_consecutive_tool_calls,
     )
-    # 3f. Prompt-only переопределение descriptions встроенных tools и финальный
+    # 3e. Prompt-only переопределение descriptions встроенных tools и финальный
     #     русский блок с приоритетом над англоязычными examples из DeepAgents.
-    tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
-        tool_descriptions=RUSSIAN_TOOL_DESCRIPTION_OVERRIDES,
-        system_prompt_append=BUILTIN_TOOLS_PROMPT_APPEND_RU,
+    supervisor_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
+        tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
+        system_prompt_append=SUPERVISOR_TOOLS_PROMPT_APPEND,
     )
-    # 3h. Бюджет шагов субагента: нативный ModelCallLimitMiddleware ограничивает число
+    subagent_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
+        tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
+        system_prompt_append=DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
+    )
+    # 3f. Бюджет шагов субагента: нативный ModelCallLimitMiddleware ограничивает число
     #     ходов модели внутри одного запуска data-retrieval-agent. По исчерпании лимита
     #     (exit_behavior="end") субагент мягко завершается и возвращает supervisor-у то,
     #     что уже собрал, вместо упора в recursion limit графа.
@@ -229,20 +239,25 @@ def build_analytics_deep_agent(
         run_limit=settings.max_subagent_model_calls,
         exit_behavior="end",
     )
-    # Базовые middleware без skills — общие для supervisor и data-retrieval-agent.
+    # Общие runtime middleware без agent-specific prompt scope.
     base_middleware = [
         tool_output_file_middleware,
         context_editing_middleware,
-        file_search_middleware,
         tool_loop_guard_middleware,
-        tool_descriptions_middleware,
     ]
     # Supervisor выбирает skills; data-retrieval-agent переиспользует тот же выбор и ограничен
-    # бюджетом шагов на запуск. В v2 critic не подключается.
-    supervisor_middleware = [supervisor_skills_middleware, *base_middleware]
+    # бюджетом шагов на запуск.
+    supervisor_middleware = [
+        supervisor_skills_middleware,
+        ToolVisibilityMiddleware(allowed_tools=SUPERVISOR_TOOL_NAMES),
+        *base_middleware,
+        supervisor_tool_descriptions_middleware,
+    ]
     subagent_middleware = [
         subagent_skills_middleware,
+        ToolVisibilityMiddleware(allowed_tools=DATA_RETRIEVAL_TOOL_NAMES),
         *base_middleware,
+        subagent_tool_descriptions_middleware,
         subagent_step_limit_middleware,
     ]
 
@@ -255,13 +270,9 @@ def build_analytics_deep_agent(
 
     # Шаг 5. Subagent чтения данных без внутреннего critic: он отдаёт отчёт supervisor-у напрямую.
     subagents = build_analytics_subagent_specs(
-        settings=settings,
         data_tools=[*data_tools, python_tool],
         common_middleware=subagent_middleware,
-        critic_middleware=None,
         model=model,
-        backend=backend,
-        enable_critic=False,
     )
 
     # Шаг 6. Custom tools supervisor: выполнение Python-кода и пакетная загрузка skills.
@@ -296,7 +307,7 @@ def build_skills_backend(
         ``CompositeBackend`` с маршрутами на локальные папки skills и spill-файлов.
     """
 
-    from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
+    from deepagents.backends import CompositeBackend, StateBackend
 
     settings = settings or load_deep_agent_settings()
     resolved_tool_outputs_dir = tool_outputs_dir or settings.tool_outputs_dir
@@ -304,11 +315,11 @@ def build_skills_backend(
     return CompositeBackend(
         default=StateBackend(),
         routes={
-            settings.skills_virtual_dir: FilesystemBackend(
+            settings.skills_virtual_dir: Utf8FilesystemBackend(
                 root_dir=settings.skills_root,
                 virtual_mode=True,
             ),
-            tool_outputs_virtual: FilesystemBackend(
+            tool_outputs_virtual: Utf8FilesystemBackend(
                 root_dir=resolved_tool_outputs_dir,
                 virtual_mode=True,
             ),

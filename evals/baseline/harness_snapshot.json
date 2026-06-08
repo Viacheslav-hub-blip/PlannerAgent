@@ -1,0 +1,29 @@
+{
+  "snapshot_status": "not_run",
+  "snapshot_date": "2026-06-08",
+  "source_commit": "4e1e4d7a76e49d341435e4dc7b0b7c78fdc76b17",
+  "source_branch": "master",
+  "working_tree_note": "Snapshot не запускался; параметры модели не проверялись.",
+  "model_identifier": "google/gemini-2.5-flash",
+  "model_transport": "ChatOpenAI через OpenRouter-compatible endpoint",
+  "prompts_module": "deep_agent_test.core.prompts",
+  "config_path": "deep_agent_test/resources/config/defaults.json",
+  "baseline_supervisor_tools": [
+    "write_todos",
+    "task",
+    "execute_python_code",
+    "load_skills"
+  ],
+  "baseline_data_retrieval_tools": [
+    "load_data",
+    "execute_python_code",
+    "ls",
+    "read_file",
+    "glob",
+    "grep"
+  ],
+  "baseline_subagents": [
+    "data-retrieval-agent"
+  ],
+  "metrics_status": "pending_user_authorized_model_runs"
+}

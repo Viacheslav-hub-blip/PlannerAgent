@@ -4,16 +4,9 @@
 дать агенту доменные инструкции, безопасные инструменты чтения данных, контроль больших
 ответов инструментов и понятную точку запуска в других проектах.
 
-Локальный тестовый запуск проекта рассчитан на один файл:
-
-```bash
-python run.py
-```
-
-В `run.py` нет параметров командной строки. В нем собирается fake-инструмент `load_data`
-поверх CSV из папки `data`, собирается агент и выполняется один `stream_events`.
-Production-инструмент поверх Spark использует тот же `query`-интерфейс и то же описание
-tool, но создается через `build_spark_data_tools`.
+Пакет не содержит демонстрационных данных и отдельных локальных data tools. Для запуска
+передайте готовый `load_data` в `build_analytics_deep_agent` или настройте фабрику data
+tools через `data_tools_factory`.
 
 ## Что добавлено к базовому DeepAgent
 
@@ -36,41 +29,32 @@ tool, но создается через `build_spark_data_tools`.
    `data-retrieval-agent`. Этот subagent получает задачу, вызывает `load_data` и
    возвращает supervisor-у короткий структурированный отчет.
 
-3. Опциональный critic для чтения данных.
+3. Инструменты чтения данных.
 
-   Внутри `data-retrieval-agent` можно включить `data-retrieval-critic`. Он проверяет,
-   что ответ действительно основан на результатах инструментов и что заявленные файлы
-   существуют. Флаг включения находится в конфиге: `enable_retrieval_critic`.
+   `build_spark_data_tools(spark, query_parser_model=model)` создает `load_data` поверх
+   Spark session. Инструмент принимает один аргумент `query` с SQL-подобным запросом:
+   alias таблицы, период, явные колонки результата, фильтры, агрегации и сортировка.
+   Разбор `query` выполняется LLM-нормализатором.
 
-4. Инструменты чтения данных.
-
-   `build_spark_data_tools(spark, query_parser_model=model)` создает настоящий
-   `load_data` поверх Spark session. `build_fake_spark_data_tools(query_parser_model=model)`
-   создает fake `load_data` поверх локальных CSV. Оба инструмента имеют одинаковые
-   `name`, `description` и `args_schema`: один аргумент `query` с SQL-подобным запросом,
-   alias таблицы, обязательным периодом, явными колонками результата, фильтрами,
-   агрегациями и сортировкой. Разбор `query` выполняется LLM-нормализатором, а не
-   regex-парсером.
-
-5. Прозрачный ответ `load_data`.
+4. Прозрачный ответ `load_data`.
 
    Обертка над data-tools добавляет к результату SQL-подобное описание запроса:
    какие поля читались, из какой таблицы, какие фильтры применялись. Это снижает риск,
    что агент перепутает пример строк с полным результатом.
 
-6. Offload больших таблиц.
+5. Offload больших таблиц.
 
    Если tool возвращает много строк или слишком большой текст, результат сохраняется в
    pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
    путь к файлу и preview. Полный файл можно читать через `execute_python_code`.
 
-7. Безопасный Python sandbox.
+6. Безопасный Python sandbox.
 
    Tool `execute_python_code` нужен для расчетов по выгруженным данным, чтения pickle,
    join, фильтрации и подготовки итоговых таблиц. Перед выполнением код проходит
    простую проверку: запрещены `eval`, `exec`, shell-вызовы и удаление файлов.
 
-8. Защита от циклов инструментов.
+7. Защита от циклов инструментов.
 
    `ToolLoopGuardMiddleware` останавливает серию одинаковых tool-вызовов, если агент
    зациклился на одном инструменте.
@@ -81,28 +65,28 @@ tool, но создается через `build_spark_data_tools`.
 deep_agent_test/
   core/
     analytics_deep_agent.py   # сборка агента
-    retrieval_subagents.py    # data-retrieval-agent и critic
+    retrieval_subagents.py    # data-retrieval-agent
     settings.py               # загрузка настроек
-    prompts.py                # общие промпты supervisor/subagent/critic
+    prompts.py                # общие prompts supervisor/subagent
     state.py                  # дополнительные поля state
     python_sandbox.py         # persistent Python namespace
-    agent_specs.py            # имена агентов и structured output critic-а
+    harness_profile.py        # ограничение встроенных tools и subagents
+    utf8_filesystem_backend.py # UTF-8 fallback для поиска по skills
     trace_logging.py          # подробный trace одного запуска агента
 
   middlewares/
     skills_context.py         # предзагрузка skills
     tool_output_file.py       # сохранение больших результатов tool в pickle
     tool_loop_guard.py        # защита от повторяющихся tool-вызовов
-    critic_loop_cap.py        # лимит проверок critic-а
+    tool_visibility.py        # allowlist tools для supervisor и subagent
+    tool_descriptions.py      # актуальные описания tools в prompt
 
   tools/
     spark_data.py             # load_data поверх Spark session
-    fake_spark_data.py        # load_data поверх локальных CSV для тестов без Spark
     data_query_schema.py      # pydantic-схемы query и LLM-разбора
     data_tools_wrapper.py     # прозрачное описание запросов к data-tools
     execute_python_code.py    # безопасное выполнение Python-кода
     load_skills.py            # ручная дозагрузка skills
-    inspect_artifact.py       # проверка файлов для critic-а
 
   resources/
     config/defaults.json      # настройки по умолчанию
@@ -111,23 +95,24 @@ deep_agent_test/
     skills/**/joins.md        # подробные правила связи источников
 ```
 
-Целевой запуск идет через `python run.py`. Trace-логгер подключается как LangChain
-callback и пишет подробный txt-файл по каждому запросу к LLM.
+Trace-логгер можно подключить как LangChain callback; он пишет подробный txt-файл по
+каждому запросу к LLM.
 
-## Минимальный fake-запуск
-
-Файл `run.py` находится в корне проекта и по умолчанию использует fake-данные:
+## Минимальный запуск со Spark
 
 ```python
+from pyspark.sql import SparkSession
+
 from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
 from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
-from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
+from deep_agent_test.tools.spark_data import build_spark_data_tools
 from model import model
 
 USER_MESSAGE = "текст запроса пользователя"
 
 settings = load_deep_agent_settings()
-data_tools = build_fake_spark_data_tools(query_parser_model=model)
+spark = SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
+data_tools = build_spark_data_tools(spark, query_parser_model=model)
 agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
 trace_file_path = build_trace_file_path(settings.trace_log_dir)
 trace_handler = FileTraceCallbackHandler(trace_file_path)
@@ -142,19 +127,8 @@ result = agent.invoke(
 print(f"Trace log: {trace_file_path}")
 ```
 
-Чтобы проверить настоящий Spark-инструмент, замените только сборку data-tools:
-
-```python
-from pyspark.sql import SparkSession
-
-from deep_agent_test import build_spark_data_tools
-
-spark = SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
-data_tools = build_spark_data_tools(spark, query_parser_model=model)
-```
-
-Остальная сборка агента не меняется. Чтобы задать другой запрос, измените константу
-`USER_MESSAGE`.
+Для другого источника передайте собственный `BaseTool` с именем `load_data` и схемой
+аргументов, совместимой с prompt-контрактом.
 
 ## Конфигурация
 
@@ -168,14 +142,13 @@ deep_agent_test/resources/config/defaults.json
 
 - `skills_root` - локальная папка со skills.
 - `skills_virtual_dir` - виртуальный путь, который видит DeepAgent.
+- `harness_profile_key` - provider или `provider:model` для регистрации HarnessProfile.
 - `tool_outputs_dir` - папка для pickle-файлов с большими результатами.
 - `max_chars_per_skill` - максимальный размер одного skill в prompt.
 - `tool_output_min_rows_to_save` - после какого числа строк сохранять результат в файл.
 - `context_edit_trigger_tokens` - когда чистить старые tool results из контекста.
 - `max_consecutive_tool_calls` - сколько одинаковых вызовов tool подряд разрешено.
 - `max_subagent_model_calls` - лимит шагов модели внутри data-retrieval-agent.
-- `max_critic_iterations` - лимит проверок critic-а.
-- `enable_retrieval_critic` - включать ли внутренний critic.
 - `trace_log_dir` - папка для txt-логов с содержимым запросов к LLM.
 
 Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
@@ -306,10 +279,10 @@ resources/skills/uko-event-table/fields.md
 
 ## Как переиспользовать в другом проекте
 
-1. Скопируйте пакет `deep_agent_test` и корневой `run.py`.
-2. Подключите свою модель в `model.py`.
-3. Настройте Spark session в `run.py`.
-4. Проверьте, что `spark.table(table_name)` видит нужные таблицы.
+1. Подключите пакет `deep_agent_test` к проекту.
+2. Передайте совместимую LangChain chat model.
+3. Соберите Spark session или собственный `load_data`.
+4. Проверьте, что источник видит таблицы, описанные в skills.
 5. Обновите `resources/skills` под свой домен.
 6. При необходимости переопределите `resources/config/defaults.json` через
    `DEEP_AGENT_CONFIG_PATH`.

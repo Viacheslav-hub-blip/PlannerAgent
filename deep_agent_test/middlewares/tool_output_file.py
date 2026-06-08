@@ -1,4 +1,18 @@
-"""Middleware сохранения больших табличных результатов tool-вызовов в pickle."""
+"""Middleware сохранения больших табличных результатов tool-вызовов в pickle.
+
+Содержит:
+- ToolOutputFileMiddleware: middleware offload табличных tool outputs.
+- _extract_tabular_payload: извлечение табличного payload из ToolMessage.
+- _extract_rows_from_value: получение строк из JSON-подобного значения.
+- _write_rows_to_pkl: запись строк в pickle-файл.
+- _virtual_tool_output_path: построение виртуального пути tool output.
+- _build_file_summary: формирование summary сохранённого файла.
+- _extract_query_metadata: извлечение описания запроса из payload.
+- _build_inline_saved_file_note: формирование короткой пометки о сохранённом файле.
+- _format_query_metadata: форматирование metadata запроса.
+- _safe_filename_part: нормализация части имени файла.
+- _row_to_mapping: приведение строки к mapping.
+"""
 
 from __future__ import annotations
 

@@ -9,7 +9,6 @@
 - _validate_required_config_keys: проверка обязательных ключей.
 - _resolve_project_path: приведение пути к абсолютному.
 - _int_from_config: чтение целого числа из конфига.
-- _bool_from_config: чтение булевого значения из конфига.
 - _dict_from_config: чтение словаря из конфига.
 - _optional_str_from_config: чтение опциональной строки из конфига.
 """
@@ -27,6 +26,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "resources" / "config" / "defaults.json"
 CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
 REQUIRED_CONFIG_KEYS = (
+    "harness_profile_key",
     "thread_id",
     "skills_virtual_dir",
     "skills_root",
@@ -40,10 +40,8 @@ REQUIRED_CONFIG_KEYS = (
     "tool_output_inline_original_chars",
     "context_edit_trigger_tokens",
     "context_edit_keep_tool_results",
-    "file_search_use_ripgrep",
     "max_consecutive_tool_calls",
     "max_subagent_model_calls",
-    "max_critic_iterations",
     "graph_recursion_limit",
     "trace_log_dir",
 )
@@ -53,6 +51,7 @@ REQUIRED_CONFIG_KEYS = (
 class DeepAgentSettings:
     """Настройки сборки и запуска аналитического DeepAgent."""
 
+    harness_profile_key: str
     thread_id: str
     skills_virtual_dir: str
     skills_root: Path
@@ -66,13 +65,10 @@ class DeepAgentSettings:
     tool_output_inline_original_chars: int
     context_edit_trigger_tokens: int
     context_edit_keep_tool_results: int
-    file_search_use_ripgrep: bool
     max_consecutive_tool_calls: int
     max_subagent_model_calls: int
-    max_critic_iterations: int
     graph_recursion_limit: int
     trace_log_dir: Path
-    enable_retrieval_critic: bool = True
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any], project_root: Path = PROJECT_ROOT) -> "DeepAgentSettings":
@@ -91,6 +87,7 @@ class DeepAgentSettings:
 
         _validate_required_config_keys(payload)
         return cls(
+            harness_profile_key=str(payload["harness_profile_key"]),
             thread_id=str(payload["thread_id"]),
             skills_virtual_dir=str(payload["skills_virtual_dir"]),
             skills_root=_resolve_project_path(payload["skills_root"], project_root),
@@ -107,17 +104,10 @@ class DeepAgentSettings:
             tool_output_inline_original_chars=_int_from_config(payload, "tool_output_inline_original_chars"),
             context_edit_trigger_tokens=_int_from_config(payload, "context_edit_trigger_tokens"),
             context_edit_keep_tool_results=_int_from_config(payload, "context_edit_keep_tool_results"),
-            file_search_use_ripgrep=_bool_from_config(payload, "file_search_use_ripgrep"),
             max_consecutive_tool_calls=_int_from_config(payload, "max_consecutive_tool_calls"),
             max_subagent_model_calls=_int_from_config(payload, "max_subagent_model_calls"),
-            max_critic_iterations=_int_from_config(payload, "max_critic_iterations"),
             graph_recursion_limit=_int_from_config(payload, "graph_recursion_limit"),
             trace_log_dir=_resolve_project_path(payload["trace_log_dir"], project_root),
-            enable_retrieval_critic=(
-                _bool_from_config(payload, "enable_retrieval_critic")
-                if "enable_retrieval_critic" in payload
-                else True
-            ),
         )
 
 
@@ -178,21 +168,6 @@ def _int_from_config(payload: dict[str, Any], key: str) -> int:
         return int(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Config key '{key}' must be an integer.") from None
-
-
-def _bool_from_config(payload: dict[str, Any], key: str) -> bool:
-    """Читает bool-ключ конфига, принимая bool или строковые true/false/1/0/yes/no."""
-
-    value = payload[key]
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"true", "1", "yes"}:
-            return True
-        if normalized in {"false", "0", "no"}:
-            return False
-    raise ValueError(f"Config key '{key}' must be a boolean.")
 
 
 def _dict_from_config(payload: dict[str, Any], key: str) -> dict[str, Any]:

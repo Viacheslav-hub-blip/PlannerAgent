@@ -11,7 +11,7 @@
 - _validate_code_policy: статическая проверка политики безопасности кода.
 - _call_name: извлечение имени прямого вызова функции из AST.
 - _attribute_call_name: извлечение пары ``(owner, attr)`` из AST-вызова.
-- _temporary_working_directory: временная смена рабочей директории процесса.
+- _working_directory_context: временная смена рабочей директории процесса.
 - _get_cwd_execution_lock: получение общего lock для смены cwd.
 - _combined_stdio: объединение stdout и stderr.
 - _preview_stdio_result: preview результата без целевой переменной.
@@ -24,8 +24,9 @@
 - _is_series: проверка значения на сходство с pandas Series.
 - _json_default: JSON-сериализация нестандартных объектов.
 - _limit_text: ограничение длинного текста.
-- _policy_error_payload: JSON-ответ при ошибке статической политики.
-- _result_to_json: дополнение результата контекстом sandbox и сериализация.
+- _compact_error_message: краткая строка с причиной ошибки.
+- _policy_error_payload: компактный JSON-ответ при ошибке статической политики.
+- _result_to_json: сериализация результата без служебного traceback при ошибке.
 """
 
 from __future__ import annotations
@@ -55,27 +56,6 @@ MAX_STDIO_CHARS = 8_000
 MAX_DATAFRAME_PREVIEW_ROWS = 10
 CWD_EXECUTION_LOCK_ATTR = "_deep_agent_test_sandbox_cwd_lock"
 
-ALLOWED_IMPORT_ROOTS: frozenset[str] = frozenset(
-    {
-        "collections",
-        "datetime",
-        "itertools",
-        "json",
-        "math",
-        "matplotlib",
-        "numpy",
-        "os",
-        "pandas",
-        "pathlib",
-        "pickle",
-        "plotly",
-        "re",
-        "scipy",
-        "seaborn",
-        "sklearn",
-        "statistics",
-    }
-)
 DENIED_CALL_NAMES: frozenset[str] = frozenset(
     {
         "__import__",
@@ -132,7 +112,7 @@ result = df
 Правила:
 - переменные сохраняются между вызовами инструмента в одной сессии;
 - для именованного результата укажи `target_variable`, иначе используй `print()` и читай `execution_output`;
-- при ошибке tool возвращает JSON с `error`, полным `traceback`, `possible_causes`, `solution_options`, `retry_guidance` — исправь код и повтори вызов;
+- при ошибке tool возвращает только строку ``ТипИсключения: сообщение`` — исправь код и повтори вызов;
 - не удаляй файлы и директории;
 - можно импортировать `os` для просмотра директорий, но удаление файлов и shell-вызовы запрещены;
 - читай pickle через `read_pickle_file` или `pd.read_pickle` по `saved_file` из tool outputs.
@@ -229,11 +209,17 @@ print(df.shape)
 print(df.head(3).to_string())
 result = df
 
+Chart artifact example:
+from pathlib import Path
+output_path = Path(TOOL_OUTPUTS_DIR) / "hits_age_category_jan2026.png"
+plt.savefig(output_path)
+result_path = str(output_path)
+
 Rules:
 - pass Python source in the `code` argument;
 - set `target_variable` for a named result, or use `print()` and read `execution_output`;
-- if the tool returns an error JSON, read `error`, `traceback`, `possible_causes`, `solution_options`, and
-  `retry_guidance`, then fix the code and retry;
+- for generated files, build the path from `Path(TOOL_OUTPUTS_DIR)`; do not use `/tool_outputs` as a local Python path;
+- if the tool returns an error string, fix the reported cause and retry;
 - do not delete files or directories;
 - `os` may be imported for directory inspection, but shell calls and deletion are forbidden.
 """.strip()
@@ -269,10 +255,8 @@ class ExecutePythonCodeTool(BaseTool):
     удаление файлов и т.п.). Само выполнение и формирование информативного результата
     делегируются локальной переиспользуемой функции ``_execute_python_code``.
 
-    Любой результат возвращается строкой JSON. При ошибке JSON содержит ``error``,
-    полный ``traceback``, ``possible_causes``, ``solution_options``, ``retry_guidance``,
-    ``available_variables`` и список ``sandbox_helpers`` — этого достаточно, чтобы модель
-    исправила код и повторила вызов.
+    Успешный результат возвращается строкой JSON. При ошибке возвращается только строка
+    ``ТипИсключения: сообщение`` без traceback и служебных метаданных.
     """
 
     name: str = EXECUTE_PYTHON_CODE_TOOL_NAME
@@ -307,7 +291,7 @@ class ExecutePythonCodeTool(BaseTool):
             **_: Служебные аргументы LangChain, не используются.
 
         Returns:
-            JSON-строка с результатом или с подробным описанием ошибки.
+            JSON-строка с результатом или краткая строка ошибки.
         """
 
         generated_code = _normalize_code_text(str(code or ""))
@@ -346,7 +330,7 @@ class ExecutePythonCodeTool(BaseTool):
             **_: Служебные аргументы LangChain, не используются.
 
         Returns:
-            JSON-строка с результатом или ошибкой.
+            JSON-строка с результатом или краткая строка ошибки.
         """
 
         return self._run(
@@ -456,7 +440,7 @@ def _execute_python_code(
     stderr = io.StringIO()
     try:
         with (
-            _temporary_working_directory(sandbox.working_directory),
+            _working_directory_context(sandbox.working_directory),
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
@@ -524,15 +508,15 @@ def _execute_python_code(
 def _validate_code_policy(code: str) -> None:
     """Статически проверяет код перед выполнением.
 
-    Разбирает AST и запрещает: пустой/слишком длинный код, импорт вне
-    ``ALLOWED_IMPORT_ROOTS``, вызовы из ``DENIED_CALL_NAMES`` и
-    ``DENIED_ATTRIBUTE_CALLS``, а также удаление файлов через ``Path.unlink/rmdir``.
+    Разбирает AST и запрещает: пустой/слишком длинный код, вызовы из
+    ``DENIED_CALL_NAMES`` и ``DENIED_ATTRIBUTE_CALLS``, а также удаление файлов
+    через ``Path.unlink/rmdir``. Импорты не ограничиваются allowlist.
 
     Args:
         code: Python-код, который нужно проверить.
 
     Raises:
-        ValueError: Код пустой, слишком длинный или содержит запрещённый импорт/вызов.
+        ValueError: Код пустой, слишком длинный или содержит запрещённый вызов.
         SyntaxError: Код не разбирается ``ast.parse``.
     """
     if not str(code or "").strip():
@@ -541,21 +525,32 @@ def _validate_code_policy(code: str) -> None:
         raise ValueError(f"code is too long: {len(code)} chars, limit is {MAX_CODE_CHARS}")
 
     tree = ast.parse(code, mode="exec")
+    module_aliases: dict[str, str] = {}
+    imported_call_aliases: dict[str, tuple[str, str]] = {}
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            names = node.names if isinstance(node, ast.Import) else []
-            module_names = [alias.name for alias in names]
-            if isinstance(node, ast.ImportFrom) and node.module:
-                module_names.append(node.module)
-            for module_name in module_names:
-                root = module_name.split(".", maxsplit=1)[0]
-                if root not in ALLOWED_IMPORT_ROOTS:
-                    raise ValueError(f"Import '{module_name}' is not allowed in execute_python_code")
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local_name = alias.asname or alias.name.split(".", maxsplit=1)[0]
+                module_aliases[local_name] = alias.name.split(".", maxsplit=1)[0]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            module_root = node.module.split(".", maxsplit=1)[0]
+            for alias in node.names:
+                imported_call_aliases[alias.asname or alias.name] = (
+                    module_root,
+                    alias.name,
+                )
+
+    for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             call_name = _call_name(node.func)
             if call_name in DENIED_CALL_NAMES:
                 raise ValueError(f"Call '{call_name}' is not allowed in execute_python_code")
+            imported_call = imported_call_aliases.get(call_name)
+            if imported_call in DENIED_ATTRIBUTE_CALLS:
+                owner, attr = imported_call
+                raise ValueError(f"Call '{owner}.{attr}' is not allowed in execute_python_code")
             owner, attr = _attribute_call_name(node.func)
+            owner = module_aliases.get(owner, owner)
             if owner == "Path" and attr in {"unlink", "rmdir"}:
                 raise ValueError(f"Call 'Path.{attr}' is not allowed in execute_python_code")
             if (owner, attr) in DENIED_ATTRIBUTE_CALLS:
@@ -579,7 +574,7 @@ def _attribute_call_name(func: ast.AST) -> tuple[str, str]:
 
 
 @contextlib.contextmanager
-def _temporary_working_directory(directory: Path | None):
+def _working_directory_context(directory: Path | None):
     """Временно переключает рабочую директорию процесса.
 
     Args:
@@ -852,7 +847,7 @@ def _policy_error_payload(
     *,
     sandbox: DeepAgentPythonSandbox,
 ) -> str:
-    """Формирует информативный JSON-ответ при провале статической проверки кода.
+    """Формирует компактный JSON-ответ при провале статической проверки кода.
 
     Args:
         generated_code: Нормализованный код, который не прошёл проверку.
@@ -861,27 +856,23 @@ def _policy_error_payload(
         sandbox: Sandbox для перечисления доступных переменных и путей.
 
     Returns:
-        JSON-строка с ``error``, ``traceback``, причинами и вариантами исправления.
+        Краткая строка с причиной ошибки.
     """
-    payload = {
-        "success": False,
-        "message": "Python code did not pass validation. Fix code and retry execute_python_code.",
-        "generated_code": generated_code,
-        "target_variable": str(target_variable or ""),
-        "variable_preview": "",
-        "execution_output": "",
-        "error": f"{exc.__class__.__name__}: {exc}",
-        "traceback": traceback.format_exc(),
-        "available_variables": _visible_variable_names(sandbox.globals),
-        "possible_causes": _python_error_possible_causes(exc),
-        "solution_options": _python_error_solution_options(exc),
-        "retry_guidance": _python_retry_guidance(),
-        "sandbox_helpers": sorted(SANDBOX_HELPER_NAMES),
-        "working_directory": str(sandbox.working_directory),
-        "tool_outputs_dir": str(sandbox.tool_outputs_dir),
-        "readable_roots": [str(path) for path in sandbox.readable_roots],
-    }
-    return json.dumps(payload, ensure_ascii=False)
+    del generated_code, target_variable, sandbox
+    return _compact_error_message(f"{exc.__class__.__name__}: {exc}")
+
+
+def _compact_error_message(error: str) -> str:
+    """Формирует минимальную строку ошибки для передачи в контекст агента.
+
+    Args:
+        error: Последняя строка исключения в формате ``Тип: сообщение``.
+
+    Returns:
+        Строка ``Тип: сообщение`` без traceback, JSON и служебных метаданных.
+    """
+
+    return str(error or "UnknownError").strip()
 
 
 def _result_to_json(result: PythonExecutionResult, *, sandbox: DeepAgentPythonSandbox) -> str:
@@ -892,19 +883,17 @@ def _result_to_json(result: PythonExecutionResult, *, sandbox: DeepAgentPythonSa
         sandbox: Sandbox для добавления helpers и разрешённых путей в ответ.
 
     Returns:
-        JSON-строка; при неуспехе ``message`` подсказывает прочитать traceback и повторить.
+        JSON-строка при успехе или краткая строка причины при неуспехе.
     """
+
+    if not result.success:
+        return _compact_error_message(result.error)
 
     payload = json.loads(result.to_json())
     payload["sandbox_helpers"] = sorted(SANDBOX_HELPER_NAMES)
     payload["working_directory"] = str(sandbox.working_directory)
     payload["tool_outputs_dir"] = str(sandbox.tool_outputs_dir)
     payload["readable_roots"] = [str(path) for path in sandbox.readable_roots]
-    if not payload.get("success"):
-        payload["message"] = (
-            "Python code execution failed. Read error, traceback, possible_causes "
-            "and solution_options, fix the code and retry execute_python_code."
-        )
     return json.dumps(payload, ensure_ascii=False)
 
 

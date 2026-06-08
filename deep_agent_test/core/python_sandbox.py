@@ -1,8 +1,16 @@
-"""Persistent Python sandbox для DeepAgent с helpers чтения pickle и файлов."""
+"""Persistent Python sandbox для DeepAgent с helpers чтения pickle и файлов.
+
+Содержит:
+- DeepAgentPythonSandbox: persistent sandbox для выполнения аналитического Python-кода.
+- build_python_sandbox: фабрика sandbox с разрешенными директориями.
+- _is_relative_to: проверка вложенности пути.
+"""
 
 from __future__ import annotations
 
+import builtins
 import pickle
+import types
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +121,39 @@ class DeepAgentPythonSandbox:
                 "rows_to_dataframe": rows_to_dataframe,
             }
         )
+        helper_module = types.ModuleType("functions")
+        for helper_name in SANDBOX_HELPER_NAMES:
+            setattr(helper_module, helper_name, self.globals[helper_name])
+
+        default_import = builtins.__import__
+
+        def sandbox_import(
+            name: str,
+            globals_: dict[str, Any] | None = None,
+            locals_: dict[str, Any] | None = None,
+            fromlist: tuple[str, ...] = (),
+            level: int = 0,
+        ) -> Any:
+            """Импортирует виртуальный модуль sandbox helpers или обычный Python-модуль.
+
+            Args:
+                name: Имя импортируемого модуля.
+                globals_: Глобальные переменные вызывающего кода.
+                locals_: Локальные переменные вызывающего кода.
+                fromlist: Имена, запрошенные конструкцией ``from ... import ...``.
+                level: Уровень относительного импорта.
+
+            Returns:
+                Виртуальный модуль ``functions`` или результат стандартного импорта.
+            """
+
+            if name == "functions" and level == 0:
+                return helper_module
+            return default_import(name, globals_, locals_, fromlist, level)
+
+        sandbox_builtins = dict(vars(builtins))
+        sandbox_builtins["__import__"] = sandbox_import
+        self.globals["__builtins__"] = sandbox_builtins
 
         try:
             import numpy as np
