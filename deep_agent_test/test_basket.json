@@ -1,6 +1,7 @@
 {
   "name": "Аналитический DeepAgent: локальная тестовая корзина",
   "timeout_seconds": 600,
+  "max_concurrency": 10,
   "cases": [
     {
       "id": "1",

@@ -3,6 +3,7 @@
 Содержит тесты:
 - test_evaluate_answer_accepts_extra_text: дополнительный текст не ломает regex-проверку.
 - test_evaluate_tool_calls_checks_name_arguments_and_errors: проверяются имя, параметры и ошибки tool.
+- test_evaluate_case_result_combines_checks: сырой результат объединяется с regex-проверками.
 - test_calculate_metrics_counts_failed_cases_in_denominator: ошибки остаются в знаменателе метрик.
 - test_load_run_queries_reads_concatenated_constants: AST читает склеенные строковые константы.
 - test_build_process_group_options_matches_platform: параметры процесса соответствуют ОС.
@@ -15,6 +16,7 @@ from deep_agent_test.run_test_basket import (
     build_process_group_options,
     calculate_metrics,
     evaluate_answer,
+    evaluate_case_result,
     evaluate_tool_calls,
     print_progress_bar,
 )
@@ -72,6 +74,36 @@ def test_evaluate_tool_calls_checks_name_arguments_and_errors() -> None:
     assert failures == []
     assert failed_success is False
     assert failed_expectations[0]["matched_calls"] == 0
+
+
+def test_evaluate_case_result_combines_checks() -> None:
+    """Проверяет объединение проверок ответа и инструментов.
+
+    Returns:
+        ``None``.
+    """
+
+    result = evaluate_case_result(
+        {
+            "id": "1",
+            "answer_patterns": [r"(?<!\d)7(?!\d)"],
+            "tool_expectations": [{"tool": "load_data", "patterns": ["hits"]}],
+        },
+        {
+            "status": "completed",
+            "answer": "Ответ: 7 сработок.",
+            "tool_calls": [
+                {
+                    "name": "load_data",
+                    "arguments": {"query": "SELECT event_id FROM hits"},
+                    "error": "",
+                }
+            ],
+        },
+    )
+
+    assert result["tool_correct"] is True
+    assert result["answer_correct"] is True
 
 
 def test_calculate_metrics_counts_failed_cases_in_denominator() -> None:

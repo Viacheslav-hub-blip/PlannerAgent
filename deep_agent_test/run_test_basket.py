@@ -10,14 +10,17 @@
 - run_case_with_timeout: запуск worker-процесса с жестким таймаутом.
 - evaluate_answer: regex-проверка итогового ответа.
 - evaluate_tool_calls: regex-проверка имен и параметров инструментов.
+- evaluate_case_result: объединение сырого результата с проверками кейса.
 - calculate_metrics: расчет процентов по завершенной серии.
 - print_progress_bar: вывод прогресса обработки корзины в stderr.
+- run_cases_async: асинхронный запуск кейсов с ограничением параллелизма.
 - synchronize_queries: синхронизация запросов из ``run.py`` перед тестом.
 - main: запуск всей корзины без параметров или внутреннего worker-режима.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -34,6 +37,9 @@ from typing import Any
 from langchain_core.callbacks import BaseCallbackHandler
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 DEFAULT_BASKET_PATH = Path(__file__).resolve().with_name("test_basket.json")
 DEFAULT_REPORT_PATH = PROJECT_ROOT / "runs" / "test_basket_report.json"
 DEFAULT_MARKDOWN_PATH = Path(__file__).resolve().with_name("TEST_CASES.md")
@@ -401,6 +407,40 @@ def evaluate_tool_calls(
     return not failures, failures
 
 
+def evaluate_case_result(
+    case: dict[str, Any],
+    raw_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Проверяет инструменты и финальный ответ одного завершенного кейса.
+
+    Args:
+        case: Описание кейса с regex-ожиданиями.
+        raw_result: Сырой результат worker-процесса.
+
+    Returns:
+        Результат кейса с признаками ``tool_correct`` и ``answer_correct``.
+    """
+
+    answer_correct, missing_answer_patterns = evaluate_answer(
+        raw_result.get("answer", ""),
+        case["answer_patterns"],
+    )
+    tool_correct, failed_tool_expectations = evaluate_tool_calls(
+        raw_result.get("tool_calls", []),
+        case["tool_expectations"],
+    )
+    completed = raw_result["status"] == "completed"
+    return {
+        "id": str(case["id"]),
+        "status": raw_result["status"],
+        "tool_correct": tool_correct and completed,
+        "answer_correct": answer_correct and completed,
+        "missing_answer_patterns": missing_answer_patterns,
+        "failed_tool_expectations": failed_tool_expectations,
+        **raw_result,
+    }
+
+
 def calculate_metrics(results: list[dict[str, Any]]) -> dict[str, float | int]:
     """Рассчитывает две итоговые метрики по всем кейсам корзины.
 
@@ -447,6 +487,60 @@ def print_progress_bar(completed: int, total: int, *, width: int = 30) -> None:
     )
 
 
+async def run_cases_async(
+    cases: list[dict[str, Any]],
+    *,
+    timeout_seconds: float,
+    max_concurrency: int,
+) -> list[dict[str, Any]]:
+    """Асинхронно выполняет кейсы с ограничением числа одновременных запусков.
+
+    Args:
+        cases: Тестовые кейсы для выполнения.
+        timeout_seconds: Максимальная длительность каждого кейса в секундах.
+        max_concurrency: Максимальное число одновременно работающих кейсов.
+
+    Returns:
+        Оцененные результаты всех кейсов в исходном порядке корзины.
+
+    Raises:
+        ValueError: Если ``max_concurrency`` меньше единицы.
+    """
+
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency должен быть не меньше 1.")
+
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def run_single_case(case: dict[str, Any]) -> dict[str, Any]:
+        """Запускает один кейс внутри общего ограничения параллелизма.
+
+        Args:
+            case: Описание тестового кейса и его regex-ожиданий.
+
+        Returns:
+            Оцененный результат одного кейса.
+        """
+
+        async with semaphore:
+            raw_result = await asyncio.to_thread(
+                run_case_with_timeout,
+                case,
+                timeout_seconds=timeout_seconds,
+            )
+        return evaluate_case_result(case, raw_result)
+
+    tasks = [asyncio.create_task(run_single_case(case)) for case in cases]
+    results: list[dict[str, Any]] = []
+    print_progress_bar(0, len(tasks))
+    for completed_count, task in enumerate(asyncio.as_completed(tasks), start=1):
+        results.append(await task)
+        print_progress_bar(completed_count, len(tasks))
+
+    order_by_id = {str(case["id"]): index for index, case in enumerate(cases)}
+    return sorted(results, key=lambda result: order_by_id[result["id"]])
+
+
 def _run_worker(case_id: str, result_path: Path) -> int:
     """Находит выбранный кейс и запускает внутренний worker.
 
@@ -469,7 +563,7 @@ def _run_worker(case_id: str, result_path: Path) -> int:
 
 
 def synchronize_queries() -> int:
-    """Синхронизирует запросы из ``run.py`` с корзиной и Markdown-файлом.
+    """Синхронизирует запросы из ``runF.py`` с корзиной и Markdown-файлом.
 
     Returns:
         Количество синхронизированных запросов.
@@ -501,35 +595,16 @@ def main() -> int:
 
     synchronize_queries()
     basket = load_basket(DEFAULT_BASKET_PATH)
-    timeout_seconds = float(basket.get("timeout_seconds", 1000))
-    cases = basket["cases"][:3]
-    evaluated_results: list[dict[str, Any]] = []
-    print_progress_bar(0, len(cases))
-
-    for index, case in enumerate(cases, start=1):
-        raw_result = run_case_with_timeout(
-            case,
+    timeout_seconds = float(basket.get("timeout_seconds", 600))
+    max_concurrency = int(basket.get("max_concurrency", 10))
+    cases = basket["cases"]
+    evaluated_results = asyncio.run(
+        run_cases_async(
+            cases,
             timeout_seconds=timeout_seconds,
+            max_concurrency=max_concurrency,
         )
-        answer_correct, missing_answer_patterns = evaluate_answer(
-            raw_result.get("answer", ""),
-            case["answer_patterns"],
-        )
-        tool_correct, failed_tool_expectations = evaluate_tool_calls(
-            raw_result.get("tool_calls", []),
-            case["tool_expectations"],
-        )
-        evaluated = {
-            "id": str(case["id"]),
-            "status": raw_result["status"],
-            "tool_correct": tool_correct and raw_result["status"] == "completed",
-            "answer_correct": answer_correct and raw_result["status"] == "completed",
-            "missing_answer_patterns": missing_answer_patterns,
-            "failed_tool_expectations": failed_tool_expectations,
-            **raw_result,
-        }
-        evaluated_results.append(evaluated)
-        print_progress_bar(index, len(cases))
+    )
 
     metrics = calculate_metrics(evaluated_results)
     report = {"metrics": metrics, "results": evaluated_results}
