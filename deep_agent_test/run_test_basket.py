@@ -8,7 +8,7 @@
 - build_process_group_options: параметры отдельной группы процессов для Windows и POSIX.
 - terminate_process_tree: завершение worker и его дочерних процессов.
 - run_case_with_timeout: запуск worker-процесса с жестким таймаутом.
-- evaluate_answer: regex-проверка итогового ответа.
+- evaluate_answer: regex-проверка и проверка чисел с допустимым отклонением.
 - evaluate_tool_calls: regex-проверка имен и параметров инструментов.
 - evaluate_case_result: объединение сырого результата с проверками кейса.
 - calculate_metrics: расчет процентов по завершенной серии.
@@ -354,15 +354,21 @@ def run_case_with_timeout(
         return result
 
 
-def evaluate_answer(answer: str, patterns: list[str]) -> tuple[bool, list[str]]:
-    """Проверяет свободный текст ответа набором обязательных regex.
+def evaluate_answer(
+    answer: str,
+    patterns: list[str],
+    numeric_expectations: list[dict[str, Any]] | None = None,
+) -> tuple[bool, list[str]]:
+    """Проверяет свободный текст ответа по regex и числовым ожиданиям.
 
     Args:
         answer: Финальный текст агента.
         patterns: Регулярные выражения, каждое из которых должно совпасть.
+        numeric_expectations: Числа с полями ``value``, ``absolute_tolerance``
+            и необязательным ``unit`` со значением ``percent``.
 
     Returns:
-        Пара ``(успех, несовпавшие regex)``.
+        Пара ``(успех, описания несовпавших ожиданий)``.
     """
 
     missing = [
@@ -370,6 +376,29 @@ def evaluate_answer(answer: str, patterns: list[str]) -> tuple[bool, list[str]]:
         for pattern in patterns
         if re.search(pattern, answer, flags=re.IGNORECASE | re.DOTALL) is None
     ]
+    number_pattern = re.compile(
+        r"(?<!\d)([-+]?\s*\d+(?:[\s ]\d{3})*(?:[,.]\d+)?)(\s*%)?",
+    )
+    answer_numbers: list[tuple[float, bool]] = []
+    for match in number_pattern.finditer(answer):
+        normalized = re.sub(r"[\s ]", "", match.group(1)).replace(",", ".")
+        try:
+            answer_numbers.append((float(normalized), bool(match.group(2))))
+        except ValueError:
+            continue
+
+    for expectation in numeric_expectations or []:
+        expected = float(expectation["value"])
+        tolerance = float(expectation.get("absolute_tolerance", 0.0))
+        require_percent = expectation.get("unit") == "percent"
+        matched = any(
+            abs(actual - expected) <= tolerance
+            and (not require_percent or is_percent)
+            for actual, is_percent in answer_numbers
+        )
+        if not matched:
+            suffix = "%" if require_percent else ""
+            missing.append(f"{expected:g}±{tolerance:g}{suffix}")
     return not missing, missing
 
 
@@ -424,6 +453,7 @@ def evaluate_case_result(
     answer_correct, missing_answer_patterns = evaluate_answer(
         raw_result.get("answer", ""),
         case["answer_patterns"],
+        case.get("answer_numeric_expectations"),
     )
     tool_correct, failed_tool_expectations = evaluate_tool_calls(
         raw_result.get("tool_calls", []),
@@ -435,6 +465,7 @@ def evaluate_case_result(
         "status": raw_result["status"],
         "tool_correct": tool_correct and completed,
         "answer_correct": answer_correct and completed,
+        "passed": answer_correct and completed,
         "missing_answer_patterns": missing_answer_patterns,
         "failed_tool_expectations": failed_tool_expectations,
         **raw_result,

@@ -2,8 +2,9 @@
 
 Содержит тесты:
 - test_evaluate_answer_accepts_extra_text: дополнительный текст не ломает regex-проверку.
+- test_evaluate_answer_accepts_rounded_number: округленное число принимается с допуском.
 - test_evaluate_tool_calls_checks_name_arguments_and_errors: проверяются имя, параметры и ошибки tool.
-- test_evaluate_case_result_combines_checks: сырой результат объединяется с regex-проверками.
+- test_evaluate_case_result_counts_correct_answer_without_expected_tool: правильный ответ засчитывается независимо от tool.
 - test_calculate_metrics_counts_failed_cases_in_denominator: ошибки остаются в знаменателе метрик.
 - test_load_run_queries_reads_concatenated_constants: AST читает склеенные строковые константы.
 - test_build_process_group_options_matches_platform: параметры процесса соответствуют ОС.
@@ -33,6 +34,29 @@ def test_evaluate_answer_accepts_extra_text() -> None:
     success, missing = evaluate_answer(
         "Расчет завершен. Итоговая сумма: 458 116,99 рубля.",
         [r"458[\s ]?116[,.]99"],
+    )
+
+    assert success is True
+    assert missing == []
+
+
+def test_evaluate_answer_accepts_rounded_number() -> None:
+    """Проверяет принятие корректно округленного процентного значения.
+
+    Returns:
+        ``None``.
+    """
+
+    success, missing = evaluate_answer(
+        "Доля составила 24,5% (13 из 53).",
+        [],
+        [
+            {
+                "value": 24.53,
+                "absolute_tolerance": 0.05,
+                "unit": "percent",
+            }
+        ],
     )
 
     assert success is True
@@ -76,8 +100,8 @@ def test_evaluate_tool_calls_checks_name_arguments_and_errors() -> None:
     assert failed_expectations[0]["matched_calls"] == 0
 
 
-def test_evaluate_case_result_combines_checks() -> None:
-    """Проверяет объединение проверок ответа и инструментов.
+def test_evaluate_case_result_counts_correct_answer_without_expected_tool() -> None:
+    """Проверяет независимость правильности ответа от вызовов инструментов.
 
     Returns:
         ``None``.
@@ -92,18 +116,13 @@ def test_evaluate_case_result_combines_checks() -> None:
         {
             "status": "completed",
             "answer": "Ответ: 7 сработок.",
-            "tool_calls": [
-                {
-                    "name": "load_data",
-                    "arguments": {"query": "SELECT event_id FROM hits"},
-                    "error": "",
-                }
-            ],
+            "tool_calls": [],
         },
     )
 
-    assert result["tool_correct"] is True
+    assert result["tool_correct"] is False
     assert result["answer_correct"] is True
+    assert result["passed"] is True
 
 
 def test_calculate_metrics_counts_failed_cases_in_denominator() -> None:
