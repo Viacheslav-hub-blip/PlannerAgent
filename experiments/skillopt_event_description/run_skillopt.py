@@ -25,8 +25,8 @@ from skillopt.envs.base import EnvAdapter
 from skillopt.gradient.reflect import run_minibatch_reflect
 
 from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
-from deep_agent_test.core import build_data_tools
 from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
+from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
 from experiments.skillopt_event_description.scoring import (
     judge_answer_with_llm,
     load_jsonl,
@@ -595,7 +595,7 @@ def run_agent_case(item: dict[str, Any], skills_root: Path) -> tuple[str, Path]:
     """
 
     settings = build_agent_settings(skills_root)
-    data_tools = build_data_tools(settings)
+    data_tools = build_fake_spark_data_tools(query_parser_model=model)
     agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
     trace_file_path = build_trace_file_path(settings.trace_log_dir)
     trace_handler = FileTraceCallbackHandler(trace_file_path)

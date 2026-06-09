@@ -1,7 +1,7 @@
-"""Минимальный запуск аналитического DeepAgent на настроенном источнике данных.
+"""Минимальный запуск аналитического DeepAgent на локальных CSV.
 
 Содержит:
-- main: инициализация инструмента чтения данных, trace-логгера, агента и один invoke.
+- main: инициализация fake-инструмента чтения данных, trace-логгера, агента и один invoke.
 - main_stream: запуск агента со стримингом человекочитаемых промежуточных шагов.
 - _print_v3_progress: вывод typed-событий ``stream_events(version="v3")``.
 - _print_tool_call_progress: вывод статуса одного tool call.
@@ -17,8 +17,8 @@ import json
 from typing import Any
 
 from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
-from deep_agent_test.core import build_data_tools
 from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
+from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
 from model import model
 
 USER_MESSAGE = "найди все сработки связанные с образованием за январь 2026"
@@ -43,7 +43,7 @@ def main() -> int:
     """
 
     settings = load_deep_agent_settings()
-    data_tools = build_data_tools(settings)
+    data_tools = build_fake_spark_data_tools(query_parser_model=model)
     agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
     trace_file_path = build_trace_file_path(settings.trace_log_dir)
     trace_handler = FileTraceCallbackHandler(trace_file_path)
@@ -71,7 +71,7 @@ def main_stream() -> int:
     """
 
     settings = load_deep_agent_settings()
-    data_tools = build_data_tools(settings)
+    data_tools = build_fake_spark_data_tools(query_parser_model=model)
     agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
     trace_file_path = build_trace_file_path(settings.trace_log_dir)
     trace_handler = FileTraceCallbackHandler(trace_file_path)

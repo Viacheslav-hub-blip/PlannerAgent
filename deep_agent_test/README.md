@@ -4,9 +4,8 @@
 дать агенту доменные инструкции, безопасные инструменты чтения данных, контроль больших
 ответов инструментов и понятную точку запуска в других проектах.
 
-Пакет не содержит демонстрационных данных и отдельных локальных data tools. Для запуска
-передайте готовый `load_data` в `build_analytics_deep_agent` или настройте фабрику data
-tools через `data_tools_factory`.
+Для локальной проверки пакет содержит fake `load_data`, который читает CSV из папки
+`data`. Production-запуск использует Spark tool или фабрику из `data_tools_factory`.
 
 ## Что добавлено к базовому DeepAgent
 
@@ -31,10 +30,10 @@ tools через `data_tools_factory`.
 
 3. Инструменты чтения данных.
 
-   `build_spark_data_tools(spark, query_parser_model=model)` создает `load_data` поверх
-   Spark session. Инструмент принимает один аргумент `query` с SQL-подобным запросом:
-   alias таблицы, период, явные колонки результата, фильтры, агрегации и сортировка.
-   Разбор `query` выполняется LLM-нормализатором.
+   `build_spark_data_tools(spark, query_parser_model=model)` создает production
+   `load_data` поверх Spark session. `build_fake_spark_data_tools(query_parser_model=model)`
+   создает совместимый локальный tool поверх CSV. Оба принимают один аргумент `query`
+   с SQL-подобным запросом.
 
 4. Прозрачный ответ `load_data`.
 
@@ -83,6 +82,7 @@ deep_agent_test/
 
   tools/
     spark_data.py             # load_data поверх Spark session
+    fake_spark_data.py        # локальный load_data поверх CSV
     data_query_schema.py      # pydantic-схемы query и LLM-разбора
     data_tools_wrapper.py     # прозрачное описание запросов к data-tools
     execute_python_code.py    # безопасное выполнение Python-кода
@@ -97,6 +97,17 @@ deep_agent_test/
 
 Trace-логгер можно подключить как LangChain callback; он пишет подробный txt-файл по
 каждому запросу к LLM.
+
+## Локальная проверка
+
+Корневой `run.py` использует CSV из папки `data`:
+
+```bash
+python run.py
+```
+
+Запуск вызывает настроенную модель для работы агента и разбора `query`. Сам fake tool
+не использует Spark и выполняет выборки через pandas.
 
 ## Минимальный запуск со Spark
 
