@@ -49,6 +49,22 @@ keywords: "cards, карточные операции, POS, ecommerce, e-commerc
 - `user_ip_location_city`
 - `user_ip_location_country`
 
+## Формат значений
+
+- `event_id` - строковый UUID, например `ae107b8e-4788-4073-9bb4-4f209a6e02aa`.
+- `epk_id` - длинный строковый идентификатор, например `2099007770421986000001`; передавай в кавычках.
+- `event_dt` - строка `YYYYMMDD`, например `20260124`.
+- `event_time` - строка `YYYY-MM-DD HH:MM:SS`, например `2026-01-24 08:00:00`.
+- `transaction_amount` - десятичное число, например `118410.20`.
+- `transaction_amount_currency` - код валюты, например `RUB`.
+- `event_type`, `sub_type`, `type_operation` - категориальные строки, например
+  `PURCHASE`, `PURCHASE`, `CARD_PURCHASE`.
+- `atm_merchant_name` - название торгового предприятия, например `Университет Синергия`.
+- `atm_mcc` - код MCC, который может читаться как строка или число, например `8299`.
+- `atm_mcc_name` - человекочитаемая категория MCC, например `Educational Services`.
+- `response_code` - код ответа, например `00` или `05`; обрабатывай как строку, чтобы сохранить ведущий ноль.
+- `cards_dsl_model_risk_score` - числовой score, например `841`.
+
 ## Ограничения
 
 - Для связи с `hits` обычно достаточно `event_id`; fallback - `epk_id` + `event_dt`.

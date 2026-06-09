@@ -59,6 +59,32 @@ keywords: "uko, ДБО, СБП, переводы, счета, мобильное
 - `phone_brand`
 - `phone_model`
 
+## Формат значений
+
+- `event_id` - строковый UUID, например `72e0bed6-a95d-4100-b55c-dc6a6c9f08ce`.
+- `epk_id` - длинный строковый идентификатор, например `2099007770421990000001`; передавай в кавычках.
+- `event_dt` - строка `YYYYMMDD`, например `20260124`.
+- `event_time` - Unix epoch в миллисекундах, например `1769245629000`.
+- `event_dttm_readable` - строка `YYYY-MM-DD HH:MM:SS`, например `2026-01-24 09:07:09`.
+- `transaction_amount` - десятичное число, например `12280.58`.
+- `transaction_amount_currency` - код валюты, например `RUB`.
+- `event_type`, `sub_type`, `type_operation` - категориальные строки, например
+  `PAYMENT`, `UTILITY`, `UTILITY_PAYMENT`.
+- `recipient_bank_name` - человекочитаемое название, например `Газпромбанк`.
+- `hardware_id` - строковый идентификатор устройства, например `F1C44E660347FF5B26DDAE537AAF55F4`.
+- `risk_score_dsl` - числовой score, например `312`.
+- `main_rule` может быть пустым или содержать JSON-строку:
+
+```json
+{"rule_name":"DENY оплата обучения после смены устройства","rule_id":"49f872b6-00b4-4560-94cf-ec1c566e3f13","rule_category":"Device Anomaly"}
+```
+
+- `rules` и `subrules` могут храниться как JSON-массивы, например `[]`.
+- `params` может храниться как JSON-объект, например
+  `{"demo_client_trace":true,"synthetic_education_dataset":true}`.
+
+Для поиска названия внутри JSON-строки используй `CONTAINS`, а не точное равенство всему полю.
+
 ## Ограничения
 
 - Никогда не фильтруй `uko.event_time` значением `event_time` из `hits`.

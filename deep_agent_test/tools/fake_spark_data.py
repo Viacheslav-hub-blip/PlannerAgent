@@ -6,6 +6,7 @@
 - _extract_query_args_with_llm: LLM-разбор SQL-подобного запроса в аргументы выборки.
 - _fake_read_table: выполнение выборки через pandas DataFrame API.
 - _load_table_frame: чтение CSV-файла по жестко заданной карте таблиц.
+- _string_dtype_columns: выбор колонок, которые должны читаться из CSV как строки.
 - _resolve_table_name: преобразование короткого alias таблицы в ключ CSV-файла.
 - _available_table_aliases_text: форматирование списка доступных alias таблиц.
 - _apply_derived_columns: добавление вычисляемых колонок.
@@ -22,6 +23,7 @@
 - _parse_aggregation_item: разбор одного агрегата.
 - _parse_order_item: разбор одной сортировки.
 - _parse_scalar: приведение строкового значения к простому типу.
+- _normalize_filter_scalar: нормализация значения фильтра с учётом колонки.
 - _coerce_filter_value: приведение значения фильтра к типу pandas Series.
 - _validate_columns: проверка наличия колонок в DataFrame.
 - _format_empty_select_error: человекочитаемая ошибка для пустой обычной выборки.
@@ -79,6 +81,30 @@ _FILTER_OPERATORS = {
 }
 _DERIVED_OPERATIONS = {"year", "month", "year_month", "date", "lower", "upper", "length", "abs"}
 _AGGREGATION_FUNCTIONS = {"count", "count_distinct", "min", "max", "sum", "mean"}
+_EXPLICIT_STRING_COLUMNS = {
+    "atm_mcc",
+    "card_bin",
+    "card_expire_date",
+    "cards_response_code_1",
+    "client_inn",
+    "client_phone",
+    "dul_number",
+    "mobile_phone_number",
+    "payer_inn",
+    "payee_phone_number",
+    "phone",
+    "recipient_bik",
+    "recipient_inn",
+    "response_code",
+    "transaction_beneficiar_bik",
+}
+_STRING_COLUMN_SUFFIXES = (
+    "_account_number",
+    "_card_number",
+    "_event_id",
+    "_id",
+    "_phone_number",
+)
 
 
 def build_fake_spark_data_tools(query_parser_model: Any | None = None) -> list[BaseTool]:
@@ -189,7 +215,7 @@ def _fake_read_table(
         result.attrs["spark_total_rows"] = int(total_rows)
         result.attrs["spark_matched_rows"] = int(matched_rows)
         return result.reset_index(drop=True)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         return f"Ошибка load_data: {exc}"
 
 
@@ -212,7 +238,28 @@ def _load_table_frame(table_name: str) -> pd.DataFrame:
     path = FAKE_DATA_ROOT / FAKE_TABLE_FILES[table_name]
     if not path.exists():
         raise ValueError(f"CSV-файл fake-таблицы не найден: {path}")
-    return pd.read_csv(path)
+    columns = list(pd.read_csv(path, nrows=0).columns)
+    string_columns = _string_dtype_columns(columns)
+    return pd.read_csv(path, dtype={column: "string" for column in string_columns})
+
+
+def _string_dtype_columns(columns: list[str]) -> list[str]:
+    """Выбирает идентификаторы и коды, которые нужно читать как строки.
+
+    Args:
+        columns: Имена колонок из заголовка CSV.
+
+    Returns:
+        Список колонок для ``pandas.read_csv(dtype=...)``. Строковый тип сохраняет точность
+        длинных идентификаторов и ведущие нули кодов.
+    """
+    return [
+        column
+        for column in columns
+        if column in _EXPLICIT_STRING_COLUMNS
+        or column.endswith(_STRING_COLUMN_SUFFIXES)
+        or column == "event_id"
+    ]
 
 
 def _resolve_table_name(table_name: str) -> str:
@@ -355,15 +402,22 @@ def _build_filter_mask(*, table: pd.DataFrame, item: Any) -> pd.Series:
             mask = mask | series.astype("string").str.contains(str(value), case=False, na=False, regex=False)
         return mask
     if operator == "in":
-        values = [_coerce_filter_value(series, _parse_scalar(value)) for value in _parse_filter_values(raw_value)]
+        values = [
+            _coerce_filter_value(series, _parse_scalar(_normalize_filter_scalar(column, value)))
+            for value in _parse_filter_values(raw_value)
+        ]
         return series.isin(values)
     if operator == "between":
-        values = [_coerce_filter_value(series, _parse_scalar(value)) for value in _parse_filter_values(raw_value)]
+        values = [
+            _coerce_filter_value(series, _parse_scalar(_normalize_filter_scalar(column, value)))
+            for value in _parse_filter_values(raw_value)
+        ]
         if len(values) != 2:
             raise ValueError("Для оператора between нужны два значения через запятую или and.")
         return series.between(values[0], values[1])
 
-    value = _coerce_filter_value(series, _parse_scalar(raw_value))
+    normalized_value = _normalize_filter_scalar(column, raw_value)
+    value = _coerce_filter_value(series, _parse_scalar(normalized_value))
     if operator == "eq":
         return series == value
     if operator == "ne":
@@ -681,6 +735,23 @@ def _parse_scalar(value: str) -> str | int | float | bool:
         except ValueError:
             return text
     return text
+
+
+def _normalize_filter_scalar(column: str, value: Any) -> Any:
+    """Нормализует значение фильтра с учётом формата колонки.
+
+    Args:
+        column: Имя колонки фильтра.
+        value: Исходное значение из запроса.
+
+    Returns:
+        Для ``event_dt`` дата ISO ``YYYY-MM-DD`` преобразуется в ``YYYYMMDD``.
+        Остальные значения возвращаются без изменений.
+    """
+    text = str(value).strip().strip("'\"")
+    if column == "event_dt" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text.replace("-", "")
+    return value
 
 
 def _coerce_filter_value(series: pd.Series, value: str | int | float | bool) -> Any:

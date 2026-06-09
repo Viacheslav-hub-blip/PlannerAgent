@@ -37,6 +37,7 @@
 - _parse_aggregation_item: разбор одного агрегата.
 - _parse_order_item: разбор одной сортировки.
 - _parse_scalar: приведение строкового значения к простому типу.
+- _normalize_filter_scalar: нормализация значения фильтра с учётом колонки.
 - _has_required_period: проверка временного интервала.
 - _has_exact_event_id_filter: проверка точечного lookup по event_id.
 - _validate_columns: проверка наличия колонок в DataFrame.
@@ -933,14 +934,22 @@ def _build_filter_expression(item: Any) -> Any:
             raise ValueError("Для оператора contains_any нужно хотя бы одно значение.")
         return expression
     if operator == "in":
-        return spark_column.isin([_parse_scalar(value) for value in _parse_filter_values(raw_value)])
+        return spark_column.isin(
+            [
+                _parse_scalar(_normalize_filter_scalar(column, value))
+                for value in _parse_filter_values(raw_value)
+            ]
+        )
     if operator == "between":
-        values = [_parse_scalar(value) for value in _parse_filter_values(raw_value)]
+        values = [
+            _parse_scalar(_normalize_filter_scalar(column, value))
+            for value in _parse_filter_values(raw_value)
+        ]
         if len(values) != 2:
             raise ValueError("Для оператора between нужны два значения.")
         return spark_column.between(values[0], values[1])
 
-    value = _parse_scalar(raw_value)
+    value = _parse_scalar(_normalize_filter_scalar(column, raw_value))
     if operator == "eq":
         return spark_column == value
     if operator == "ne":
@@ -1259,6 +1268,23 @@ def _parse_scalar(value: str) -> str | int | float | bool:
         except ValueError:
             return text
     return text
+
+
+def _normalize_filter_scalar(column: str, value: Any) -> Any:
+    """Нормализует значение фильтра с учётом формата колонки.
+
+    Args:
+        column: Имя колонки фильтра.
+        value: Исходное значение из запроса.
+
+    Returns:
+        Для ``event_dt`` дата ISO ``YYYY-MM-DD`` преобразуется в ``YYYYMMDD``.
+        Остальные значения возвращаются без изменений.
+    """
+    text = str(value).strip().strip("'\"")
+    if column == "event_dt" and re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text.replace("-", "")
+    return value
 
 
 def _validate_columns(*, columns: list[str], available_columns: list[str], allow_empty: bool) -> str:
