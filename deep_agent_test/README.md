@@ -1,8 +1,8 @@
-# Аналитический DeepAgent
+# Аналитический coding-agent
 
 Этот пакет содержит готовую надстройку над базовым `deepagents`. Цель пакета простая:
-дать агенту доменные инструкции, безопасные инструменты чтения данных, контроль больших
-ответов инструментов и понятную точку запуска в других проектах.
+сохранить возможности coding harness, добавить доменные инструкции и безопасные
+инструменты аналитики, а также дать понятную точку запуска в других проектах.
 
 Для локальной проверки пакет содержит fake `load_data`, который читает CSV из папки
 `data`. Production-запуск использует Spark tool или фабрику из `data_tools_factory`.
@@ -11,9 +11,26 @@
 
 Базовый `deepagents` уже умеет вызывать инструменты, запускать subagent-ов, читать файлы
 и вести список задач. В этом проекте поверх него добавлены конкретные вещи для
-аналитики таблиц.
+аналитики таблиц и работы с кодом.
 
-1. Предзагрузка skills.
+1. Workspace и coding capability.
+
+   При инициализации задаётся `workspace_root`. Skill `code-workspace` открывает
+   supervisor инструменты `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
+   и `execute`. Без этого skill они скрыты и блокируются middleware.
+
+2. Project memory и память диалога.
+
+   Корневой `AGENTS.md` загружается штатным `MemoryMiddleware`. История сообщений,
+   планы и state сохраняются через LangGraph `InMemorySaver`; повторный вызов с тем же
+   `thread_id` продолжает текущий диалог в пределах процесса.
+
+3. Approval файловых изменений.
+
+   `write_file` и `edit_file` приостанавливаются через `HumanInTheLoopMiddleware` и
+   поддерживают `approve`, `edit`, `reject`. Чтение файлов и terminal approval не требуют.
+
+4. Предзагрузка skills.
 
    Перед первым ответом агент выбирает нужные файлы `SKILL.md` из
    `deep_agent_test/resources/skills` и добавляет их в system prompt. `SKILL.md`
@@ -22,38 +39,39 @@
    Эти же skills передаются в `data-retrieval-agent`, поэтому supervisor и subagent
    работают с одним набором доменных правил.
 
-2. Data-retrieval subagent.
+5. Специализированные subagents.
 
    Основной агент не читает таблицы напрямую. Для чтения данных он вызывает
    `data-retrieval-agent`. Этот subagent получает задачу, вызывает `load_data` и
-   возвращает supervisor-у короткий структурированный отчет.
+   возвращает supervisor-у короткий структурированный отчет. Для ограниченных coding-задач
+   доступен capability-aware `general-purpose`.
 
-3. Инструменты чтения данных.
+6. Инструменты чтения данных.
 
    `build_spark_data_tools(spark, query_parser_model=model)` создает production
    `load_data` поверх Spark session. `build_fake_spark_data_tools(query_parser_model=model)`
    создает совместимый локальный tool поверх CSV. Оба принимают один аргумент `query`
    с SQL-подобным запросом.
 
-4. Прозрачный ответ `load_data`.
+7. Прозрачный ответ `load_data`.
 
    Обертка над data-tools добавляет к результату SQL-подобное описание запроса:
    какие поля читались, из какой таблицы, какие фильтры применялись. Это снижает риск,
    что агент перепутает пример строк с полным результатом.
 
-5. Offload больших таблиц.
+8. Offload больших таблиц.
 
    Если tool возвращает много строк или слишком большой текст, результат сохраняется в
    pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
    путь к файлу и preview. Полный файл можно читать через `execute_python_code`.
 
-6. Безопасный Python sandbox.
+9. Безопасный Python sandbox.
 
    Tool `execute_python_code` нужен для расчетов по выгруженным данным, чтения pickle,
    join, фильтрации и подготовки итоговых таблиц. Перед выполнением код проходит
    простую проверку: запрещены `eval`, `exec`, shell-вызовы и удаление файлов.
 
-7. Защита от циклов инструментов.
+10. Защита от циклов инструментов.
 
    `ToolLoopGuardMiddleware` останавливает серию одинаковых tool-вызовов, если агент
    зациклился на одном инструменте.
@@ -64,20 +82,21 @@
 deep_agent_test/
   core/
     analytics_deep_agent.py   # сборка агента
-    retrieval_subagents.py    # data-retrieval-agent
+    capabilities.py           # grants tools по загруженным skills
+    retrieval_subagents.py    # general-purpose и data-retrieval-agent
     settings.py               # загрузка настроек
     prompts.py                # общие prompts supervisor/subagent
     state.py                  # дополнительные поля state
     python_sandbox.py         # persistent Python namespace
-    harness_profile.py        # ограничение встроенных tools и subagents
-    utf8_filesystem_backend.py # UTF-8 fallback для поиска по skills
+    harness_profile.py        # explicit subagents и полный tool runtime
+    utf8_filesystem_backend.py # workspace shell и UTF-8 filesystem search
     trace_logging.py          # подробный trace одного запуска агента
 
   middlewares/
     skills_context.py         # предзагрузка skills
     tool_output_file.py       # сохранение больших результатов tool в pickle
     tool_loop_guard.py        # защита от повторяющихся tool-вызовов
-    tool_visibility.py        # allowlist tools для supervisor и subagent
+    tool_visibility.py        # динамический allowlist tools по active skills
     tool_descriptions.py      # актуальные описания tools в prompt
 
   tools/
@@ -91,6 +110,7 @@ deep_agent_test/
   resources/
     config/defaults.json      # настройки по умолчанию
     skills/**/SKILL.md        # короткие карточки источников и workflow
+    skills/code-workspace/    # capability работы с кодом и terminal
     skills/**/fields.md       # подробные поля, читаются по необходимости
     skills/**/joins.md        # подробные правила связи источников
 ```
@@ -159,7 +179,12 @@ USER_MESSAGE = "текст запроса пользователя"
 settings = load_deep_agent_settings()
 spark = SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
 data_tools = build_spark_data_tools(spark, query_parser_model=model)
-agent = build_analytics_deep_agent(model=model, settings=settings, data_tools=data_tools)
+agent = build_analytics_deep_agent(
+    model=model,
+    settings=settings,
+    data_tools=data_tools,
+    workspace_root="C:/projects/current-project",
+)
 trace_file_path = build_trace_file_path(settings.trace_log_dir)
 trace_handler = FileTraceCallbackHandler(trace_file_path)
 result = agent.invoke(
@@ -172,6 +197,24 @@ result = agent.invoke(
 )
 print(f"Trace log: {trace_file_path}")
 ```
+
+Если вызов остановился на `write_file` или `edit_file`, продолжите тот же `thread_id`
+через LangGraph `Command`:
+
+```python
+from langgraph.types import Command
+
+result = agent.invoke(
+    Command(resume={"decisions": [{"type": "approve"}]}),
+    config={
+        "configurable": {"thread_id": settings.thread_id},
+        "recursion_limit": settings.graph_recursion_limit,
+    },
+)
+```
+
+Для отклонения передайте `{"type": "reject", "message": "причина"}`. Для изменения
+tool call используйте решение `edit` с `edited_action`.
 
 Для другого источника передайте собственный `BaseTool` с именем `load_data` и схемой
 аргументов, совместимой с prompt-контрактом.
@@ -186,6 +229,14 @@ deep_agent_test/resources/config/defaults.json
 
 Главные параметры:
 
+- `workspace_root` - корень coding workspace и рабочая директория terminal.
+- `agents_file_name` - project memory, по умолчанию `AGENTS.md`.
+- `coding_tools_enabled_by_default` - открыть coding tools без skill; по умолчанию `false`.
+- `enable_file_edit_approval` - approval для `write_file` и `edit_file`.
+- `terminal_timeout` - timeout terminal-команды.
+- `terminal_max_output_bytes` - предел возвращаемого terminal output.
+- terminal всегда получает только allowlist системных переменных; API-ключи и другие
+  переменные пользовательского environment в subprocess не передаются.
 - `skills_root` - локальная папка со skills.
 - `skills_virtual_dir` - виртуальный путь, который видит DeepAgent.
 - `harness_profile_key` - provider или `provider:model` для регистрации HarnessProfile.
@@ -199,6 +250,11 @@ deep_agent_test/resources/config/defaults.json
 
 Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
 `DEEP_AGENT_CONFIG_PATH`. Значения из этого файла переопределят defaults.
+
+Локальный `LocalShellBackend` не является sandbox: команда технически может обратиться
+к абсолютному пути вне workspace. В закрытом контуре граница workspace поддерживается
+policy-as-prompt и рабочей директорией процесса, но не изоляцией ОС. Terminal нельзя
+использовать для обхода approval файловых изменений.
 
 ## Trace-лог
 
@@ -283,6 +339,10 @@ deep_agent_test/resources/skills
 Каждый skill - это папка с коротким файлом `SKILL.md`. Он должен описывать один
 понятный участок домена: таблицу, правило поиска или тип аналитического запроса.
 `SKILL.md` попадает в preload context, поэтому держите его компактным.
+
+Frontmatter должен содержать только `name` и `description`. Всё, что влияет на выбор
+skill, включая trigger-слова и ситуации использования, должно находиться в
+`description`.
 
 Подробный контекст выносится в соседние файлы:
 

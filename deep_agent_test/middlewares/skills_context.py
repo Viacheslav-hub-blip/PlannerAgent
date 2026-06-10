@@ -509,7 +509,6 @@ def build_skills_index(
                 "path": _virtual_skill_path(skills_root, skill_path, skills_virtual_dir),
                 "name": parsed.get("name") or skill_path.parent.name,
                 "description": parsed.get("description") or "",
-                "keywords": parsed.get("keywords") or "",
             }
         )
     return index
@@ -576,7 +575,7 @@ def _parse_skill_index_entry(content: str) -> dict[str, str]:
         content: Текст ``SKILL.md``.
 
     Returns:
-        Словарь с ключами ``name``, ``description`` и ``keywords`` при наличии данных.
+        Словарь с ключами ``name`` и ``description`` при наличии данных.
     """
 
     result: dict[str, str] = {}
@@ -585,8 +584,6 @@ def _parse_skill_index_entry(content: str) -> dict[str, str]:
             result["name"] = line.split(":", 1)[1].strip().strip('"')
         if line.startswith("description:"):
             result["description"] = line.split(":", 1)[1].strip().strip('"')
-        elif line.startswith("keywords:"):
-            result["keywords"] = line.split(":", 1)[1].strip().strip('"')
     return result
 
 

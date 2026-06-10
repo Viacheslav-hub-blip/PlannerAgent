@@ -19,6 +19,24 @@ from deep_agent_test.tools.execute_python_code import (
 
 
 class ExecutePythonCodeTests(unittest.TestCase):
+    def test_description_contains_policy_as_prompt_sections(self) -> None:
+        """Проверяет декларативную политику выбора инструмента и примеры.
+
+        Returns:
+            ``None``. Тест завершается успешно при наличии ключевых policy-секций.
+        """
+
+        required_fragments = (
+            "Предпочитай инструмент:",
+            "Не используй:",
+            "Правило выбора:",
+            "Хорошее решение:",
+            "Плохие решения:",
+            "сначала выполни код",
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, EXECUTE_PYTHON_CODE_DESCRIPTION)
+
     def test_description_shows_session_artifact_path_example(self) -> None:
         """Проверяет наличие корректного примера сохранения артефакта в session-каталог.
 
@@ -34,7 +52,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
-            "do not use `/tool_outputs` as a local Python path",
+            "использовать `/tool_outputs` как локальный Python-путь",
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
 

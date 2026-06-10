@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 
 runs/
+
+local_ui/.env
+local_ui/.runtime/

@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "analytics-agent": "./local_ui/agent.py:agent"
+  },
+  "env": "./local_ui/.env"
+}

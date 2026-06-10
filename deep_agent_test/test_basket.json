@@ -136,8 +136,7 @@
     {
       "id": "8",
       "query": "Какой процент сработок с непустым признаком is_save имел is_save = true с 24 января по 20 февраля 2026 года включительно? Строки с пустым is_save исключи из знаменателя.",
-      "answer_patterns": [
-      ],
+      "answer_patterns": [],
       "answer_numeric_expectations": [
         {
           "value": 24.53,

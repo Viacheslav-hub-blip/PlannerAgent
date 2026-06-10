@@ -1,7 +1,7 @@
-"""Профиль harness аналитического DeepAgent.
+"""Профиль harness гибридного аналитического coding-agent.
 
 Содержит:
-- build_analytics_harness_profile: создание профиля без general-purpose subagent и generic execute.
+- build_analytics_harness_profile: создание профиля с explicit subagents и полным tool runtime.
 - register_analytics_harness_profile: регистрация профиля для заданного provider/model key.
 """
 
@@ -15,15 +15,16 @@ from deepagents import (
 
 
 def build_analytics_harness_profile() -> HarnessProfile:
-    """Создаёт профиль harness для аналитического агента.
+    """Создаёт профиль harness для аналитического coding-agent.
 
     Returns:
-        Профиль DeepAgents, который отключает автоматически добавляемый
-        ``general-purpose`` subagent и скрывает generic tool ``execute``.
+        Профиль DeepAgents, который сохраняет generic ``execute`` и отключает только
+        автоматический ``general-purpose``: его capability-aware спецификация
+        добавляется сборщиком агента явно.
     """
 
     return HarnessProfile(
-        excluded_tools=frozenset({"execute"}),
+        excluded_tools=frozenset(),
         general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
     )
 

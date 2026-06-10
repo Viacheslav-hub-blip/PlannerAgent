@@ -1,7 +1,9 @@
-"""Статическое ограничение набора tools, видимых конкретному агенту.
+"""Динамическое ограничение набора tools, видимых конкретному агенту.
 
 Содержит:
-- ToolVisibilityMiddleware: фильтрация tools перед model call.
+- ToolVisibilityMiddleware: фильтрация tools по базовому allowlist и загруженным skills.
+- resolve_allowed_tools: вычисление доступных tools по state агента.
+- loaded_skill_paths: извлечение загруженных skill paths из state.
 - filter_tools_by_name: выбор tools по разрешённым именам.
 - filter_system_message_by_tools: удаление prompt-секций недоступных tools.
 - _filter_tool_prompt_block: фильтрация одного системного prompt-блока.
@@ -9,8 +11,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -22,16 +24,19 @@ from langgraph.types import Command
 
 @dataclass(frozen=True)
 class ToolVisibilityMiddleware(AgentMiddleware):
-    """Оставляет модели только статически разрешённые инструменты.
+    """Оставляет модели базовые tools и grants активных skills.
 
     Args:
-        allowed_tools: Имена tools, которые должны быть видимы модели.
+        allowed_tools: Имена tools, доступные независимо от загруженных skills.
+        skill_tool_grants: Соответствие виртуального пути ``SKILL.md`` и дополнительных
+            tools, которые skill разрешает после загрузки.
 
     Returns:
         Middleware, фильтрующий список tools отдельно для своего agent stack.
     """
 
     allowed_tools: frozenset[str]
+    skill_tool_grants: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def wrap_model_call(
         self,
@@ -48,10 +53,15 @@ class ToolVisibilityMiddleware(AgentMiddleware):
             Ответ модели, полученный с разрешённым набором tools.
         """
 
-        filtered_tools = filter_tools_by_name(request.tools, self.allowed_tools)
+        allowed_tools = resolve_allowed_tools(
+            base_allowed_tools=self.allowed_tools,
+            skill_tool_grants=self.skill_tool_grants,
+            state=request.state,
+        )
+        filtered_tools = filter_tools_by_name(request.tools, allowed_tools)
         system_message = filter_system_message_by_tools(
             request.system_message,
-            self.allowed_tools,
+            allowed_tools,
         )
         return handler(request.override(tools=filtered_tools, system_message=system_message))
 
@@ -70,10 +80,15 @@ class ToolVisibilityMiddleware(AgentMiddleware):
             Ответ модели, полученный с разрешённым набором tools.
         """
 
-        filtered_tools = filter_tools_by_name(request.tools, self.allowed_tools)
+        allowed_tools = resolve_allowed_tools(
+            base_allowed_tools=self.allowed_tools,
+            skill_tool_grants=self.skill_tool_grants,
+            state=request.state,
+        )
+        filtered_tools = filter_tools_by_name(request.tools, allowed_tools)
         system_message = filter_system_message_by_tools(
             request.system_message,
-            self.allowed_tools,
+            allowed_tools,
         )
         return await handler(
             request.override(tools=filtered_tools, system_message=system_message)
@@ -123,9 +138,14 @@ class ToolVisibilityMiddleware(AgentMiddleware):
 
         tool_call = request.tool_call or {}
         tool_name = str(tool_call.get("name") or "")
-        if not tool_name or tool_name in self.allowed_tools:
+        allowed_tools = resolve_allowed_tools(
+            base_allowed_tools=self.allowed_tools,
+            skill_tool_grants=self.skill_tool_grants,
+            state=getattr(request, "state", None),
+        )
+        if not tool_name or tool_name in allowed_tools:
             return None
-        allowed = ", ".join(sorted(self.allowed_tools))
+        allowed = ", ".join(sorted(allowed_tools))
         return ToolMessage(
             content=(
                 f"ToolUnavailableError: tool '{tool_name}' is not available to this agent. "
@@ -135,6 +155,54 @@ class ToolVisibilityMiddleware(AgentMiddleware):
             name=tool_name,
             status="error",
         )
+
+
+def loaded_skill_paths(state: Any) -> frozenset[str]:
+    """Возвращает все skills, загруженные preload middleware или ``load_skills``.
+
+    Args:
+        state: State агента либо объект с одноимёнными атрибутами.
+
+    Returns:
+        Нормализованное множество виртуальных путей ``SKILL.md``.
+    """
+
+    if isinstance(state, dict):
+        preloaded = state.get("preloaded_skill_paths") or []
+        materialized = state.get("materialized_skill_paths") or []
+    else:
+        preloaded = getattr(state, "preloaded_skill_paths", None) or []
+        materialized = getattr(state, "materialized_skill_paths", None) or []
+    return frozenset(
+        str(path).strip()
+        for path in [*preloaded, *materialized]
+        if str(path).strip()
+    )
+
+
+def resolve_allowed_tools(
+    *,
+    base_allowed_tools: frozenset[str],
+    skill_tool_grants: Mapping[str, frozenset[str]],
+    state: Any,
+) -> frozenset[str]:
+    """Расширяет базовый allowlist grants загруженных skills.
+
+    Args:
+        base_allowed_tools: Инструменты, доступные агенту всегда.
+        skill_tool_grants: Дополнительные tools по виртуальному пути skill.
+        state: Текущий state агента.
+
+    Returns:
+        Итоговое неизменяемое множество доступных tool names.
+    """
+
+    allowed = set(base_allowed_tools)
+    active_skills = loaded_skill_paths(state)
+    for skill_path, granted_tools in skill_tool_grants.items():
+        if skill_path in active_skills:
+            allowed.update(granted_tools)
+    return frozenset(allowed)
 
 
 def filter_tools_by_name(
@@ -233,4 +301,6 @@ __all__ = [
     "ToolVisibilityMiddleware",
     "filter_system_message_by_tools",
     "filter_tools_by_name",
+    "loaded_skill_paths",
+    "resolve_allowed_tools",
 ]

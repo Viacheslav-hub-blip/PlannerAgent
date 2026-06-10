@@ -80,45 +80,6 @@ DENIED_ATTRIBUTE_CALLS: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
-EXECUTE_PYTHON_CODE_DESCRIPTION = """
-Выполняет Python-код для расчетов, фильтрации, join, агрегаций, нормализации,
-разбора pickle/CSV/JSON и подготовки табличных результатов.
-
-Когда использовать:
-- нужно прочитать большой `.pkl`, сохраненный middleware после `load_data`;
-- нужно обработать `list[dict]`, DataFrame или файл с данными;
-- нужно посчитать метрики, отфильтровать строки, отсортировать события;
-- нужно подготовить итоговую таблицу или payload для ответа пользователю.
-
-Когда не использовать:
-- для чтения таблиц напрямую из источника — используй `task(data-retrieval-agent)`;
-- для финального пользовательского ответа вместо supervisor-а.
-
-Доступные helpers в sandbox (уже загружены, импорт не нужен):
-- `PROJECT_ROOT` — корень проекта;
-- `TOOL_OUTPUTS_DIR` — папка `.pkl` после spill middleware;
-- `read_pickle_file(path)` — читает pickle по абсолютному пути из tool output;
-- `describe_pickle_file(path)` — тип, rows_count, columns, preview без полной обработки;
-- `rows_to_dataframe(rows)` — преобразует list[dict] в pandas DataFrame;
-- `pd`, `np` — pandas/numpy, если установлены.
-
-Пример чтения spill-файла:
-rows = read_pickle_file(r"<saved_file из tool output>")
-df = rows_to_dataframe(rows)
-print(df.shape)
-print(df.head(3).to_string())
-result = df
-
-Правила:
-- переменные сохраняются между вызовами инструмента в одной сессии;
-- для именованного результата укажи `target_variable`, иначе используй `print()` и читай `execution_output`;
-- при ошибке tool возвращает только строку ``ТипИсключения: сообщение`` — исправь код и повтори вызов;
-- не удаляй файлы и директории;
-- можно импортировать `os` для просмотра директорий, но удаление файлов и shell-вызовы запрещены;
-- читай pickle через `read_pickle_file` или `pd.read_pickle` по `saved_file` из tool outputs.
-""".strip()
-
-
 @dataclass
 class PythonExecutionResult:
     """Результат выполнения Python-кода в sandbox.
@@ -176,52 +137,93 @@ class PythonExecutionResult:
 
 
 EXECUTE_PYTHON_CODE_DESCRIPTION = """
-Runs Python code for calculations, filtering, joins, aggregations, normalization, parsing pickle/CSV/JSON files, and
-preparing tabular results.
+execute_python_code
+---
+Назначение:
+Генерирует и выполняет Python-код в persistent sandbox. Используй инструмент активно,
+когда код дает более точный, воспроизводимый и проверяемый результат, чем ручное
+рассуждение модели.
 
-Tool name:
-- Use exactly `execute_python_code`.
-- Do not call generic `execute` for Python snippets. Generic `execute` has a different schema and is not this tool.
+Предпочитай инструмент:
+- для любых нетривиальных вычислений, статистик, сравнений и проверок арифметики;
+- для фильтрации, join, groupby, сортировки, дедупликации и нормализации данных;
+- для исследования структуры `list[dict]`, DataFrame, pickle, CSV или JSON;
+- для проверки гипотезы на фактических данных перед формулированием вывода;
+- для обработки полного `.pkl`, сохраненного middleware после `load_data`, вместо выводов
+  по ограниченному preview;
+- для построения таблиц, графиков и других воспроизводимых артефактов;
+- когда несколько последовательных преобразований проще надежно выразить кодом.
 
-Use when:
-- a large `.pkl` was saved by middleware after `load_data`;
-- you need to process `list[dict]`, a DataFrame, or a data file;
-- you need to compute metrics, filter rows, sort events, or build a final table;
-- you need to save a requested chart or other generated artifact under `TOOL_OUTPUTS_DIR`;
-- a workflow skill requires working with the full offloaded result instead of preview rows.
+Не используй:
+- для прямого чтения таблиц из источника: вызывай `load_data` внутри
+  `data-retrieval-agent`;
+- для поиска и чтения обычных текстовых файлов, если доступны `grep` и `read_file`;
+- для изменения исходного кода проекта: при активной coding capability используй
+  `write_file` или `edit_file`; не изменяй исходники через этот sandbox;
+- для shell-команд, запуска тестов и системных утилит: при активной coding capability
+  используй generic `execute`; если он недоступен, не имитируй терминал через Python;
+- для простого ответа, который не требует вычисления или проверки;
+- как замену финальному synthesis supervisor-а.
 
-Do not use:
-- to read source tables directly; use `load_data` inside `data-retrieval-agent`;
-- as the final user-facing answer.
+Правило выбора:
+- если ответ зависит от точного значения, количества строк, состава множества,
+  преобразования дат, агрегации или проверки условия, сначала выполни код;
+- не оценивай такие результаты приблизительно и не вычисляй их вручную;
+- один содержательный вызов с несколькими связанными операциями лучше серии мелких
+  вызовов, если промежуточный результат не нужен для принятия следующего решения.
 
-Available sandbox helpers:
-- `PROJECT_ROOT`: project root;
-- `TOOL_OUTPUTS_DIR`: current session directory for `.pkl` files and generated artifacts;
-- `read_pickle_file(path)`: reads a pickle file by absolute path from tool output;
-- `describe_pickle_file(path)`: returns type, rows_count, columns, and preview without full processing;
-- `rows_to_dataframe(rows)`: converts `list[dict]` to a pandas DataFrame;
-- `pd`, `np`: pandas/numpy when installed.
+Аргументы:
+- `code`: исполняемый Python-код;
+- `target_variable`: имя переменной с главным результатом; код обязан присвоить
+  переменную с точно таким именем;
+- `description`: краткая цель вычисления на русском языке для трассировки.
 
-Example:
+Доступные helpers:
+- `PROJECT_ROOT`: корень проекта;
+- `TOOL_OUTPUTS_DIR`: каталог текущей сессии для `.pkl` и созданных артефактов;
+- `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
+- `describe_pickle_file(path)`: тип, число строк, колонки и preview;
+- `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
+- `pd`, `np`: pandas и numpy, если они установлены;
+- пользовательские переменные сохраняются между вызовами в одной сессии.
+
+Хорошее решение: обработать полный spill-файл и вернуть проверяемый результат.
+```python
 rows = read_pickle_file(r"<saved_file from tool output>")
 df = rows_to_dataframe(rows)
-print(df.shape)
-print(df.head(3).to_string())
-result = df
+result = (
+    df.loc[df["status"].eq("success")]
+    .groupby("category", as_index=False)
+    .agg(events_count=("event_id", "count"))
+    .sort_values("events_count", ascending=False)
+)
+```
+Вызов должен передать `target_variable="result"`.
 
-Chart artifact example:
+Хорошее решение: сохранить запрошенный график в каталог артефактов.
+```python
 from pathlib import Path
 output_path = Path(TOOL_OUTPUTS_DIR) / "hits_age_category_jan2026.png"
 plt.savefig(output_path)
 result_path = str(output_path)
+```
+Вызов должен передать `target_variable="result_path"`.
 
-Rules:
-- pass Python source in the `code` argument;
-- set `target_variable` for a named result, or use `print()` and read `execution_output`;
-- for generated files, build the path from `Path(TOOL_OUTPUTS_DIR)`; do not use `/tool_outputs` as a local Python path;
-- if the tool returns an error string, fix the reported cause and retry;
-- do not delete files or directories;
-- `os` may be imported for directory inspection, but shell calls and deletion are forbidden.
+Плохие решения:
+- вручную считать сумму или количество по длинному tool output;
+- делать вывод по первым preview-строкам, когда доступен полный `.pkl`;
+- повторно вызывать `load_data`, если нужный полный результат уже сохранен;
+- запускать `subprocess`, `os.system` или удалять файлы из Python;
+- передавать `target_variable="result"`, не создав переменную `result`;
+- использовать `/tool_outputs` как локальный Python-путь.
+
+Ограничения и обработка ошибок:
+- для stdout используй `print()` и не передавай `target_variable`;
+- для файлов строй путь через `Path(TOOL_OUTPUTS_DIR)`;
+- не удаляй файлы или директории;
+- shell-вызовы запрещены статической политикой;
+- если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
+- не повторяй без изменений тот же неуспешный код.
 """.strip()
 
 
@@ -230,15 +232,17 @@ class ExecutePythonCodeInput(BaseModel):
 
     code: str = Field(
         description=(
-            "Python-код для выполнения. Используй helpers `read_pickle_file`, "
-            "`rows_to_dataframe`, `pd`, `np` и переменные из предыдущих вызовов."
+            "Python-код для точного и воспроизводимого вычисления. Используй helpers "
+            "`read_pickle_file`, `rows_to_dataframe`, `pd`, `np` и переменные из "
+            "предыдущих вызовов. Связанные преобразования объединяй в один вызов."
         ),
     )
     target_variable: str | None = Field(
         default=None,
         description=(
             "Имя переменной, в которую нужно сохранить главный результат. "
-            "Если не нужно — опусти и используй print()."
+            "Код обязан присвоить переменную с точно таким именем. Если именованный "
+            "результат не нужен, опусти аргумент, используй print() и читай stdout."
         ),
     )
     description: str = Field(

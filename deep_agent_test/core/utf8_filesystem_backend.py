@@ -1,7 +1,9 @@
-"""Backend файловой системы с UTF-8 fallback-поиском.
+"""Backend файловой системы и локального shell с UTF-8 fallback-поиском.
 
 Содержит:
+- Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
+- Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
 """
 
 from __future__ import annotations
@@ -11,20 +13,20 @@ import re
 from pathlib import Path
 
 import wcmatch.glob as wcglob
-from deepagents.backends import FilesystemBackend
+from deepagents.backends import FilesystemBackend, LocalShellBackend
 
 logger = logging.getLogger(__name__)
 
 
-class Utf8FilesystemBackend(FilesystemBackend):
-    """FilesystemBackend с явной UTF-8 кодировкой для Python fallback grep.
+class Utf8SearchMixin:
+    """Добавляет backend явное чтение UTF-8 в Python fallback grep.
 
     Args:
         *args: Позиционные аргументы, передаваемые в базовый ``FilesystemBackend``.
         **kwargs: Именованные аргументы, передаваемые в базовый ``FilesystemBackend``.
 
     Returns:
-        Экземпляр backend, совместимый с ``FilesystemBackend``.
+        Экземпляр backend с UTF-8 fallback-поиском.
     """
 
     def _python_search(
@@ -92,3 +94,14 @@ class Utf8FilesystemBackend(FilesystemBackend):
             return results, message
 
         return results, None
+
+
+class Utf8FilesystemBackend(Utf8SearchMixin, FilesystemBackend):
+    """FilesystemBackend с явной UTF-8 кодировкой для Python fallback grep."""
+
+
+class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
+    """LocalShellBackend рабочего workspace с UTF-8 fallback grep."""
+
+
+__all__ = ["Utf8FilesystemBackend", "Utf8LocalShellBackend", "Utf8SearchMixin"]

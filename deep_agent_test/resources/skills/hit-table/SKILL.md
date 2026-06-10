@@ -1,7 +1,6 @@
 ---
 name: hit-table
-description: "Краткая карточка источника hits: сработки антифрода, правила, решения, save/fp, жалобы и связь с raw-таблицами."
-keywords: "hits, сработки, алерты, антифрод, правила, main_rule, policy_action, resolution, save, fp, жалобы, event_description"
+description: "Используй источник hits для сработок и алертов антифрода, main_rule, policy_action, resolution, save/fp, жалоб, event_description и поиска события по event_id. Используй карточку также как начальную точку связи с raw-таблицами cards и uko."
 ---
 
 # Таблица сработок hits

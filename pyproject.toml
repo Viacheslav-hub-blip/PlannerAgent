@@ -29,6 +29,9 @@ analytics = [
   "seaborn>=0.13.0",
   "scikit-learn>=1.4.0",
 ]
+ui = [
+  "langgraph-cli[inmem]>=0.4.27,<0.5",
+]
 
 [tool.setuptools.packages.find]
 include = ["deep_agent_test*"]

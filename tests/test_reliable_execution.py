@@ -10,12 +10,26 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
+from deep_agent_test.core.analytics_deep_agent import (
+    _agents_memory_path,
+    _build_file_edit_interrupts,
+    build_conversation_checkpointer,
+    build_skills_backend,
+)
+from deep_agent_test.core.capabilities import (
+    BASE_SUPERVISOR_TOOL_NAMES,
+    CODE_WORKSPACE_SKILL_PATH,
+    CODE_WORKSPACE_TOOL_NAMES,
+    SUPERVISOR_SKILL_TOOL_GRANTS,
+)
 from deep_agent_test.core.harness_profile import build_analytics_harness_profile
 from deep_agent_test.core.prompts import (
     BUILTIN_TOOLS_PROMPT_APPEND,
@@ -28,6 +42,9 @@ from deep_agent_test.core.prompts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
+from deep_agent_test.core.settings import load_deep_agent_settings
+from deep_agent_test.core.utf8_filesystem_backend import Utf8LocalShellBackend
+from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
 from deep_agent_test.middlewares.skills_context import (
     SelectedSkillPaths,
     build_preloaded_skills_context,
@@ -41,6 +58,7 @@ from deep_agent_test.middlewares.tool_visibility import (
     ToolVisibilityMiddleware,
     filter_system_message_by_tools,
     filter_tools_by_name,
+    resolve_allowed_tools,
 )
 from deep_agent_test.tools.data_query_schema import FilterCondition, ParsedDataQuery
 from deep_agent_test.tools.load_skills import LOAD_SKILLS_DESCRIPTION
@@ -337,14 +355,115 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("ToolUnavailableError", result.content)
         self.assertIn("task", result.content)
 
-    def test_harness_profile_disables_general_purpose_and_execute(self) -> None:
-        """HarnessProfile должен отключать general-purpose и generic execute."""
+    def test_tool_visibility_executes_tool_after_skill_grant(self) -> None:
+        """Загруженный code-workspace должен разрешать фактический tool call."""
+
+        middleware = ToolVisibilityMiddleware(
+            allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=SUPERVISOR_SKILL_TOOL_GRANTS,
+        )
+        request = SimpleNamespace(
+            state={"materialized_skill_paths": [CODE_WORKSPACE_SKILL_PATH]},
+            tool_call={
+                "id": "call-edit",
+                "name": "edit_file",
+                "args": {"file_path": "/app.py"},
+            },
+        )
+
+        result = middleware.wrap_tool_call(request, lambda _: "executed")
+
+        self.assertEqual(result, "executed")
+
+    def test_harness_profile_keeps_execute_for_explicit_coding_subagent(self) -> None:
+        """HarnessProfile должен сохранять execute и отключать только auto subagent."""
 
         profile = build_analytics_harness_profile()
 
-        self.assertIn("execute", profile.excluded_tools)
+        self.assertNotIn("execute", profile.excluded_tools)
         self.assertIsNotNone(profile.general_purpose_subagent)
         self.assertFalse(profile.general_purpose_subagent.enabled)
+
+    def test_subagent_specs_include_coding_and_data_agents(self) -> None:
+        """Сборка должна явно добавлять general-purpose и data-retrieval-agent."""
+
+        specs = build_analytics_subagent_specs(
+            data_tools=[],
+            data_retrieval_middleware=[],
+            general_purpose_middleware=[],
+            model=object(),
+        )
+
+        self.assertEqual(
+            [spec["name"] for spec in specs],
+            ["general-purpose", "data-retrieval-agent"],
+        )
+
+    def test_code_workspace_skill_grants_filesystem_and_terminal_tools(self) -> None:
+        """Skill code-workspace должен динамически расширять allowlist supervisor."""
+
+        without_skill = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=SUPERVISOR_SKILL_TOOL_GRANTS,
+            state={},
+        )
+        with_skill = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=SUPERVISOR_SKILL_TOOL_GRANTS,
+            state={"preloaded_skill_paths": [CODE_WORKSPACE_SKILL_PATH]},
+        )
+        materialized = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=SUPERVISOR_SKILL_TOOL_GRANTS,
+            state={"materialized_skill_paths": [CODE_WORKSPACE_SKILL_PATH]},
+        )
+
+        self.assertTrue(CODE_WORKSPACE_TOOL_NAMES.isdisjoint(without_skill))
+        self.assertTrue(CODE_WORKSPACE_TOOL_NAMES.issubset(with_skill))
+        self.assertTrue(CODE_WORKSPACE_TOOL_NAMES.issubset(materialized))
+
+    def test_workspace_backend_uses_local_shell_and_sanitized_environment(self) -> None:
+        """Backend должен выполнять команды из workspace без API-ключей в env."""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            (workspace / "AGENTS.md").write_text("# Test memory\n", encoding="utf-8")
+            settings = replace(
+                load_deep_agent_settings(),
+                workspace_root=workspace,
+                tool_outputs_dir=workspace / "tool_outputs",
+            )
+
+            backend = build_skills_backend(settings)
+
+        self.assertIsInstance(backend.default, Utf8LocalShellBackend)
+        self.assertEqual(backend.default.cwd, workspace.resolve())
+        self.assertNotIn("OPENAI_API_KEY", backend.default._env)
+
+    def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
+        """HITL должен применяться только к write_file и edit_file."""
+
+        settings = load_deep_agent_settings()
+        interrupts = _build_file_edit_interrupts(settings)
+
+        self.assertEqual(set(interrupts or {}), {"write_file", "edit_file"})
+        self.assertNotIn("execute", interrupts or {})
+        self.assertEqual(
+            interrupts["edit_file"]["allowed_decisions"],
+            ["approve", "edit", "reject"],
+        )
+
+    def test_agents_memory_and_conversation_checkpointer_use_native_runtime(self) -> None:
+        """Project memory и краткосрочная память должны использовать DeepAgents/LangGraph."""
+
+        self.assertEqual(_agents_memory_path("AGENTS.md"), "/AGENTS.md")
+        self.assertEqual(
+            _agents_memory_path("config\\AGENTS.md"),
+            "/config/AGENTS.md",
+        )
+        with self.assertRaisesRegex(ValueError, "workspace"):
+            _agents_memory_path("../AGENTS.md")
+        self.assertIsInstance(build_conversation_checkpointer(), InMemorySaver)
 
     def test_filesystem_tool_descriptions_define_correct_arguments_and_paging(self) -> None:
         """Описания filesystem tools должны предотвращать ошибочные аргументы и неполное чтение."""
@@ -370,11 +489,12 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertIn("Treat an empty `task` result as a failed delegation", BUILTIN_TOOLS_PROMPT_APPEND)
         self.assertIn("Never finish with an empty assistant message", BUILTIN_TOOLS_PROMPT_APPEND)
-        self.assertIn("The supervisor has only these tools", SUPERVISOR_TOOLS_PROMPT_APPEND)
+        self.assertIn("The supervisor always has", SUPERVISOR_TOOLS_PROMPT_APPEND)
+        self.assertIn("code-workspace", SUPERVISOR_TOOLS_PROMPT_APPEND)
         self.assertNotIn("For `grep`", SUPERVISOR_TOOLS_PROMPT_APPEND)
         self.assertIn("The data-retrieval agent has only these tools", DATA_RETRIEVAL_TOOLS_PROMPT_APPEND)
         self.assertIn(
-            "include that path and objective in one `task(data-retrieval-agent)` delegation",
+            "If table data is needed, delegate it to `data-retrieval-agent`",
             SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
         )
         self.assertNotIn(

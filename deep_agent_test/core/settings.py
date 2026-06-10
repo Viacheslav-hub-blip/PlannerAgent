@@ -9,6 +9,7 @@
 - _validate_required_config_keys: проверка обязательных ключей.
 - _resolve_project_path: приведение пути к абсолютному.
 - _int_from_config: чтение целого числа из конфига.
+- _bool_from_config: чтение boolean из конфига.
 - _dict_from_config: чтение словаря из конфига.
 - _optional_str_from_config: чтение опциональной строки из конфига.
 """
@@ -28,6 +29,12 @@ CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
 REQUIRED_CONFIG_KEYS = (
     "harness_profile_key",
     "thread_id",
+    "workspace_root",
+    "agents_file_name",
+    "coding_tools_enabled_by_default",
+    "enable_file_edit_approval",
+    "terminal_timeout",
+    "terminal_max_output_bytes",
     "skills_virtual_dir",
     "skills_root",
     "data_tools_factory",
@@ -53,6 +60,12 @@ class DeepAgentSettings:
 
     harness_profile_key: str
     thread_id: str
+    workspace_root: Path
+    agents_file_name: str
+    coding_tools_enabled_by_default: bool
+    enable_file_edit_approval: bool
+    terminal_timeout: int
+    terminal_max_output_bytes: int
     skills_virtual_dir: str
     skills_root: Path
     data_tools_factory: str | None
@@ -89,6 +102,21 @@ class DeepAgentSettings:
         return cls(
             harness_profile_key=str(payload["harness_profile_key"]),
             thread_id=str(payload["thread_id"]),
+            workspace_root=_resolve_project_path(payload["workspace_root"], project_root),
+            agents_file_name=str(payload["agents_file_name"]).strip() or "AGENTS.md",
+            coding_tools_enabled_by_default=_bool_from_config(
+                payload,
+                "coding_tools_enabled_by_default",
+            ),
+            enable_file_edit_approval=_bool_from_config(
+                payload,
+                "enable_file_edit_approval",
+            ),
+            terminal_timeout=_int_from_config(payload, "terminal_timeout"),
+            terminal_max_output_bytes=_int_from_config(
+                payload,
+                "terminal_max_output_bytes",
+            ),
             skills_virtual_dir=str(payload["skills_virtual_dir"]),
             skills_root=_resolve_project_path(payload["skills_root"], project_root),
             data_tools_factory=_optional_str_from_config(payload, "data_tools_factory"),
@@ -168,6 +196,26 @@ def _int_from_config(payload: dict[str, Any], key: str) -> int:
         return int(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Config key '{key}' must be an integer.") from None
+
+
+def _bool_from_config(payload: dict[str, Any], key: str) -> bool:
+    """Читает boolean-ключ конфига, иначе бросает ValueError.
+
+    Args:
+        payload: Словарь конфигурации.
+        key: Имя обязательного ключа.
+
+    Returns:
+        Значение ``bool`` из конфигурации.
+
+    Raises:
+        ValueError: Значение ключа не является ``bool``.
+    """
+
+    value = payload[key]
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"Config key '{key}' must be a boolean.")
 
 
 def _dict_from_config(payload: dict[str, Any], key: str) -> dict[str, Any]:

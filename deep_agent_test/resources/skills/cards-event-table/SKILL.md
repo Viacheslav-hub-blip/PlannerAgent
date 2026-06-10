@@ -1,7 +1,6 @@
 ---
 name: cards-event-table
-description: "Краткая карточка источника cards: raw-история карточного канала, POS, e-commerce, ATM, merchant/MCC и связь с hits."
-keywords: "cards, карточные операции, POS, ecommerce, e-commerce, ATM, merchant, MCC, card_number, atm_merchant_name, raw-история"
+description: "Используй источник cards для raw-истории карточных операций, POS, e-commerce, ATM, merchant/MCC, card_number и связи карточного события со сработкой hits. Не используй cards как источник антифрод-резолюций."
 ---
 
 # Таблица cards

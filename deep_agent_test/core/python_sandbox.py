@@ -14,7 +14,7 @@ import types
 from pathlib import Path
 from typing import Any
 
-from deep_agent_test.core.settings import PROJECT_ROOT, DeepAgentSettings
+from deep_agent_test.core.settings import DeepAgentSettings
 
 SANDBOX_HELPER_NAMES = frozenset(
     {
@@ -63,7 +63,7 @@ class DeepAgentPythonSandbox:
 
         readable_roots = self.readable_roots
         tool_outputs_dir = self.tool_outputs_dir
-        project_root = PROJECT_ROOT.resolve()
+        project_root = self.working_directory
 
         def _assert_readable_path(path: Path) -> Path:
             """Проверяет, что путь существует и лежит в разрешённых для чтения корнях."""
@@ -168,16 +168,18 @@ class DeepAgentPythonSandbox:
 def build_python_sandbox(
     settings: DeepAgentSettings | None = None,
     tool_outputs_dir: Path | None = None,
+    workspace_root: Path | None = None,
 ) -> DeepAgentPythonSandbox:
     """Собирает persistent sandbox для ``execute_python_code``.
 
-    Рабочая директория и разрешённые для чтения корни — это ``PROJECT_ROOT`` и папка
+    Рабочая директория и разрешённые для чтения корни — это workspace и папка
     spill-файлов из настроек.
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
         tool_outputs_dir: Папка текущей сессии для сохранения артефактов; если ``None``,
             используется базовая папка из настроек.
+        workspace_root: Рабочая директория агента; если ``None``, используется settings.
 
     Returns:
         Готовый ``DeepAgentPythonSandbox`` с seed-helpers.
@@ -187,9 +189,13 @@ def build_python_sandbox(
 
     settings = settings or load_deep_agent_settings()
     resolved_tool_outputs_dir = (tool_outputs_dir or settings.tool_outputs_dir).resolve()
-    readable_roots = (PROJECT_ROOT.resolve(), settings.tool_outputs_dir.resolve())
+    resolved_workspace_root = (workspace_root or settings.workspace_root).resolve()
+    readable_roots = (
+        resolved_workspace_root,
+        resolved_tool_outputs_dir,
+    )
     return DeepAgentPythonSandbox(
-        working_directory=PROJECT_ROOT.resolve(),
+        working_directory=resolved_workspace_root,
         readable_roots=readable_roots,
         tool_outputs_dir=resolved_tool_outputs_dir,
     )

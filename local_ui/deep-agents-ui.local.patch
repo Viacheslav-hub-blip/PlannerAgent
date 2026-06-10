@@ -1,0 +1,29 @@
+diff --git a/src/lib/config.ts b/src/lib/config.ts
+index d6b6271..4834fc4 100644
+--- a/src/lib/config.ts
++++ b/src/lib/config.ts
+@@ -9,13 +9,22 @@ const CONFIG_KEY = "deep-agent-config";
+ export function getConfig(): StandaloneConfig | null {
+   if (typeof window === "undefined") return null;
+ 
++  const environmentConfig =
++    process.env.NEXT_PUBLIC_DEPLOYMENT_URL &&
++    process.env.NEXT_PUBLIC_ASSISTANT_ID
++      ? {
++          deploymentUrl: process.env.NEXT_PUBLIC_DEPLOYMENT_URL,
++          assistantId: process.env.NEXT_PUBLIC_ASSISTANT_ID,
++        }
++      : null;
++
+   const stored = localStorage.getItem(CONFIG_KEY);
+-  if (!stored) return null;
++  if (!stored) return environmentConfig;
+ 
+   try {
+     return JSON.parse(stored);
+   } catch {
+-    return null;
++    return environmentConfig;
+   }
+ }
+ 
