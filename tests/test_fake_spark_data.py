@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from deep_agent_test.tools.fake_spark_data import (
+from tests.support.fake_spark_data import (
     FAKE_DATA_ROOT,
     FAKE_TABLE_FILES,
     _fake_read_table,

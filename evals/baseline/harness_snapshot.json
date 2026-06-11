@@ -6,8 +6,8 @@
   "working_tree_note": "Snapshot не запускался; параметры модели не проверялись.",
   "model_identifier": "google/gemini-2.5-flash",
   "model_transport": "ChatOpenAI через OpenRouter-compatible endpoint",
-  "prompts_module": "deep_agent_test.core.prompts",
-  "config_path": "deep_agent_test/resources/config/defaults.json",
+  "prompts_module": "deep_agent.prompts",
+  "config_path": "deep_agent/resources/config/defaults.json",
   "baseline_supervisor_tools": [
     "write_todos",
     "task",

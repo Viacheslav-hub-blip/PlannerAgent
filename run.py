@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
-from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
-from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
+from deep_agent.agent import build_analytics_deep_agent
+from deep_agent.settings import load_deep_agent_settings
+from deep_agent.runtime.tracing import FileTraceCallbackHandler, build_trace_file_path
+from tests.support.fake_spark_data import build_fake_spark_data_tools
 from model import model
 
 USER_MESSAGE_1 = (
@@ -400,3 +401,4 @@ def _last_message_text(result: Any) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main_stream())
+#создать план для выполнения взаимоисключабщими агентами, чьи результаты в дальнейшем будут синтезированы в один ответ

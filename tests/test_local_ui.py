@@ -2,19 +2,30 @@
 
 Содержит классы:
 - LocalUiIntegrationTests: проверка state-маршрута артефактов и примера корзины.
+
+Содержит функции:
+- отсутствуют.
 """
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from deepagents.backends import StateBackend
 
-from deep_agent_test.core.analytics_deep_agent import (
+from deep_agent.agent import (
     _normalize_virtual_directory,
     build_skills_backend,
 )
 from local_ui.example_query import load_basket_query
+from run_ui import (
+    REQUIRED_FRONTEND_SDK_VERSION,
+    _frontend_dependencies_ready,
+)
 
 
 class LocalUiIntegrationTests(unittest.TestCase):
@@ -53,6 +64,54 @@ class LocalUiIntegrationTests(unittest.TestCase):
         query = load_basket_query("1")
 
         self.assertIn("DENY оплата обучения после смены устройства", query)
+
+    def test_frontend_patch_enables_subagent_streaming(self) -> None:
+        """Проверяет наличие frontend-контракта для прогресса sub-agents.
+
+        Returns:
+            ``None``. Проверка завершается успешно, если patch обновляет SDK,
+            связывает sub-agent с сообщением и выводит вложенные tool calls.
+        """
+
+        patch_text = (
+            Path(__file__).parents[1] / "local_ui" / "deep-agents-ui.local.patch"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"@langchain/langgraph-sdk": "1.9.21"', patch_text)
+        self.assertIn("getSubagentsByMessage", patch_text)
+        self.assertIn("subAgent.toolCalls", patch_text)
+        self.assertIn("subAgent.messages", patch_text)
+
+    def test_frontend_dependencies_require_streaming_sdk(self) -> None:
+        """Проверяет повторную установку UI при устаревшем frontend SDK.
+
+        Returns:
+            ``None``. Проверка завершается успешно только для точной требуемой
+            версии ``@langchain/langgraph-sdk``.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            frontend_root = Path(temporary_directory)
+            sdk_package = (
+                frontend_root
+                / "node_modules"
+                / "@langchain"
+                / "langgraph-sdk"
+                / "package.json"
+            )
+            sdk_package.parent.mkdir(parents=True)
+            sdk_package.write_text(
+                json.dumps({"version": REQUIRED_FRONTEND_SDK_VERSION}),
+                encoding="utf-8",
+            )
+
+            with patch("run_ui.FRONTEND_ROOT", frontend_root):
+                self.assertTrue(_frontend_dependencies_ready())
+                sdk_package.write_text(
+                    json.dumps({"version": "1.0.3"}),
+                    encoding="utf-8",
+                )
+                self.assertFalse(_frontend_dependencies_ready())
 
 
 if __name__ == "__main__":

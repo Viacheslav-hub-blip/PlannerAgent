@@ -1,0 +1,423 @@
+"""Обёртка инструментов чтения данных: прозрачность того, что именно выполнено.
+
+Зачем нужна обёртка:
+- агент должен понимать, ЧТО произошло при чтении: какой запрос фактически выполнен и
+  сколько строк под него подошло (а не только видеть усечённый repr таблицы);
+- агент часто путает «выборку строк» с «уникальными значениями» и принимает сэмпл за
+  полный справочник.
+
+Что делает обёртка для каждого data-tool (например ``load_data``):
+1. строит человекочитаемый SQL-подобный код фактического запроса из аргументов вызова;
+2. вызывает исходный инструмент;
+3. при табличном результате возвращает агенту вместе с данными:
+   - сгенерированный код запроса (строкой);
+   - счётчики строк: всего в таблице / подошло под фильтры / возвращено;
+   - данные в виде JSON-записей (для офлоада большие результаты заменяются ссылкой на pkl).
+
+Обёртка использует ``response_format="content_and_artifact"``: ``content`` — текст для
+модели (код запроса + счётчики + данные), ``artifact`` — структура с ``rows`` и метаданными,
+которую читает ``ToolOutputFileMiddleware`` для офлоада больших таблиц.
+
+Сам базовый инструмент не меняется: вся прозрачность добавляется здесь, в слое
+``deep_agent``.
+
+Содержит функции:
+- wrap_data_tools_with_query_code: оборачивает список data-tools.
+- _wrap_single_tool: создает прозрачную обертку над одним data-tool.
+- _call_base_tool: синхронно вызывает базовый data-tool без вложенного callback-события.
+- _call_base_tool_async: асинхронно вызывает базовый data-tool без вложенного callback-события.
+- _format_result: готовит content/artifact для ответа инструмента.
+- _build_success_content: строит текст успешного результата.
+- _dataframe_to_rows: преобразует DataFrame в JSON-записи.
+- _clean_scalar: приводит pandas/numpy scalar к JSON-совместимому значению.
+- _build_query_code: строит человекочитаемый SQL-подобный код запроса.
+- _build_where_clause: преобразует фильтры в SQL-подобный WHERE.
+- _build_predicate: строит один SQL-подобный предикат фильтра.
+- _format_derived_columns: форматирует вычисляемые колонки.
+- _format_aggregations: форматирует агрегации.
+- _format_order_by: форматирует сортировки.
+- _literal: форматирует литерал для SQL-подобного текста.
+- _parse_columns: разбирает список колонок.
+- _split_instruction_text: разбирает список инструкций.
+- _as_list: приводит значение к списку.
+- _get: читает поле из dict или объекта.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from langchain_core.tools import BaseTool, StructuredTool
+
+try:  # pandas нужен только для распознавания DataFrame-результата.
+    import pandas as pd
+except Exception:  # pragma: no cover - pandas всегда есть в проекте, но обёртка не падает без него.
+    pd = None  # type: ignore[assignment]
+
+
+def wrap_data_tools_with_query_code(tools: list[BaseTool]) -> list[BaseTool]:
+    """Оборачивает инструменты чтения данных в слой прозрачности запроса.
+
+    Args:
+        tools: Базовые data-tools (например результат ``build_spark_data_tools``).
+
+    Returns:
+        Список инструментов с тем же ``name``/``description``/``args_schema``, но с
+        ``response_format="content_and_artifact"`` и добавленным кодом запроса и счётчиками.
+    """
+
+    return [_wrap_single_tool(tool) for tool in tools]
+
+
+def _wrap_single_tool(tool: BaseTool) -> BaseTool:
+    """Создаёт обёртку над одним инструментом чтения данных."""
+
+    description = f"{tool.description}\n\n{_TRANSPARENCY_NOTE}"
+
+    async def _arun(**kwargs: Any) -> tuple[str, Any]:
+        """Асинхронно вызывает базовый tool и оборачивает результат в (content, artifact)."""
+
+        raw = await _call_base_tool_async(tool=tool, kwargs=kwargs)
+        return _format_result(kwargs, raw)
+
+    def _run(**kwargs: Any) -> tuple[str, Any]:
+        """Синхронно вызывает базовый tool и оборачивает результат в (content, artifact)."""
+
+        raw = _call_base_tool(tool=tool, kwargs=kwargs)
+        return _format_result(kwargs, raw)
+
+    factory_kwargs: dict[str, Any] = {
+        "name": tool.name,
+        "description": description,
+        "args_schema": tool.args_schema,
+        "response_format": "content_and_artifact",
+    }
+    if getattr(tool, "func", None) is not None:
+        factory_kwargs["func"] = _run
+    if getattr(tool, "coroutine", None) is not None:
+        factory_kwargs["coroutine"] = _arun
+    if "func" not in factory_kwargs and "coroutine" not in factory_kwargs:
+        # Базовый инструмент без явного func/coroutine — поддержим хотя бы async-путь.
+        factory_kwargs["coroutine"] = _arun
+    return StructuredTool.from_function(**factory_kwargs)
+
+
+def _call_base_tool(*, tool: BaseTool, kwargs: dict[str, Any]) -> Any:
+    """Вызывает базовый data-tool без вложенного LangChain callback-события.
+
+    Args:
+        tool: Исходный инструмент чтения данных, который оборачивается слоем прозрачности.
+        kwargs: Аргументы вызова инструмента после валидации схемы LangChain.
+
+    Returns:
+        Сырой результат базового инструмента: DataFrame, текст ошибки или другой поддержанный объект.
+    """
+
+    func = getattr(tool, "func", None)
+    if callable(func):
+        return func(**kwargs)
+    return tool.invoke(kwargs, config={"callbacks": []})
+
+
+async def _call_base_tool_async(*, tool: BaseTool, kwargs: dict[str, Any]) -> Any:
+    """Асинхронно вызывает базовый data-tool без вложенного LangChain callback-события.
+
+    Args:
+        tool: Исходный инструмент чтения данных, который оборачивается слоем прозрачности.
+        kwargs: Аргументы вызова инструмента после валидации схемы LangChain.
+
+    Returns:
+        Сырой результат базового инструмента: DataFrame, текст ошибки или другой поддержанный объект.
+    """
+
+    coroutine = getattr(tool, "coroutine", None)
+    if callable(coroutine):
+        return await coroutine(**kwargs)
+    func = getattr(tool, "func", None)
+    if callable(func):
+        return func(**kwargs)
+    return await tool.ainvoke(kwargs, config={"callbacks": []})
+
+
+_TRANSPARENCY_NOTE = (
+    "Прозрачность результата: вместе с данными инструмент возвращает сгенерированный "
+    "SQL-подобный код фактического запроса и число строк результата. Инструмент возвращает "
+    "ВСЕ строки, попавшие под запрос: полный набор всегда сохраняется в pickle для "
+    "переиспользования без повторного load_data; если результат помещается в контекст, "
+    "он также приходит inline, если большой — в контекст только preview, а полный набор в "
+    "файле. "
+    "Обычный select возвращает строки как есть, БЕЗ устранения дублей: "
+    "уникальные значения выводи сам по полному набору."
+)
+
+
+def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
+    """Готовит пару (content, artifact) для агента из результата базового инструмента."""
+
+    if pd is not None and isinstance(raw, pd.DataFrame):
+        query_code = str(raw.attrs.get("spark_query_code") or _build_query_code(kwargs))
+        rows = _dataframe_to_rows(raw)
+        returned_rows = len(raw)
+        columns = [str(column) for column in raw.columns]
+        is_aggregation = bool(raw.attrs.get("spark_is_aggregation")) or bool(_split_instruction_text(_get(kwargs, "aggregations")))
+        content = _build_success_content(
+            query_code=query_code,
+            returned_rows=returned_rows,
+            columns=columns,
+            rows=rows,
+            is_aggregation=is_aggregation,
+        )
+        artifact = {
+            "rows": rows,
+            "query_code": query_code,
+            "returned_rows": returned_rows,
+            "columns": columns,
+            "is_aggregation": is_aggregation,
+        }
+        return content, artifact
+
+    # Ошибка или текстовый результат базового инструмента: показываем, что пытались выполнить.
+    query_code = _build_query_code(kwargs)
+    content = f"Сгенерированный SQL-подобный запрос:\n{query_code}\n\nРезультат инструмента:\n{raw}"
+    return content, None
+
+
+def _build_success_content(
+    *,
+    query_code: str,
+    returned_rows: int,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    is_aggregation: bool = False,
+) -> str:
+    """Строит текст ответа для модели при успешной выборке.
+
+    Намеренно НЕ сообщаем «всего в таблице» и «подошло под фильтры» — эти числа из
+    исходной таблицы только путают модель. Этот текст — инлайн-результат, целиком
+    переданный в контекст; если результат большой, его заменит summary offload-middleware
+    с пометкой, что в контексте лишь preview, а полный набор лежит в файле.
+    """
+
+    if is_aggregation:
+        status_line = (
+            f"Это ПОЛНЫЙ результат запроса в контексте: {returned_rows} групп "
+            "(уникальных значений) — все строки результата здесь, это не сэмпл."
+        )
+    else:
+        status_line = (
+            f"Это ПОЛНЫЙ результат запроса в контексте: {returned_rows} строк — "
+            "все строки результата переданы здесь целиком."
+        )
+    rows_json = json.dumps(rows, ensure_ascii=False, default=str)
+    return (
+        "Сгенерированный SQL-подобный запрос:\n"
+        f"{query_code}\n\n"
+        f"{status_line}\n"
+        f"Колонки результата ({len(columns)}): {', '.join(columns)}.\n"
+        "Данные (JSON records):\n"
+        f"{rows_json}"
+    )
+
+
+def _dataframe_to_rows(frame: Any) -> list[dict[str, Any]]:
+    """Конвертирует DataFrame в список JSON-совместимых записей."""
+
+    records = frame.to_dict(orient="records")
+    cleaned: list[dict[str, Any]] = []
+    for record in records:
+        cleaned.append({str(key): _clean_scalar(value) for key, value in record.items()})
+    return cleaned
+
+
+def _clean_scalar(value: Any) -> Any:
+    """Приводит pandas/numpy скаляр к JSON-совместимому типу."""
+
+    if pd is not None:
+        try:
+            if value is None or (not isinstance(value, (list, dict)) and pd.isna(value)):
+                return None
+        except (TypeError, ValueError):
+            pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def _build_query_code(kwargs: dict[str, Any]) -> str:
+    """Строит человекочитаемый SQL-подобный код фактического запроса из аргументов вызова."""
+
+    direct_query = _get(kwargs, "query")
+    if direct_query:
+        return str(direct_query).strip()
+
+    table_name = _get(kwargs, "table_name") or "<table>"
+    select_columns = _parse_columns(_get(kwargs, "select_columns"))
+    group_by = _parse_columns(_get(kwargs, "group_by"))
+    aggregations = _format_aggregations(_get(kwargs, "aggregations"))
+    filters = _get(kwargs, "filters")
+    derived_columns = _format_derived_columns(_get(kwargs, "derived_columns"))
+    order_by = _format_order_by(_get(kwargs, "order_by"))
+    max_rows = _get(kwargs, "max_rows")
+
+    if aggregations:
+        select_parts = [*group_by]
+        select_parts.extend(aggregations)
+        select_clause = ", ".join(select_parts) or "*"
+    else:
+        select_clause = ", ".join(select_columns) or "*"
+
+    lines = [f"SELECT {select_clause}", f"FROM {table_name}"]
+
+    for derived in derived_columns:
+        lines.append(f"-- derived: {derived}")
+
+    where_clause = _build_where_clause(filters)
+    if where_clause:
+        lines.append(f"WHERE {where_clause}")
+    if group_by:
+        lines.append(f"GROUP BY {', '.join(group_by)}")
+    if order_by:
+        lines.append(f"ORDER BY {', '.join(order_by)}")
+    if isinstance(max_rows, int):
+        lines.append(f"LIMIT {max_rows}")
+    return "\n".join(lines)
+
+
+def _build_where_clause(filters: Any) -> str:
+    """Преобразует фильтры в SQL-подобное условие WHERE."""
+
+    predicates = [_build_predicate(filter_item) for filter_item in _split_instruction_text(filters)]
+    return " AND ".join(predicate for predicate in predicates if predicate)
+
+
+def _build_predicate(filter_item: Any) -> str:
+    """Строит один SQL-подобный предикат из фильтра."""
+
+    if isinstance(filter_item, str):
+        return filter_item
+
+    column = _get(filter_item, "column")
+    operator = _get(filter_item, "operator") or "eq"
+    value = _get(filter_item, "value")
+    values = _as_list(_get(filter_item, "values"))
+    if operator == "in" and not values and value is not None:
+        values = [value]
+
+    if operator == "is_null":
+        return f"{column} IS NULL"
+    if operator == "not_null":
+        return f"{column} IS NOT NULL"
+    if operator == "in":
+        return f"{column} IN ({', '.join(_literal(item) for item in values)})"
+    if operator == "between" and len(values) == 2:
+        return f"{column} BETWEEN {_literal(values[0])} AND {_literal(values[1])}"
+    if operator == "contains":
+        return f"{column} LIKE {_literal(f'%{value}%')}"
+    sql_operator = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}.get(operator, operator)
+    return f"{column} {sql_operator} {_literal(value)}"
+
+
+def _format_derived_columns(value: Any) -> list[str]:
+    """Форматирует вычисляемые колонки для SQL-подобного вывода."""
+
+    result: list[str] = []
+    for item in _split_instruction_text(value):
+        if isinstance(item, str):
+            result.append(item)
+            continue
+        name = _get(item, "name")
+        source_column = _get(item, "source_column")
+        operation = _get(item, "operation")
+        if name and source_column and operation:
+            result.append(f"{name} = {operation}({source_column})")
+    return result
+
+
+def _format_aggregations(value: Any) -> list[str]:
+    """Форматирует агрегаты для SQL-подобного вывода."""
+
+    result: list[str] = []
+    for item in _split_instruction_text(value):
+        if isinstance(item, str):
+            result.append(item)
+            continue
+        function = _get(item, "function")
+        column = _get(item, "column")
+        alias = _get(item, "alias")
+        if function and column:
+            expression = f"{function}({column})"
+            result.append(f"{expression} AS {alias}" if alias else expression)
+    return result
+
+
+def _format_order_by(value: Any) -> list[str]:
+    """Форматирует правила сортировки для SQL-подобного вывода."""
+
+    result: list[str] = []
+    for item in _split_instruction_text(value):
+        if isinstance(item, str):
+            result.append(item)
+            continue
+        column = _get(item, "column")
+        direction = _get(item, "direction") or "asc"
+        if column:
+            result.append(f"{column} {direction}")
+    return result
+
+
+def _literal(value: Any) -> str:
+    """Возвращает SQL-литерал для значения фильтра."""
+
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _parse_columns(value: Any) -> list[str]:
+    """Разбирает строку 'col1, col2' в список имён колонок."""
+
+    if not value:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def _split_instruction_text(value: Any) -> list[Any]:
+    """Разбирает строку инструкций или возвращает список структурированных объектов."""
+
+    if not value:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [item for item in value if item]
+    normalized = str(value).replace("\n", ";")
+    return [part.strip() for part in normalized.split(";") if part.strip()]
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Возвращает значение как список (пустой, если None)."""
+
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+def _get(source: Any, key: str) -> Any:
+    """Достаёт поле из dict или pydantic-объекта по имени."""
+
+    if isinstance(source, dict):
+        return source.get(key)
+    return getattr(source, key, None)
+
+
+__all__ = ["wrap_data_tools_with_query_code"]

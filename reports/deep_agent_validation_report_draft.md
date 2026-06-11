@@ -288,7 +288,7 @@ production-источников: по требованию.
 - соответствует ли финальный результат эталону;
 - использованы ли обязательные tools;
 
-Техническая автооценка реализована в `deep_agent_test/run_test_basket.py`.
+Техническая автооценка реализована в `tests/evaluation/run_validation_suite.py`.
 
 #### Разрешение конфликтов при разметке
 
@@ -514,7 +514,7 @@ Supervisor не имеет прямого доступа к `load_data` и files
 
 [ЗАПОЛНИТЬ ССЫЛКУ НА ЦЕЛЕВОЙ РЕПОЗИТОРИЙ]
 
-Основной пакет в текущем рабочем проекте: `deep_agent_test/`.
+Основной пакет в текущем рабочем проекте: `deep_agent/`.
 
 #### Инструкция по запуску пайплайна
 
@@ -527,7 +527,7 @@ python run.py
 Запуск автоматической тестовой корзины:
 
 ```bash
-python deep_agent_test/run_test_basket.py
+python tests/evaluation/run_validation_suite.py
 ```
 
 #### Названия и версии используемых моделей
@@ -541,7 +541,7 @@ python deep_agent_test/run_test_basket.py
 
 #### Текст системного prompt
 
-Актуальные системные prompts находятся в `deep_agent_test/core/prompts.py`:
+Актуальные системные prompts находятся в `deep_agent/prompts/`:
 
 - `SYSTEM_PROMPT`;
 - `DATA_RETRIEVAL_PROMPT`;
@@ -587,8 +587,8 @@ skills и состав контрольной выборки.
 
 [ЗАПОЛНИТЬ ССЫЛКУ]
 
-Текущий локальный скрипт: `deep_agent_test/run_test_basket.py`.  
-Структурированный результат: `runs/test_basket_report.json`.
+Текущий локальный скрипт: `tests/evaluation/run_validation_suite.py`.
+Структурированный результат: `runs/validation_report.json`.
 
 ## 7. Тестирование на статус SOTA
 
@@ -598,15 +598,15 @@ skills и состав контрольной выборки.
 
 ### Основные артефакты проекта
 
-- `deep_agent_test/README.md` — описание возможностей и запуска;
-- `deep_agent_test/core/analytics_deep_agent.py` — сборка архитектуры;
-- `deep_agent_test/core/prompts.py` — контракты supervisor и subagent;
-- `deep_agent_test/resources/skills/` — доменный слой;
-- `deep_agent_test/test_basket.json` — автоматическая тестовая корзина;
-- `deep_agent_test/TEST_CASES.md` — человекочитаемое описание тестов;
+- `deep_agent/README.md` — описание возможностей и запуска;
+- `deep_agent/agent.py` — сборка архитектуры;
+- `deep_agent/prompts/` — контракты supervisor и subagent;
+- `deep_agent/resources/skills/` — доменный слой;
+- `tests/evaluation/validation_cases.json` — автоматическая тестовая корзина;
+- `tests/evaluation/VALIDATION_CASES.md` — человекочитаемое описание тестов;
 - `tests/` — unit-тесты инструментов и middleware;
 - `runs/deep_agent_traces/` — трассы запусков;
-- `runs/test_basket_report.json` — структурированный отчет тестовой корзины.
+- `runs/validation_report.json` — структурированный отчет тестовой корзины.
 
 ### Ссылки
 

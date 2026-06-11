@@ -1,5 +1,5 @@
 [project]
-name = "deep-agent-test"
+name = "deep-agent"
 version = "0.1.0"
 description = "Аналитический DeepAgent с инструментами чтения данных, skills и sandbox."
 requires-python = ">=3.11"
@@ -34,12 +34,12 @@ ui = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["deep_agent_test*"]
+include = ["deep_agent*"]
 
 [tool.setuptools.package-data]
-deep_agent_test = [
+deep_agent = [
   "resources/config/*.json",
-  "resources/skills/**/*.md",
+  "resources/**/*.md",
 ]
 
 [tool.pytest.ini_options]

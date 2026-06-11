@@ -24,9 +24,10 @@ from skillopt.engine.trainer import ReflACTTrainer
 from skillopt.envs.base import EnvAdapter
 from skillopt.gradient.reflect import run_minibatch_reflect
 
-from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
-from deep_agent_test.core.trace_logging import FileTraceCallbackHandler, build_trace_file_path
-from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
+from deep_agent.agent import build_analytics_deep_agent
+from deep_agent.settings import load_deep_agent_settings
+from deep_agent.runtime.tracing import FileTraceCallbackHandler, build_trace_file_path
+from tests.support.fake_spark_data import build_fake_spark_data_tools
 from experiments.skillopt_event_description.scoring import (
     judge_answer_with_llm,
     load_jsonl,
@@ -746,7 +747,7 @@ def write_trainable_skill(skill_content: str, rollout_dir: Path) -> Path:
         Путь к временной папке skills.
     """
 
-    source_root = ROOT / "deep_agent_test" / "resources" / "skills"
+    source_root = ROOT / "deep_agent" / "resources" / "skills"
     skills_root = rollout_dir / "skills"
     if skills_root.exists():
         shutil.rmtree(skills_root)

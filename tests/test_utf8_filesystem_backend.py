@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from deep_agent_test.core.utf8_filesystem_backend import Utf8FilesystemBackend
+from deep_agent.runtime.filesystem import Utf8FilesystemBackend
 
 
 class Utf8FilesystemBackendTests(unittest.TestCase):

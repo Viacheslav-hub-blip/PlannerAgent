@@ -9,6 +9,8 @@
 - план из встроенного `write_todos`;
 - аргументы, статус и результат вызовов инструментов;
 - запуск `task` и итоговый ответ subagent;
+- lifecycle-статус каждого subagent (`pending`, `running`, `complete`, `error`);
+- поток сообщений и вложенные tool calls каждого subagent;
 - текстовые артефакты из `/artifacts/`;
 - история threads и запросы на approval для `write_file`/`edit_file`.
 
@@ -107,7 +109,7 @@ DEEP_AGENT_DISABLE_STREAMING=true
 `/artifacts/`. Большие `.pkl`, изображения и другие бинарные файлы остаются на
 локальном диске, а UI показывает путь к ним в tool result.
 
-Upstream UI показывает `task` с input/output, но не раскрывает вложенные tool calls
-внутри subagent. Это текущее ограничение `deep-agents-ui`; верхнеуровневые вызовы
-инструментов отображаются полностью.
-
+Локальный patch обновляет frontend SDK и связывает `task` с
+`stream.getSubagentsByMessage(message.id)`. Поэтому карточка subagent обновляется
+во время выполнения и показывает задачу, lifecycle-статус, сообщения, вложенные
+tool calls и итоговый результат.

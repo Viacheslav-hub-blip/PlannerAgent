@@ -11,14 +11,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from deep_agent_test.core.python_sandbox import DeepAgentPythonSandbox
-from deep_agent_test.tools.execute_python_code import (
+from deep_agent.runtime.python_sandbox import DeepAgentPythonSandbox
+from deep_agent.tools.python_execution import (
     EXECUTE_PYTHON_CODE_DESCRIPTION,
     build_execute_python_code_tool,
 )
 
 
 class ExecutePythonCodeTests(unittest.TestCase):
+    """Проверяет контракт и ограничения Python execution tool."""
+
     def test_description_contains_policy_as_prompt_sections(self) -> None:
         """Проверяет декларативную политику выбора инструмента и примеры.
 

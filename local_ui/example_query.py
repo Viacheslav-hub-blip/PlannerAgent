@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_BASKET_PATH = PROJECT_ROOT / "deep_agent_test" / "test_basket.json"
+DEFAULT_BASKET_PATH = PROJECT_ROOT / "tests" / "evaluation" / "validation_cases.json"
 
 
 def load_basket_query(case_id: str, basket_path: Path = DEFAULT_BASKET_PATH) -> str:
@@ -43,7 +43,7 @@ def main() -> int:
         Код завершения процесса: ``0`` после успешной печати.
     """
 
-    parser = argparse.ArgumentParser(description="Печать запроса из test_basket.json.")
+    parser = argparse.ArgumentParser(description="Печать запроса из validation_cases.json.")
     parser.add_argument("--case-id", default="1", help="Идентификатор кейса.")
     args = parser.parse_args()
     print(load_basket_query(args.case_id))
@@ -52,4 +52,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

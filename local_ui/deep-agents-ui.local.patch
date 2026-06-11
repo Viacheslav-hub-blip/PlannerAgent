@@ -41,3 +41,343 @@ index 0000000..1111111 100644
  
  export default nextConfig;
 
+diff --git a/package.json b/package.json
+index 3dcdee2..277f963 100644
+--- a/package.json
++++ b/package.json
+@@ -13,9 +13,9 @@
+     "format:check": "prettier --check ."
+   },
+   "dependencies": {
+-    "@langchain/core": "^1.1.19",
++    "@langchain/core": "1.1.48",
+     "@langchain/langgraph": "^1.0.2",
+-    "@langchain/langgraph-sdk": "^1.0.3",
++    "@langchain/langgraph-sdk": "1.9.21",
+     "@radix-ui/colors": "^1.0.0",
+     "@radix-ui/react-dialog": "^1.1.15",
+     "@radix-ui/react-label": "^2.1.8",
+diff --git a/src/app/components/ChatInterface.tsx b/src/app/components/ChatInterface.tsx
+index c3691a9..27ff6e8 100644
+--- a/src/app/components/ChatInterface.tsx
++++ b/src/app/components/ChatInterface.tsx
+@@ -267,6 +267,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+                     key={data.message.id}
+                     message={data.message}
+                     toolCalls={data.toolCalls}
++                    subAgents={
++                      data.message.type === "ai" && data.message.id
++                        ? stream.getSubagentsByMessage(data.message.id)
++                        : []
++                    }
+                     isLoading={isLoading}
+                     actionRequestsMap={
+                       isLastMessage ? actionRequestsMap : undefined
+diff --git a/src/app/components/ChatMessage.tsx b/src/app/components/ChatMessage.tsx
+index 48eadde..875efc7 100644
+--- a/src/app/components/ChatMessage.tsx
++++ b/src/app/components/ChatMessage.tsx
+@@ -1,16 +1,15 @@
+ "use client";
+-
++
+-import React, { useMemo, useState, useCallback } from "react";
++import React, { useState, useCallback } from "react";
+ import { SubAgentIndicator } from "@/app/components/SubAgentIndicator";
+ import { ToolCallBox } from "@/app/components/ToolCallBox";
+ import { MarkdownContent } from "@/app/components/MarkdownContent";
+-import type {
+-  SubAgent,
+-  ToolCall,
+-  ActionRequest,
+-  ReviewConfig,
+-} from "@/app/types/types";
++import type { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
+ import { Message } from "@langchain/langgraph-sdk";
++import type {
++  SubagentStreamInterface,
++  ToolCallWithResult,
++} from "@langchain/langgraph-sdk/react";
+ import {
+   extractSubAgentContent,
+   extractStringFromMessageContent,
+@@ -20,6 +19,7 @@ import { cn } from "@/lib/utils";
+ interface ChatMessageProps {
+   message: Message;
+   toolCalls: ToolCall[];
++  subAgents?: SubagentStreamInterface[];
+   isLoading?: boolean;
+   actionRequestsMap?: Map<string, ActionRequest>;
+   reviewConfigsMap?: Map<string, ReviewConfig>;
+@@ -29,10 +29,35 @@ interface ChatMessageProps {
+   graphId?: string;
+ }
+-
++
++/**
++ * Преобразует streamed tool call sub-agent в формат карточки UI.
++ *
++ * @param toolCall Вызов инструмента из sub-agent stream.
++ * @returns Нормализованный вызов инструмента с аргументами, статусом и результатом.
++ */
++function normalizeSubagentToolCall(toolCall: ToolCallWithResult): ToolCall {
++  const call = toolCall.call ?? {};
++  return {
++    id: toolCall.id,
++    name: call.name ?? "unknown",
++    args: call.args ?? {},
++    result: toolCall.result
++      ? extractStringFromMessageContent(toolCall.result)
++      : undefined,
++    status:
++      toolCall.state === "completed"
++        ? "completed"
++        : toolCall.state === "error"
++        ? "error"
++        : "pending",
++  };
++}
++
+ export const ChatMessage = React.memo<ChatMessageProps>(
+   ({
+     message,
+     toolCalls,
++    subAgents = [],
+     isLoading,
+     actionRequestsMap,
+     reviewConfigsMap,
+@@ -45,31 +70,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+     const messageContent = extractStringFromMessageContent(message);
+     const hasContent = messageContent && messageContent.trim() !== "";
+     const hasToolCalls = toolCalls.length > 0;
+-    const subAgents = useMemo(() => {
+-      return toolCalls
+-        .filter((toolCall: ToolCall) => {
+-          return (
+-            toolCall.name === "task" &&
+-            toolCall.args["subagent_type"] &&
+-            toolCall.args["subagent_type"] !== "" &&
+-            toolCall.args["subagent_type"] !== null
+-          );
+-        })
+-        .map((toolCall: ToolCall) => {
+-          const subagentType = (toolCall.args as Record<string, unknown>)[
+-            "subagent_type"
+-          ] as string;
+-          return {
+-            id: toolCall.id,
+-            name: toolCall.name,
+-            subAgentName: subagentType,
+-            input: toolCall.args,
+-            output: toolCall.result ? { result: toolCall.result } : undefined,
+-            status: toolCall.status,
+-          } as SubAgent;
+-        });
+-    }, [toolCalls]);
+-
+     const [expandedSubAgents, setExpandedSubAgents] = useState<
+       Record<string, boolean>
+     >({});
+@@ -157,7 +157,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+                   <div className="flex items-end gap-2">
+                     <div className="w-[calc(100%-100px)]">
+                       <SubAgentIndicator
+-                        subAgent={subAgent}
++                        name={
++                          subAgent.toolCall.args.subagent_type ?? "subagent"
++                        }
++                        status={subAgent.status}
+                         onClick={() => toggleSubAgent(subAgent.id)}
+                         isExpanded={isSubAgentExpanded(subAgent.id)}
+                       />
+@@ -167,21 +170,54 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+                     <div className="w-full max-w-full">
+                       <div className="bg-surface border-border-light rounded-md border p-4">
+                         <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
+-                          Input
++                          Задача
+                         </h4>
+                         <div className="mb-4">
+                           <MarkdownContent
+-                            content={extractSubAgentContent(subAgent.input)}
++                            content={extractSubAgentContent(
++                              subAgent.toolCall.args
++                            )}
+                           />
+                         </div>
+-                        {subAgent.output && (
++                        {subAgent.toolCalls.length > 0 && (
++                          <div className="mb-4">
++                            <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
++                              Инструменты
++                            </h4>
++                            <div className="flex flex-col gap-1">
++                              {subAgent.toolCalls.map((toolCall) => (
++                                <ToolCallBox
++                                  key={toolCall.id}
++                                  toolCall={normalizeSubagentToolCall(toolCall)}
++                                  isLoading={subAgent.status === "running"}
++                                />
++                              ))}
++                            </div>
++                          </div>
++                        )}
++                        {subAgent.messages.length > 0 && (
++                          <div className="mb-4">
++                            <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
++                              Прогресс
++                            </h4>
++                            {subAgent.messages
++                              .filter((item) => item.type === "ai")
++                              .map((item, index) => (
++                                <MarkdownContent
++                                  key={item.id ?? index}
++                                  content={extractStringFromMessageContent(
++                                    item
++                                  )}
++                                />
++                              ))}
++                          </div>
++                        )}
++                        {subAgent.result && (
+                           <>
+                             <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
+-                              Output
++                              Результат
+                             </h4>
+-                            <MarkdownContent
+-                              content={extractSubAgentContent(subAgent.output)}
+-                            />
++                            <MarkdownContent content={subAgent.result} />
+                           </>
+                         )}
+                       </div>
+diff --git a/src/app/components/SubAgentIndicator.tsx b/src/app/components/SubAgentIndicator.tsx
+index 67b1aef..ae16849 100644
+--- a/src/app/components/SubAgentIndicator.tsx
++++ b/src/app/components/SubAgentIndicator.tsx
+@@ -2,17 +2,65 @@
+-
++
+ import React from "react";
+ import { Button } from "@/components/ui/button";
+-import { ChevronDown, ChevronUp } from "lucide-react";
+-import type { SubAgent } from "@/app/types/types";
++import {
++  AlertCircle,
++  CheckCircle,
++  ChevronDown,
++  ChevronUp,
++  Clock,
++  Loader2,
++} from "lucide-react";
+-
++
+ interface SubAgentIndicatorProps {
+-  subAgent: SubAgent;
++  name: string;
++  status: "pending" | "running" | "complete" | "error";
+   onClick: () => void;
+   isExpanded?: boolean;
+ }
+-
++
++/**
++ * Возвращает индикатор lifecycle-статуса sub-agent.
++ *
++ * @param status Текущий статус выполнения sub-agent.
++ * @returns Иконка ожидания, выполнения, завершения или ошибки.
++ */
++function getSubagentStatusIcon(
++  status: SubAgentIndicatorProps["status"]
++): React.ReactNode {
++  switch (status) {
++    case "running":
++      return (
++        <Loader2
++          size={14}
++          className="animate-spin"
++        />
++      );
++    case "complete":
++      return (
++        <CheckCircle
++          size={14}
++          className="text-success/80"
++        />
++      );
++    case "error":
++      return (
++        <AlertCircle
++          size={14}
++          className="text-destructive"
++        />
++      );
++    default:
++      return (
++        <Clock
++          size={14}
++          className="text-muted-foreground"
++        />
++      );
++  }
++}
++
+ export const SubAgentIndicator = React.memo<SubAgentIndicatorProps>(
+-  ({ subAgent, onClick, isExpanded = true }) => {
++  ({ name, status, onClick, isExpanded = true }) => {
+     return (
+       <div className="w-fit max-w-[70vw] overflow-hidden rounded-lg border-none bg-card shadow-none outline-none">
+         <Button
+@@ -23,9 +71,11 @@ export const SubAgentIndicator = React.memo<SubAgentIndicatorProps>(
+         >
+           <div className="flex w-full items-center justify-between gap-2">
+             <div className="flex items-center gap-2">
++              {getSubagentStatusIcon(status)}
+               <span className="font-sans text-[15px] font-bold leading-[140%] tracking-[-0.6px] text-[#3F3F46]">
+-                {subAgent.subAgentName}
++                {name}
+               </span>
++              <span className="text-xs text-muted-foreground">{status}</span>
+             </div>
+             {isExpanded ? (
+               <ChevronUp
+diff --git a/src/app/hooks/useChat.ts b/src/app/hooks/useChat.ts
+index 139b78e..ec2a516 100644
+--- a/src/app/hooks/useChat.ts
++++ b/src/app/hooks/useChat.ts
+@@ -8,7 +8,10 @@ import {
+   type Checkpoint,
+ } from "@langchain/langgraph-sdk";
+ import { v4 as uuidv4 } from "uuid";
+-import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
++import type {
++  SubagentStreamInterface,
++  UseStreamThread,
++} from "@langchain/langgraph-sdk/react";
+ import type { TodoItem } from "@/app/types/types";
+ import { useClient } from "@/providers/ClientProvider";
+ import { useQueryState } from "nuqs";
+@@ -25,6 +28,10 @@ export type StateType = {
+   ui?: any;
+ };
+-
++
++type DeepAgentStream = ReturnType<typeof useStream<StateType>> & {
++  getSubagentsByMessage: (messageId: string) => SubagentStreamInterface[];
++};
++
+ export function useChat({
+   activeAssistant,
+   onHistoryRevalidate,
+@@ -50,8 +57,7 @@ export function useChat({
+     onFinish: onHistoryRevalidate,
+     onError: onHistoryRevalidate,
+     onCreated: onHistoryRevalidate,
+-    experimental_thread: thread,
+-  });
++  }) as DeepAgentStream;
+-
++
+   const sendMessage = useCallback(
+     (content: string) => {

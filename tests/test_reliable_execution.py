@@ -18,51 +18,55 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
-from deep_agent_test.core.analytics_deep_agent import (
+from deep_agent.agent import (
     _agents_memory_path,
     _build_file_edit_interrupts,
     build_conversation_checkpointer,
     build_skills_backend,
 )
-from deep_agent_test.core.capabilities import (
+from deep_agent.capabilities import (
     BASE_SUPERVISOR_TOOL_NAMES,
     CODE_WORKSPACE_SKILL_PATH,
     CODE_WORKSPACE_TOOL_NAMES,
+    DATA_RETRIEVAL_TOOL_NAMES,
+    GENERAL_PURPOSE_BASE_TOOL_NAMES,
     SUPERVISOR_SKILL_TOOL_GRANTS,
 )
-from deep_agent_test.core.harness_profile import build_analytics_harness_profile
-from deep_agent_test.core.prompts import (
-    BUILTIN_TOOLS_PROMPT_APPEND,
+from deep_agent.runtime.harness import build_analytics_harness_profile
+from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
+from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    DATA_RETRIEVAL_PROMPT,
-    DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
-    SYSTEM_PROMPT,
-    SUPERVISOR_TOOLS_PROMPT_APPEND,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+)
+from deep_agent.prompts.supervisor import SYSTEM_PROMPT
+from deep_agent.prompts.tool_contracts import (
+    BUILTIN_TOOLS_PROMPT_APPEND,
+    DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
+    SUPERVISOR_TOOLS_PROMPT_APPEND,
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
-from deep_agent_test.core.settings import load_deep_agent_settings
-from deep_agent_test.core.utf8_filesystem_backend import Utf8LocalShellBackend
-from deep_agent_test.core.retrieval_subagents import build_analytics_subagent_specs
-from deep_agent_test.middlewares.skills_context import (
+from deep_agent.settings import load_deep_agent_settings
+from deep_agent.runtime.filesystem import Utf8LocalShellBackend
+from deep_agent.subagents.registry import build_subagent_specs
+from deep_agent.middleware.skills_context import (
     SelectedSkillPaths,
     build_preloaded_skills_context,
     discover_skill_context_files,
     select_relevant_skill_paths_with_llm,
 )
-from deep_agent_test.middlewares.tool_loop_guard import (
+from deep_agent.middleware.tool_loop_guard import (
     _count_trailing_identical_tool_calls,
 )
-from deep_agent_test.middlewares.tool_visibility import (
+from deep_agent.middleware.tool_visibility import (
     ToolVisibilityMiddleware,
     filter_system_message_by_tools,
     filter_tools_by_name,
     resolve_allowed_tools,
 )
-from deep_agent_test.tools.data_query_schema import FilterCondition, ParsedDataQuery
-from deep_agent_test.tools.load_skills import LOAD_SKILLS_DESCRIPTION
-from deep_agent_test.tools.spark_data import _parsed_query_to_read_args
+from deep_agent.data.query_schema import FilterCondition, ParsedDataQuery
+from deep_agent.tools.skill_loader import LOAD_SKILLS_DESCRIPTION
+from deep_agent.data.query_parser import _parsed_query_to_read_args
 
 
 class SequencedStructuredModel:
@@ -387,10 +391,13 @@ class ReliableExecutionTests(unittest.TestCase):
     def test_subagent_specs_include_coding_and_data_agents(self) -> None:
         """Сборка должна явно добавлять general-purpose и data-retrieval-agent."""
 
-        specs = build_analytics_subagent_specs(
-            data_tools=[],
+        load_skills_tool = {"name": "load_skills"}
+        python_tool = {"name": "execute_python_code"}
+        specs = build_subagent_specs(
+            data_tools=[load_skills_tool],
+            general_purpose_tools=[python_tool, load_skills_tool],
             data_retrieval_middleware=[],
-            general_purpose_middleware=[],
+            coding_middleware=[],
             model=object(),
         )
 
@@ -398,6 +405,20 @@ class ReliableExecutionTests(unittest.TestCase):
             [spec["name"] for spec in specs],
             ["general-purpose", "data-retrieval-agent"],
         )
+        self.assertIn(python_tool, specs[0]["tools"])
+        self.assertIn(load_skills_tool, specs[0]["tools"])
+        self.assertIn(load_skills_tool, specs[1]["tools"])
+        self.assertTrue(
+            {
+                "task",
+                "write_todos",
+                "execute_python_code",
+                "load_skills",
+                *CODE_WORKSPACE_TOOL_NAMES,
+            }.issubset(GENERAL_PURPOSE_BASE_TOOL_NAMES)
+        )
+        self.assertNotIn("load_data", GENERAL_PURPOSE_BASE_TOOL_NAMES)
+        self.assertIn("load_skills", DATA_RETRIEVAL_TOOL_NAMES)
 
     def test_code_workspace_skill_grants_filesystem_and_terminal_tools(self) -> None:
         """Skill code-workspace должен динамически расширять allowlist supervisor."""
@@ -499,6 +520,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("code-workspace", SUPERVISOR_TOOLS_PROMPT_APPEND)
         self.assertNotIn("For `grep`", SUPERVISOR_TOOLS_PROMPT_APPEND)
         self.assertIn("The data-retrieval agent has only these tools", DATA_RETRIEVAL_TOOLS_PROMPT_APPEND)
+        self.assertIn("`load_skills`", DATA_RETRIEVAL_TOOLS_PROMPT_APPEND)
         self.assertIn(
             "If table data is needed, delegate it to `data-retrieval-agent`",
             SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -509,6 +531,10 @@ class ReliableExecutionTests(unittest.TestCase):
         )
         self.assertIn(
             "Read auxiliary files",
+            DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+        )
+        self.assertNotIn(
+            "it is unavailable",
             DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
         )
         self.assertIn("Treat an empty subagent report", SYSTEM_PROMPT)

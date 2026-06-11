@@ -13,8 +13,9 @@ from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from deep_agent_test import build_analytics_deep_agent, load_deep_agent_settings
-from deep_agent_test.tools.fake_spark_data import build_fake_spark_data_tools
+from deep_agent.agent import build_analytics_deep_agent
+from deep_agent.settings import load_deep_agent_settings
+from tests.support.fake_spark_data import build_fake_spark_data_tools
 
 ARTIFACTS_VIRTUAL_DIR = "/artifacts/"
 UI_SYSTEM_PROMPT_SUFFIX = """
@@ -31,7 +32,15 @@ UI_SYSTEM_PROMPT_SUFFIX = """
 
 
 def _env_flag(name: str, *, default: bool = False) -> bool:
-    """Читает булеву переменную окружения."""
+    """Читает булеву переменную окружения.
+
+    Args:
+        name: Имя переменной окружения.
+        default: Значение при отсутствии переменной.
+
+    Returns:
+        Нормализованное булево значение.
+    """
 
     value = os.environ.get(name, "").strip().lower()
     if not value:
@@ -105,4 +114,3 @@ def build_ui_agent() -> Any:
 
 
 agent = build_ui_agent()
-
