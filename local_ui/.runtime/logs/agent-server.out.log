@@ -1,0 +1,801 @@
+2026-06-11T07:16:47.598107Z [info     ] Starting dev persistence flush loop [langgraph_runtime_inmem._persistence] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:47.645757Z [info     ] Using langgraph_runtime_inmem  [langgraph_runtime] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:47.740564Z [info     ] Using auth of type=noop        [langgraph_api.auth.middleware] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:47.804296Z [info     ] Starting In-Memory runtime with langgraph-api=0.9.0 and in-memory runtime=0.29.0 [langgraph_runtime_inmem.lifespan] api_variant=local_dev langgraph_api_version=0.9.0 langgraph_runtime_inmem_version=0.29.0 thread_name=asyncio_0 version=0.9.0
+2026-06-11T07:16:48.058611Z [info     ] No license key or control plane API key set, skipping metadata loop [langgraph_api.metadata] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:51.501574Z [warning  ] Graph import exceeded the expected startup time. Slow initialization (often due to work executed at import time) can delay readiness, slow scale-out velocity, and may cause deployments to be marked unhealthy.
+    To get detailed profiling of slow operations, set FF_PROFILE_IMPORTS=true [langgraph_api.timing.timer] api_variant=local_dev elapsed_seconds=3.4377449000003253 graph_id=analytics-agent langgraph_api_version=0.9.0 module=None name=_graph_from_spec path=./local_ui/agent.py thread_name=asyncio_0
+2026-06-11T07:16:51.501574Z [info     ] Application started up in 4.390s [langgraph_api.timing.timer] api_variant=local_dev elapsed=4.389999999999418 langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:51.501574Z [info     ] Starting cron scheduler        [langgraph_api.cron_scheduler] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T07:16:51.501574Z [warning  ] Heads up: You've set --allow-blocking, which allows synchronous blocking I/O operations. Be aware that blocking code in one run may tie up the shared event loop and slow down ALL other server operations. For best performance, use async drivers (e.g., aiohttp instead of requests, asyncpg instead of psycopg2). If switching to an async driver isn't possible, wrap the blocking call in asyncio.to_thread(). [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=asyncio_0
+2026-06-11T07:16:51.501574Z [info     ] Starting queue with shared loop [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=asyncio_0
+2026-06-11T07:16:51.501574Z [info     ] Starting 1 background workers  [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=asyncio_0
+2026-06-11T07:16:51.501574Z [info     ] Worker stats                   [langgraph_runtime_inmem.queue] active=0 api_variant=local_dev available=1 langgraph_api_version=0.9.0 max=1 thread_name=asyncio_0
+2026-06-11T07:16:52.024394Z [info     ] Queue stats                    [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 n_pending=0 n_running=0 pending_runs_wait_time_max_secs=None pending_runs_wait_time_med_secs=None pending_unblocked_runs_wait_time_max_secs=None thread_name=asyncio_0
+2026-06-11T07:17:05.362958Z [info     ] Getting auth instance: None    [langgraph_api.auth.custom] api_variant=local_dev langgraph_api_version=0.9.0 langgraph_auth=None method=POST path=/assistants/search thread_name=MainThread
+2026-06-11T07:17:09.515891Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=87e20f3c-6f25-4a6c-8c1c-df5d03ad9ffd run_create_ms=1 run_id=019eb58a-bf0c-7401-b7b2-e0350750ce7f run_put_ms=0 stream_mode=['values', 'messages-tuple'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:10.121810Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=87e20f3c-6f25-4a6c-8c1c-df5d03ad9ffd resumable=True run_attempt=1 run_creation_ms=1 run_id=019eb58a-bf0c-7401-b7b2-e0350750ce7f run_queue_ms=605 run_started_at=2026-06-11T07:17:10.121810+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_0
+2026-06-11T07:17:12.060897Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=87e20f3c-6f25-4a6c-8c1c-df5d03ad9ffd run_attempt=1 run_id=019eb58a-bf0c-7401-b7b2-e0350750ce7f thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:15.724342Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=87e20f3c-6f25-4a6c-8c1c-df5d03ad9ffd run_attempt=1 run_id=019eb58a-bf0c-7401-b7b2-e0350750ce7f thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:16.630819Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=87e20f3c-6f25-4a6c-8c1c-df5d03ad9ffd run_attempt=1 run_completed_in_ms=7116 run_created_at=2026-06-11T07:17:09.515891+00:00 run_ended_at=2026-06-11T07:17:16.630819+00:00 run_exec_ms=6509 run_id=019eb58a-bf0c-7401-b7b2-e0350750ce7f run_started_at=2026-06-11T07:17:10.121810+00:00 run_wait_time_ms=605 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_0
+2026-06-11T07:17:29.607301Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=6045a17b-786d-46a2-857a-40630500745d run_create_ms=3 run_id=019eb58b-0d87-7313-a735-0e07d3746cde run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:30.282257Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=6045a17b-786d-46a2-857a-40630500745d resumable=True run_attempt=1 run_creation_ms=3 run_id=019eb58b-0d87-7313-a735-0e07d3746cde run_queue_ms=674 run_started_at=2026-06-11T07:17:30.282257+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_0
+2026-06-11T07:17:32.863129Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=6045a17b-786d-46a2-857a-40630500745d run_attempt=1 run_id=019eb58b-0d87-7313-a735-0e07d3746cde thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:39.361139Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=6045a17b-786d-46a2-857a-40630500745d run_attempt=1 run_id=019eb58b-0d87-7313-a735-0e07d3746cde thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:45.661146Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=6045a17b-786d-46a2-857a-40630500745d run_attempt=1 run_id=019eb58b-0d87-7313-a735-0e07d3746cde thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:17:49.224727Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=6045a17b-786d-46a2-857a-40630500745d run_attempt=1 run_completed_in_ms=19620 run_created_at=2026-06-11T07:17:29.607301+00:00 run_ended_at=2026-06-11T07:17:49.224727+00:00 run_exec_ms=18942 run_id=019eb58b-0d87-7313-a735-0e07d3746cde run_started_at=2026-06-11T07:17:30.282257+00:00 run_wait_time_ms=674 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:17:51.739832Z [info     ] Worker stats                   [langgraph_runtime_inmem.queue] active=0 api_variant=local_dev available=1 langgraph_api_version=0.9.0 max=1 thread_name=asyncio_1
+2026-06-11T07:17:52.223707Z [info     ] Queue stats                    [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 n_pending=0 n_running=0 pending_runs_wait_time_max_secs=None pending_runs_wait_time_med_secs=None pending_unblocked_runs_wait_time_max_secs=None thread_name=asyncio_0
+2026-06-11T07:18:10.202338Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=96597e4b-cefd-4aed-87eb-181a2ebcc328 run_create_ms=0 run_id=019eb58b-ac20-7c02-a149-3b8b249a9fda run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:10.914278Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=96597e4b-cefd-4aed-87eb-181a2ebcc328 resumable=True run_attempt=1 run_creation_ms=0 run_id=019eb58b-ac20-7c02-a149-3b8b249a9fda run_queue_ms=711 run_started_at=2026-06-11T07:18:10.914278+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:18:14.669745Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=96597e4b-cefd-4aed-87eb-181a2ebcc328 run_attempt=1 run_id=019eb58b-ac20-7c02-a149-3b8b249a9fda thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:25.199165Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=96597e4b-cefd-4aed-87eb-181a2ebcc328 run_attempt=1 run_id=019eb58b-ac20-7c02-a149-3b8b249a9fda thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:26.479053Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=96597e4b-cefd-4aed-87eb-181a2ebcc328 run_attempt=1 run_completed_in_ms=16276 run_created_at=2026-06-11T07:18:10.202338+00:00 run_ended_at=2026-06-11T07:18:26.478023+00:00 run_exec_ms=15563 run_id=019eb58b-ac20-7c02-a149-3b8b249a9fda run_started_at=2026-06-11T07:18:10.914278+00:00 run_wait_time_ms=711 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:18:31.987371Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=950eacb0-a142-40b4-b494-0d5810d4252e run_create_ms=2 run_id=019eb58c-0133-7342-acf4-a995d57fde98 run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:32.981705Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=950eacb0-a142-40b4-b494-0d5810d4252e resumable=True run_attempt=1 run_creation_ms=2 run_id=019eb58c-0133-7342-acf4-a995d57fde98 run_queue_ms=994 run_started_at=2026-06-11T07:18:32.981705+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:18:34.268907Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=950eacb0-a142-40b4-b494-0d5810d4252e run_attempt=1 run_id=019eb58c-0133-7342-acf4-a995d57fde98 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:40.949533Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=950eacb0-a142-40b4-b494-0d5810d4252e run_attempt=1 run_id=019eb58c-0133-7342-acf4-a995d57fde98 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:41.812779Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=950eacb0-a142-40b4-b494-0d5810d4252e run_attempt=1 run_completed_in_ms=9827 run_created_at=2026-06-11T07:18:31.987371+00:00 run_ended_at=2026-06-11T07:18:41.812779+00:00 run_exec_ms=8831 run_id=019eb58c-0133-7342-acf4-a995d57fde98 run_started_at=2026-06-11T07:18:32.981705+00:00 run_wait_time_ms=994 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:18:51.872279Z [info     ] Worker stats                   [langgraph_runtime_inmem.queue] active=0 api_variant=local_dev available=1 langgraph_api_version=0.9.0 max=1 thread_name=asyncio_1
+2026-06-11T07:18:52.370514Z [info     ] Queue stats                    [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 n_pending=0 n_running=0 pending_runs_wait_time_max_secs=None pending_runs_wait_time_med_secs=None pending_unblocked_runs_wait_time_max_secs=None thread_name=asyncio_0
+2026-06-11T07:18:52.870342Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=9c072f6f-974c-429c-bff0-75ea2601270c run_create_ms=2 run_id=019eb58c-52c6-70c3-bd90-57d0cb0f5650 run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:53.860138Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=9c072f6f-974c-429c-bff0-75ea2601270c resumable=True run_attempt=1 run_creation_ms=2 run_id=019eb58c-52c6-70c3-bd90-57d0cb0f5650 run_queue_ms=989 run_started_at=2026-06-11T07:18:53.860138+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_1
+2026-06-11T07:18:56.785609Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=9c072f6f-974c-429c-bff0-75ea2601270c run_attempt=1 run_id=019eb58c-52c6-70c3-bd90-57d0cb0f5650 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:18:57.207019Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=9c072f6f-974c-429c-bff0-75ea2601270c run_attempt=1 run_completed_in_ms=4339 run_created_at=2026-06-11T07:18:52.870342+00:00 run_ended_at=2026-06-11T07:18:57.207019+00:00 run_exec_ms=3346 run_id=019eb58c-52c6-70c3-bd90-57d0cb0f5650 run_started_at=2026-06-11T07:18:53.860138+00:00 run_wait_time_ms=989 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_2
+2026-06-11T07:19:24.533291Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=363bb49c-248a-430b-ac53-570da95228b3 run_create_ms=3 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:19:25.495288Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=363bb49c-248a-430b-ac53-570da95228b3 resumable=True run_attempt=1 run_creation_ms=3 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea run_queue_ms=961 run_started_at=2026-06-11T07:19:25.495288+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_2
+2026-06-11T07:19:26.605380Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=363bb49c-248a-430b-ac53-570da95228b3 run_attempt=1 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:19:43.542457Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=363bb49c-248a-430b-ac53-570da95228b3 run_attempt=1 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:20:36.335378Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=363bb49c-248a-430b-ac53-570da95228b3 run_attempt=1 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:20:42.292073Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=363bb49c-248a-430b-ac53-570da95228b3 run_attempt=1 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:20:47.615777Z [info     ] Background run succeeded       [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=363bb49c-248a-430b-ac53-570da95228b3 run_attempt=1 run_completed_in_ms=83084 run_created_at=2026-06-11T07:19:24.533291+00:00 run_ended_at=2026-06-11T07:20:47.614777+00:00 run_exec_ms=82119 run_id=019eb58c-ce75-7c32-ae6f-b490aae924ea run_started_at=2026-06-11T07:19:25.495288+00:00 run_wait_time_ms=961 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_3
+2026-06-11T07:20:47.617776Z [info     ] Worker stats                   [langgraph_runtime_inmem.queue] active=0 api_variant=local_dev available=1 langgraph_api_version=0.9.0 max=1 thread_name=asyncio_2
+2026-06-11T07:20:47.619780Z [info     ] Queue stats                    [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 n_pending=0 n_running=0 pending_runs_wait_time_max_secs=None pending_runs_wait_time_med_secs=None pending_unblocked_runs_wait_time_max_secs=None thread_name=asyncio_0
+2026-06-11T07:20:59.798582Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=8747ccb1-532f-416f-95cb-f0383f99bc8e run_create_ms=2 run_id=019eb58e-4295-7781-8e0f-6a27cf0bfdb7 run_put_ms=1 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:21:00.741894Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=8747ccb1-532f-416f-95cb-f0383f99bc8e resumable=True run_attempt=1 run_creation_ms=2 run_id=019eb58e-4295-7781-8e0f-6a27cf0bfdb7 run_queue_ms=943 run_started_at=2026-06-11T07:21:00.741894+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_2
+2026-06-11T07:21:06.852075Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=8747ccb1-532f-416f-95cb-f0383f99bc8e run_attempt=1 run_id=019eb58e-4295-7781-8e0f-6a27cf0bfdb7 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:21:06.929202Z [error    ] Run encountered an error in graph: <class 'openai.APIStatusError'>(Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5052. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "Prompt tokens limit exceeded: 27584 > 27207. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7895. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5614. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'DeepInfra', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}) [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=8747ccb1-532f-416f-95cb-f0383f99bc8e run_attempt=1 run_id=019eb58e-4295-7781-8e0f-6a27cf0bfdb7 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 207, in wrap_user_errors
+    await consume(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 588, in consume
+    await _consume_inline(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 654, in _consume_inline
+    raise e
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 614, in _consume_inline
+    async for mode, payload in stream:
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 450, in astream_state
+    event = await wait_if_not_done(anext(stream, sentinel), done)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\asyncio.py", line 108, in wait_if_not_done
+    raise e.exceptions[0] from None
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3407, in astream
+    async for _ in runner.atick(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 557, in atick
+    _panic_or_proceed(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 687, in _panic_or_proceed
+    raise exc
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 706, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 733, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 501, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1381, in amodel_node
+    result = await awrap_model_call_handler(request, _execute_model_async)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\todo.py", line 283, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\filesystem.py", line 1740, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\subagents.py", line 788, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\summarization.py", line 1086, in awrap_model_call
+    return await handler(request.override(messages=truncated_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\skills_context.py", line 228, in awrap_model_call
+    return await handler(self._override_model_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_visibility.py", line 93, in awrap_model_call
+    return await handler(
+           ^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\context_editing.py", line 292, in awrap_model_call
+    return await handler(request.override(messages=edited_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_descriptions.py", line 71, in awrap_model_call
+    return await handler(self._override_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_anthropic\middleware\prompt_caching.py", line 184, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\memory.py", line 440, in awrap_model_call
+    return await handler(modified_request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1350, in _execute_model_async
+    output = await model_.ainvoke(messages)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5894, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 497, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1834, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1792, in agenerate
+    raise exceptions[0]
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 2127, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1937, in _agenerate
+    _handle_openai_api_error(e)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1930, in _agenerate
+    raw_response = await self.async_client.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_legacy_response.py", line 384, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 2739, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1931, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1716, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.APIStatusError: Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5052. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "Prompt tokens limit exceeded: 27584 > 27207. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7895. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5614. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'DeepInfra', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}
+During task with name 'model' and id '525f208b-e9eb-118a-61c1-5c9e35aa5bcb'
+2026-06-11T07:21:06.945346Z [error    ] Background run failed. Exception: <class 'openai.APIStatusError'>(Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5052. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "Prompt tokens limit exceeded: 27584 > 27207. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7895. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5614. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'DeepInfra', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}) [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=8747ccb1-532f-416f-95cb-f0383f99bc8e run_attempt=1 run_completed_in_ms=7149 run_created_at=2026-06-11T07:20:59.798582+00:00 run_ended_at=2026-06-11T07:21:06.945346+00:00 run_exec_ms=6203 run_id=019eb58e-4295-7781-8e0f-6a27cf0bfdb7 run_started_at=2026-06-11T07:21:00.741894+00:00 run_wait_time_ms=943 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_0
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 269, in worker
+    await asyncio.wait_for(
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 207, in wrap_user_errors
+    await consume(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 588, in consume
+    await _consume_inline(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 654, in _consume_inline
+    raise e
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 614, in _consume_inline
+    async for mode, payload in stream:
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 450, in astream_state
+    event = await wait_if_not_done(anext(stream, sentinel), done)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\asyncio.py", line 108, in wait_if_not_done
+    raise e.exceptions[0] from None
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3407, in astream
+    async for _ in runner.atick(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 557, in atick
+    _panic_or_proceed(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 687, in _panic_or_proceed
+    raise exc
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 706, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 733, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 501, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1381, in amodel_node
+    result = await awrap_model_call_handler(request, _execute_model_async)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\todo.py", line 283, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\filesystem.py", line 1740, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\subagents.py", line 788, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\summarization.py", line 1086, in awrap_model_call
+    return await handler(request.override(messages=truncated_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\skills_context.py", line 228, in awrap_model_call
+    return await handler(self._override_model_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_visibility.py", line 93, in awrap_model_call
+    return await handler(
+           ^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\context_editing.py", line 292, in awrap_model_call
+    return await handler(request.override(messages=edited_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_descriptions.py", line 71, in awrap_model_call
+    return await handler(self._override_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_anthropic\middleware\prompt_caching.py", line 184, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\memory.py", line 440, in awrap_model_call
+    return await handler(modified_request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1350, in _execute_model_async
+    output = await model_.ainvoke(messages)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5894, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 497, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1834, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1792, in agenerate
+    raise exceptions[0]
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 2127, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1937, in _agenerate
+    _handle_openai_api_error(e)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1930, in _agenerate
+    raw_response = await self.async_client.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_legacy_response.py", line 384, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 2739, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1931, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1716, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.APIStatusError: Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5052. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "Prompt tokens limit exceeded: 27584 > 27207. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7895. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5614. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'DeepInfra', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6935. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5526. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}
+During task with name 'model' and id '525f208b-e9eb-118a-61c1-5c9e35aa5bcb'
+2026-06-11T07:21:47.873473Z [info     ] Worker stats                   [langgraph_runtime_inmem.queue] active=0 api_variant=local_dev available=1 langgraph_api_version=0.9.0 max=1 thread_name=asyncio_4
+2026-06-11T07:21:48.382243Z [info     ] Queue stats                    [langgraph_runtime_inmem.queue] api_variant=local_dev langgraph_api_version=0.9.0 n_pending=0 n_running=0 pending_runs_wait_time_max_secs=None pending_runs_wait_time_med_secs=None pending_unblocked_runs_wait_time_max_secs=None thread_name=asyncio_0
+2026-06-11T07:22:16.241787Z [info     ] Created run                    [langgraph_api.models.run] after_seconds=0 api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d checkpoint_id=None if_not_exists=reject langgraph_api_version=0.9.0 method=POST multitask_strategy=enqueue path=/threads/{thread_id}/runs/stream request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_create_ms=0 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 run_put_ms=0 stream_mode=['values', 'messages-tuple', 'updates'] stream_resumable=True temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:22:17.133304Z [info     ] Starting background run        [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f resumable=True run_attempt=1 run_creation_ms=0 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 run_queue_ms=891 run_started_at=2026-06-11T07:22:17.132956+00:00 run_stream_start_ms=0 temporary=False thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_3
+2026-06-11T07:22:18.641199Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_attempt=1 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:22:19.649698Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=PreloadedSkillsContextMiddleware.before_agent request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_attempt=1 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:22:22.244740Z [info     ] HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 402 Payment Required" [httpx] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 langgraph_node=model request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_attempt=1 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+2026-06-11T07:22:22.246758Z [error    ] Run encountered an error in graph: <class 'openai.APIStatusError'>(Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 4605. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7196. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5117. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}) [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_attempt=1 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=MainThread
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 207, in wrap_user_errors
+    await consume(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 588, in consume
+    await _consume_inline(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 654, in _consume_inline
+    raise e
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 614, in _consume_inline
+    async for mode, payload in stream:
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 450, in astream_state
+    event = await wait_if_not_done(anext(stream, sentinel), done)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\asyncio.py", line 108, in wait_if_not_done
+    raise e.exceptions[0] from None
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3407, in astream
+    async for _ in runner.atick(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 557, in atick
+    _panic_or_proceed(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 687, in _panic_or_proceed
+    raise exc
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 706, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 733, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 501, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1381, in amodel_node
+    result = await awrap_model_call_handler(request, _execute_model_async)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\todo.py", line 283, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\filesystem.py", line 1740, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\subagents.py", line 788, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\summarization.py", line 1086, in awrap_model_call
+    return await handler(request.override(messages=truncated_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\skills_context.py", line 228, in awrap_model_call
+    return await handler(self._override_model_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_visibility.py", line 93, in awrap_model_call
+    return await handler(
+           ^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\context_editing.py", line 292, in awrap_model_call
+    return await handler(request.override(messages=edited_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_descriptions.py", line 71, in awrap_model_call
+    return await handler(self._override_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_anthropic\middleware\prompt_caching.py", line 184, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\memory.py", line 440, in awrap_model_call
+    return await handler(modified_request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1350, in _execute_model_async
+    output = await model_.ainvoke(messages)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5894, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 497, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1834, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1792, in agenerate
+    raise exceptions[0]
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 2127, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1937, in _agenerate
+    _handle_openai_api_error(e)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1930, in _agenerate
+    raw_response = await self.async_client.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_legacy_response.py", line 384, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 2739, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1931, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1716, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.APIStatusError: Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 4605. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7196. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5117. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}
+During task with name 'model' and id '61285a58-6902-d5c3-fe86-d6fd6bc77e49'
+2026-06-11T07:22:22.258350Z [error    ] Background run failed. Exception: <class 'openai.APIStatusError'>(Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 4605. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7196. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5117. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}) [langgraph_api.worker] api_variant=local_dev assistant_id=718546f4-a4d4-5570-b8de-d8c36a46249d graph_id=analytics-agent langgraph_api_version=0.9.0 request_id=e5ae5d8e-25c3-4d82-bab1-50d4611fae6f run_attempt=1 run_completed_in_ms=6017 run_created_at=2026-06-11T07:22:16.241787+00:00 run_ended_at=2026-06-11T07:22:22.258350+00:00 run_exec_ms=5125 run_id=019eb58f-6d32-78a1-b534-5e1ff11d5d35 run_started_at=2026-06-11T07:22:17.132956+00:00 run_wait_time_ms=891 thread_id=019eb58a-beed-7472-8465-1e26da238cf6 thread_name=asyncio_3
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 269, in worker
+    await asyncio.wait_for(
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\asyncio\tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\worker.py", line 207, in wrap_user_errors
+    await consume(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 588, in consume
+    await _consume_inline(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 654, in _consume_inline
+    raise e
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 614, in _consume_inline
+    async for mode, payload in stream:
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\stream.py", line 450, in astream_state
+    event = await wait_if_not_done(anext(stream, sentinel), done)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\asyncio.py", line 108, in wait_if_not_done
+    raise e.exceptions[0] from None
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\main.py", line 3407, in astream
+    async for _ in runner.atick(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 557, in atick
+    _panic_or_proceed(
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_runner.py", line 687, in _panic_or_proceed
+    raise exc
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\pregel\_retry.py", line 706, in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 733, in ainvoke
+    input = await asyncio.create_task(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph\_internal\_runnable.py", line 501, in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1381, in amodel_node
+    result = await awrap_model_call_handler(request, _execute_model_async)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\todo.py", line 283, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\filesystem.py", line 1740, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\subagents.py", line 788, in awrap_model_call
+    return await handler(request.override(system_message=new_system_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\summarization.py", line 1086, in awrap_model_call
+    return await handler(request.override(messages=truncated_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\skills_context.py", line 228, in awrap_model_call
+    return await handler(self._override_model_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_visibility.py", line 93, in awrap_model_call
+    return await handler(
+           ^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\middleware\context_editing.py", line 292, in awrap_model_call
+    return await handler(request.override(messages=edited_messages))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\deep_agent\middleware\tool_descriptions.py", line 71, in awrap_model_call
+    return await handler(self._override_request(request))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 387, in composed
+    outer_result = await outer(request, inner_handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_anthropic\middleware\prompt_caching.py", line 184, in awrap_model_call
+    return await handler(request)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 377, in inner_handler
+    inner_result = await inner(req, handler)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langsmith\run_helpers.py", line 644, in async_wrapper
+    function_result = await asyncio.create_task(  # type: ignore[call-arg]
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\deepagents\middleware\memory.py", line 440, in awrap_model_call
+    return await handler(modified_request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain\agents\factory.py", line 1350, in _execute_model_async
+    output = await model_.ainvoke(messages)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\runnables\base.py", line 5894, in ainvoke
+    return await self.bound.ainvoke(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 497, in ainvoke
+    llm_result = await self.agenerate_prompt(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1834, in agenerate_prompt
+    return await self.agenerate(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 1792, in agenerate
+    raise exceptions[0]
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_core\language_models\chat_models.py", line 2127, in _agenerate_with_cache
+    result = await self._agenerate(
+             ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1937, in _agenerate
+    _handle_openai_api_error(e)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langchain_openai\chat_models\base.py", line 1930, in _agenerate
+    raw_response = await self.async_client.with_raw_response.create(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_legacy_response.py", line 384, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\resources\chat\completions\completions.py", line 2739, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1931, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\openai\_base_client.py", line 1716, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.APIStatusError: Error code: 402 - {'error': {'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 4605. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit", 'code': 402, 'metadata': {'provider_name': None, 'previous_errors': [{'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7196. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5117. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 7750. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 6321. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 402, 'message': "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 5037. To increase, visit https://openrouter.ai/workspaces/default/keys/c259b4d81a8d5bc544e3433333d7ed9e0c9c3512be5f4e6d9427af29d4f15225 and adjust the key's total limit"}, {'code': 429, 'message': 'Provider returned error', 'provider_name': 'GMICloud', 'raw': 'z-ai/glm-5 is temporarily rate-limited upstream. Please retry shortly, or add your own key to accumulate your rate limits: https://openrouter.ai/settings/integrations'}]}}, 'user_id': 'user_35Eguzn1ASPQqrfVvl3LVlabx7u'}
+During task with name 'model' and id '61285a58-6902-d5c3-fe86-d6fd6bc77e49'

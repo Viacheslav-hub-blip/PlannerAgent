@@ -8,5 +8,4 @@ __pycache__/
 
 runs/
 
-local_ui/.env
-local_ui/.runtime/
+

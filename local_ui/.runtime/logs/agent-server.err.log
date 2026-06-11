@@ -1,0 +1,16 @@
+INFO:langgraph_api.cli:
+
+        Welcome to
+
+\u2566  \u250c\u2500\u2510\u250c\u2510\u250c\u250c\u2500\u2510\u2554\u2550\u2557\u252c\u2500\u2510\u250c\u2500\u2510\u250c\u2500\u2510\u252c \u252c
+\u2551  \u251c\u2500\u2524\u2502\u2502\u2502\u2502 \u252c\u2551 \u2566\u251c\u252c\u2518\u251c\u2500\u2524\u251c\u2500\u2518\u251c\u2500\u2524
+\u2569\u2550\u255d\u2534 \u2534\u2518\u2514\u2518\u2514\u2500\u2518\u255a\u2550\u255d\u2534\u2514\u2500\u2534 \u2534\u2534  \u2534 \u2534
+
+- \U0001f680 API: [36mhttp://127.0.0.1:2024[0m
+- \U0001f3a8 Studio UI: [36mhttps://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024[0m
+- \U0001f4da API Docs: [36mhttp://127.0.0.1:2024/docs[0m
+
+This in-memory server is designed for development and testing.
+For production use, please use LangSmith Deployment.
+
+
