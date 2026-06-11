@@ -30,6 +30,15 @@ UI_SYSTEM_PROMPT_SUFFIX = """
 """.strip()
 
 
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    """Читает булеву переменную окружения."""
+
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
 def _required_environment(name: str) -> str:
     """Возвращает обязательную непустую переменную окружения.
 
@@ -69,6 +78,8 @@ def build_ui_model() -> ChatOpenAI:
     }
     if base_url:
         model_kwargs["base_url"] = base_url
+    if _env_flag("DEEP_AGENT_DISABLE_STREAMING", default=True):
+        model_kwargs["disable_streaming"] = True
     return ChatOpenAI(**model_kwargs)
 
 

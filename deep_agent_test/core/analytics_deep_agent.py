@@ -525,7 +525,7 @@ def _build_file_edit_interrupts(
         Конфигурация HITL для ``write_file`` и ``edit_file`` либо ``None``.
     """
 
-    if not settings.enable_file_edit_approval:
+    if not settings.enable_interrupts:
         return None
     config = {
         "allowed_decisions": ["approve", "edit", "reject"],

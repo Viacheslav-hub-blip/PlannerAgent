@@ -453,6 +453,12 @@ class ReliableExecutionTests(unittest.TestCase):
             ["approve", "edit", "reject"],
         )
 
+    def test_enable_interrupts_false_disables_hitl(self) -> None:
+        """Флаг enable_interrupts=false должен отключать interrupt_on."""
+
+        settings = replace(load_deep_agent_settings(), enable_interrupts=False)
+        self.assertIsNone(_build_file_edit_interrupts(settings))
+
     def test_agents_memory_and_conversation_checkpointer_use_native_runtime(self) -> None:
         """Project memory и краткосрочная память должны использовать DeepAgents/LangGraph."""
 

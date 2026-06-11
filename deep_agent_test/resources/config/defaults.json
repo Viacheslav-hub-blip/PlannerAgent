@@ -4,7 +4,7 @@
   "workspace_root": ".",
   "agents_file_name": "AGENTS.md",
   "coding_tools_enabled_by_default": false,
-  "enable_file_edit_approval": true,
+  "enable_interrupts": true,
   "terminal_timeout": 120,
   "terminal_max_output_bytes": 100000,
   "skills_virtual_dir": "/skills/",

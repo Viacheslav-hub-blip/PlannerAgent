@@ -232,7 +232,8 @@ deep_agent_test/resources/config/defaults.json
 - `workspace_root` - корень coding workspace и рабочая директория terminal.
 - `agents_file_name` - project memory, по умолчанию `AGENTS.md`.
 - `coding_tools_enabled_by_default` - открыть coding tools без skill; по умолчанию `false`.
-- `enable_file_edit_approval` - approval для `write_file` и `edit_file`.
+- `enable_interrupts` - human-in-the-loop для `write_file` и `edit_file` (`true` по умолчанию).
+  Устаревший alias: `enable_file_edit_approval`.
 - `terminal_timeout` - timeout terminal-команды.
 - `terminal_max_output_bytes` - предел возвращаемого terminal output.
 - terminal всегда получает только allowlist системных переменных; API-ключи и другие

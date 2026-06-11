@@ -32,7 +32,7 @@ REQUIRED_CONFIG_KEYS = (
     "workspace_root",
     "agents_file_name",
     "coding_tools_enabled_by_default",
-    "enable_file_edit_approval",
+    "enable_interrupts",
     "terminal_timeout",
     "terminal_max_output_bytes",
     "skills_virtual_dir",
@@ -63,7 +63,7 @@ class DeepAgentSettings:
     workspace_root: Path
     agents_file_name: str
     coding_tools_enabled_by_default: bool
-    enable_file_edit_approval: bool
+    enable_interrupts: bool
     terminal_timeout: int
     terminal_max_output_bytes: int
     skills_virtual_dir: str
@@ -108,10 +108,7 @@ class DeepAgentSettings:
                 payload,
                 "coding_tools_enabled_by_default",
             ),
-            enable_file_edit_approval=_bool_from_config(
-                payload,
-                "enable_file_edit_approval",
-            ),
+            enable_interrupts=_interrupts_enabled_from_config(payload),
             terminal_timeout=_int_from_config(payload, "terminal_timeout"),
             terminal_max_output_bytes=_int_from_config(
                 payload,
@@ -196,6 +193,19 @@ def _int_from_config(payload: dict[str, Any], key: str) -> int:
         return int(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Config key '{key}' must be an integer.") from None
+
+
+def _interrupts_enabled_from_config(payload: dict[str, Any]) -> bool:
+    """Читает флаг HITL: ``enable_interrupts`` или устаревший ``enable_file_edit_approval``."""
+
+    if "enable_interrupts" in payload:
+        return _bool_from_config(payload, "enable_interrupts")
+    if "enable_file_edit_approval" in payload:
+        return _bool_from_config(payload, "enable_file_edit_approval")
+    raise ValueError(
+        "DeepAgent config must define 'enable_interrupts' "
+        "(or legacy 'enable_file_edit_approval')."
+    )
 
 
 def _bool_from_config(payload: dict[str, Any], key: str) -> bool:

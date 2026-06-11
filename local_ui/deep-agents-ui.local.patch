@@ -27,3 +27,17 @@ index d6b6271..4834fc4 100644
    }
  }
  
+diff --git a/next.config.ts b/next.config.ts
+index 0000000..1111111 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,7 +1,7 @@
+ import type { NextConfig } from "next";
+ 
+ const nextConfig: NextConfig = {
+-  /* config options here */
++  allowedDevOrigins: ["127.0.0.1", "localhost"],
+ };
+ 
+ export default nextConfig;
+

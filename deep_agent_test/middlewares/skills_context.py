@@ -7,6 +7,7 @@
 - PreloadedSkillsContextMiddleware: middleware чтения skills и добавления context в prompt.
 - PreloadedSkillsContextMiddleware.before_agent: чтение skills и запись context в state.
 - PreloadedSkillsContextMiddleware.wrap_model_call: добавление skills context в system prompt.
+- PreloadedSkillsContextMiddleware.awrap_model_call: async-обёртка для LangGraph UI.
 - build_preloaded_skills_context: автосканирование папки skills и сборка compact context.
 - select_relevant_skill_paths_with_llm: выбор релевантных skills по index через LLM.
 - _invoke_skill_selector: один structured-output вызов selector.
@@ -27,6 +28,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
@@ -210,23 +212,36 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
     def wrap_model_call(
         self,
         request: ModelRequest,
-        handler: Any,
+        handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
+        """Добавляет предзагруженный domain context в system message."""
+
+        return handler(self._override_model_request(request))
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Async-обёртка для LangGraph Agent Server и deep-agents-ui."""
+
+        return await handler(self._override_model_request(request))
+
+    def _override_model_request(self, request: ModelRequest) -> ModelRequest:
         """Добавляет предзагруженный domain context в system message.
 
         Args:
             request: Запрос модели с текущим state.
-            handler: Функция реального вызова модели.
 
         Returns:
-            Ответ модели без изменений.
+            Исходный или обновлённый ``ModelRequest``.
         """
 
         context = request.state.get("preloaded_skills_context")
         selection_status = request.state.get("preloaded_skills_selection_status")
         selection_error = request.state.get("preloaded_skills_selection_error")
         if not context and selection_status != "selection_failed":
-            return handler(request)
+            return request
 
         system_message = request.system_message
         if selection_status == "selection_failed":
@@ -244,7 +259,7 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
                 system_message,
                 self.prompt_template.format(context=context),
             )
-        return handler(request.override(system_message=system_message))
+        return request.override(system_message=system_message)
 
 
 def build_preloaded_skills_context(
