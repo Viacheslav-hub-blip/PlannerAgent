@@ -84,6 +84,9 @@ def build_ui_model() -> ChatOpenAI:
         "temperature": float(os.environ.get("DEEP_AGENT_TEMPERATURE", "0.1")),
         "timeout": float(os.environ.get("DEEP_AGENT_TIMEOUT", "120")),
         "max_retries": int(os.environ.get("DEEP_AGENT_MAX_RETRIES", "0")),
+        "max_completion_tokens": int(
+            os.environ.get("DEEP_AGENT_MAX_TOKENS", "8192")
+        ),
     }
     if base_url:
         model_kwargs["base_url"] = base_url

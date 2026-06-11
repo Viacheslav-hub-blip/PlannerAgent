@@ -50,7 +50,12 @@ python run_ui.py --agent-port 2124 --ui-port 3100
 OPENAI_API_KEY=...
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
 DEEP_AGENT_MODEL=z-ai/glm-5
+DEEP_AGENT_MAX_TOKENS=8192
 ```
+
+`DEEP_AGENT_MAX_TOKENS` ограничивает максимальный размер ответа модели. Значение по
+умолчанию `8192` предотвращает запрос провайдеру с завышенным лимитом, например
+`65536`, который OpenRouter может отклонить с HTTP 402 при недостаточном балансе.
 
 По умолчанию:
 

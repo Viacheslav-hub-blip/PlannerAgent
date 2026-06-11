@@ -113,6 +113,27 @@ class LocalUiIntegrationTests(unittest.TestCase):
                 )
                 self.assertFalse(_frontend_dependencies_ready())
 
+    def test_ui_model_has_bounded_completion_tokens(self) -> None:
+        """Проверяет ограничение максимального ответа модели для локального UI.
+
+        Returns:
+            ``None``. Проверка завершается успешно, если модель использует
+            ``DEEP_AGENT_MAX_TOKENS`` с безопасным значением по умолчанию.
+        """
+
+        project_root = Path(__file__).parents[1]
+        agent_source = (project_root / "local_ui" / "agent.py").read_text(
+            encoding="utf-8"
+        )
+        env_example = (project_root / "local_ui" / ".env.example").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"max_completion_tokens"', agent_source)
+        self.assertIn('os.environ.get("DEEP_AGENT_MAX_TOKENS", "8192")', agent_source)
+        self.assertIn("DEEP_AGENT_MAX_TOKENS=8192", env_example)
+        self.assertNotIn("OPENAI_API_KEY=sk-", env_example)
+
 
 if __name__ == "__main__":
     unittest.main()

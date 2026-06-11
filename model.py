@@ -22,13 +22,13 @@ model = ChatOpenAI(
     #model="qwen/qwen3.5-35b-a3b",
     # google/gemini-3-pro-preview
     #model="google/gemini-2.5-flash",
-    model="z-ai/glm-5",
+    #model="z-ai/glm-5",
     #model="openai/gpt-oss-120b",
-    #model="deepseek/deepseek-v4-flash",
+    model="deepseek/deepseek-v4-flash",
     #model="google/gemini-2.5-flash-lite",
     #model="tencent/hy3-preview",
     # model="kwaipilot/kat-coder-pro:free",
-    temperature=0.1,
+    temperature=0.2,
     timeout=120,
     max_retries=0,
 )

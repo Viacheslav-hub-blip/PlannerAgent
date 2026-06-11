@@ -196,7 +196,58 @@ Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allow
 но на порте 3000 ничего не загружается. В чем может быть проблема? 
 """
 
-USER_MESSAGE = "как в тебе убрать human in the loop (прерывание) на чтение и изменение файлов"
+USER_MESSAGE = r"""
+как исправить ошибку при твоем запуске:
+PS C:\Users\Slav4ik\PycharmProjects\deepagent> powershell -ExecutionPolicy Bypass -File .\local_ui\start.ps1
+Agent Server: http://127.0.0.1:2024
+Assistant ID: analytics-agent
+UI: http://127.0.0.1:3000
+Остановка обоих процессов: Ctrl+C
+yarn run v1.22.22
+$ next dev --turbopack --port 3000
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.240.123.4:3000
+- Environments: .env.local
+✓ Ready in 18.7s
+⚠ Slow filesystem detected. The benchmark took 432ms. If C:\Users\Slav4ik\PycharmProjects\deepagent\local_ui\.runtime\deep-agents-ui\.next/dev is a network drive, consider moving it to a local folder.
+See more: https://nextjs.org/docs/app/guides/local-development
+
+ GET / 200 in 7.0s (next.js: 5.5s, application-code: 1536ms)
+ GET / 200 in 7.1s (next.js: 5.1s, application-code: 2.0s)
+⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "127.0.0.1".
+Cross-origin access to Next.js dev resources is blocked by default for safety.
+
+To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
+
+// next.config.js
+module.exports = {
+  allowedDevOrigins: ['127.0.0.1'],
+}
+
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "10.240.123.4".
+Cross-origin access to Next.js dev resources is blocked by default for safety.
+
+To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
+
+// next.config.js
+module.exports = {
+  allowedDevOrigins: ['10.240.123.4'],
+}
+
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ GET / 200 in 51ms (next.js: 6ms, application-code: 46ms)
+
+
+я запускаю тебя командой 
+
+на http://127.0.0.1:2024
+{"ok":true}
+
+но на порте 3000 ничего не загружается. В чем может быть проблема? 
+
+"""
 
 TOOL_STATUS_LABELS = {
     "write_todos": "Составляю план",
