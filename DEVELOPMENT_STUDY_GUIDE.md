@@ -94,11 +94,11 @@
 
 - `SYSTEM_PROMPT` - поведение supervisor-а.
 - `DATA_RETRIEVAL_PROMPT` - поведение subagent-а чтения данных.
-- `SUPERVISOR_TOOLS_PROMPT_APPEND` - доступные supervisor-у tools.
-- `DATA_RETRIEVAL_TOOLS_PROMPT_APPEND` - доступные data-retrieval-agent tools.
 - prompts для skills context.
+- `tool_contracts.py` - descriptions встроенных tools без добавления правил в system prompts.
 
-Правило разработки: доменные знания о таблицах не добавляй в prompts. Для них есть `resources/skills`.
+Правило разработки: system prompts описывают роль и общий процесс агента. Доступность, параметры и правила применения
+tools описываются только в descriptions инструментов. Доменные знания о таблицах хранятся в `resources/skills`.
 
 Контрольная точка: ты должен понимать, что менять в prompts, а что выносить в skills.
 

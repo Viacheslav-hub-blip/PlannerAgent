@@ -40,9 +40,6 @@ from deep_agent.prompts.skills import (
 )
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
 from deep_agent.prompts.tool_contracts import (
-    BUILTIN_TOOLS_PROMPT_APPEND,
-    DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
-    SUPERVISOR_TOOLS_PROMPT_APPEND,
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
@@ -498,12 +495,12 @@ class ReliableExecutionTests(unittest.TestCase):
         read_file_description = TOOL_DESCRIPTION_OVERRIDES["read_file"]
         grep_description = TOOL_DESCRIPTION_OVERRIDES["grep"]
 
-        self.assertIn("use `file_path`, never `path`", read_file_description)
-        self.assertIn("continue with the next `offset`", read_file_description)
-        self.assertIn("use `pattern`, never `query`", grep_description)
-        self.assertIn("search directory, not a file path", grep_description)
-        self.assertIn('"glob": "fields.md"', grep_description)
-        self.assertIn('"pattern": "age_category"', grep_description)
+        self.assertIn("путь через `file_path`, не через `path`", read_file_description)
+        self.assertIn("продолжай со следующим `offset`", read_file_description)
+        self.assertIn("через `pattern`, не через `query`", grep_description)
+        self.assertIn("`path` должен быть директорией", grep_description)
+        self.assertIn('"glob": "settings.yaml"', grep_description)
+        self.assertIn('"pattern": "build_client"', grep_description)
 
     def test_load_skills_description_rejects_auxiliary_files(self) -> None:
         """Описание load_skills должно запрещать загрузку fields.md как skill."""
@@ -511,38 +508,22 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("loads only `SKILL.md` files", LOAD_SKILLS_DESCRIPTION)
         self.assertIn("Do not pass paths like `/skills/name/fields.md`", LOAD_SKILLS_DESCRIPTION)
 
-    def test_prompts_reject_empty_delegation_and_unsupported_results(self) -> None:
-        """Supervisor и subagent не должны принимать пустой task за доказательство результата."""
+    def test_tool_rules_are_kept_in_descriptions_not_system_prompts(self) -> None:
+        """Правила tools должны находиться в descriptions, а не в system prompts."""
 
-        self.assertIn("Treat an empty `task` result as a failed delegation", BUILTIN_TOOLS_PROMPT_APPEND)
-        self.assertIn("Never finish with an empty assistant message", BUILTIN_TOOLS_PROMPT_APPEND)
-        self.assertIn("The supervisor always has", SUPERVISOR_TOOLS_PROMPT_APPEND)
-        self.assertIn("code-workspace", SUPERVISOR_TOOLS_PROMPT_APPEND)
-        self.assertNotIn("For `grep`", SUPERVISOR_TOOLS_PROMPT_APPEND)
-        self.assertIn("The data-retrieval agent has only these tools", DATA_RETRIEVAL_TOOLS_PROMPT_APPEND)
-        self.assertIn("`load_skills`", DATA_RETRIEVAL_TOOLS_PROMPT_APPEND)
-        self.assertIn(
-            "If table data is needed, delegate it to `data-retrieval-agent`",
-            SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-        )
-        self.assertNotIn(
-            "Read auxiliary files",
-            SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-        )
-        self.assertIn(
-            "Read auxiliary files",
-            DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-        )
-        self.assertNotIn(
-            "it is unavailable",
-            DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-        )
-        self.assertIn("Treat an empty subagent report", SYSTEM_PROMPT)
-        self.assertIn("The final assistant message must never be empty", SYSTEM_PROMPT)
-        self.assertIn("delegate the table read/calculation", TASK_TOOL_DESCRIPTION)
-        self.assertIn("an empty report", TASK_TOOL_DESCRIPTION)
-        self.assertIn("Do not return an empty report", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("at least one successful data tool result", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("генерации тестов", TASK_TOOL_DESCRIPTION)
+        self.assertIn("для coding-задачи", TASK_TOOL_DESCRIPTION)
+        self.assertIn("пустой отчёт", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("load_data", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
+        self.assertNotIn("load_skills", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
+        self.assertNotIn("read_file", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
+        self.assertNotIn("load_skills", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
+        self.assertNotIn("инструмент", SYSTEM_PROMPT.lower())
+        self.assertIn("Не повторяйте делегирование", SYSTEM_PROMPT)
+        self.assertIn("неполный", SYSTEM_PROMPT)
+        self.assertIn("для чтения и проверки табличных данных", TASK_TOOL_DESCRIPTION)
+        self.assertIn("наличие результатов", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("Верните результат выполнения задачи", DATA_RETRIEVAL_PROMPT)
 
     def test_exact_event_id_lookup_does_not_require_period(self) -> None:
         """Точный event_id должен разрешать первичный lookup без event_dt."""

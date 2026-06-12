@@ -1,10 +1,8 @@
 """Переопределение описаний инструментов перед вызовом модели.
 
 Содержит:
-- PromptToolDescriptionsMiddleware: middleware для замены tool descriptions и
-  добавления уточняющего prompt-блока.
+- PromptToolDescriptionsMiddleware: middleware для замены tool descriptions.
 - _rewrite_tool_descriptions: копирование tool metadata с новыми описаниями.
-- _append_system_prompt: добавление русского prompt-блока к system message.
 """
 
 from __future__ import annotations
@@ -15,26 +13,22 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool
 
 
 @dataclass(frozen=True)
 class PromptToolDescriptionsMiddleware(AgentMiddleware):
-    """Заменяет описания tools и добавляет уточняющий prompt-блок.
+    """Заменяет описания tools перед вызовом модели.
 
     Args:
         tool_descriptions: Новые описания tools, где ключ — имя инструмента.
-        system_prompt_append: Дополнительные инструкции, которые нужно добавить в
-            system prompt перед вызовом модели.
 
     Returns:
-        Middleware, который не меняет реализацию tools, а меняет только prompt-level
-        metadata, видимую модели.
+        Middleware, который не меняет реализацию tools, а заменяет только descriptions,
+        видимые модели.
     """
 
     tool_descriptions: Mapping[str, str]
-    system_prompt_append: str = ""
 
     def wrap_model_call(
         self,
@@ -71,7 +65,7 @@ class PromptToolDescriptionsMiddleware(AgentMiddleware):
         return await handler(self._override_request(request))
 
     def _override_request(self, request: ModelRequest) -> ModelRequest:
-        """Создаёт копию запроса с обновлёнными descriptions и prompt-блоком.
+        """Создаёт копию запроса с обновлёнными descriptions.
 
         Args:
             request: Исходный запрос к модели.
@@ -81,8 +75,7 @@ class PromptToolDescriptionsMiddleware(AgentMiddleware):
         """
 
         tools = _rewrite_tool_descriptions(request.tools, self.tool_descriptions)
-        system_message = _append_system_prompt(request.system_message, self.system_prompt_append)
-        return request.override(tools=tools, system_message=system_message)
+        return request.override(tools=tools)
 
 
 def _rewrite_tool_descriptions(
@@ -113,29 +106,5 @@ def _rewrite_tool_descriptions(
         else:
             rewritten.append(tool.model_copy(update={"description": description}))
     return rewritten
-
-
-def _append_system_prompt(system_message: SystemMessage | None, text: str) -> SystemMessage | None:
-    """Добавляет текстовый блок к system message.
-
-    Args:
-        system_message: Текущее системное сообщение или ``None``.
-        text: Текст, который нужно добавить в конец system prompt.
-
-    Returns:
-        Обновлённое системное сообщение или исходное значение, если текст пустой.
-    """
-
-    if not text.strip():
-        return system_message
-    if system_message is None:
-        return SystemMessage(content=text)
-    return SystemMessage(
-        content=[
-            *system_message.content_blocks,
-            {"type": "text", "text": f"\n\n{text}"},
-        ]
-    )
-
 
 __all__ = ["PromptToolDescriptionsMiddleware"]

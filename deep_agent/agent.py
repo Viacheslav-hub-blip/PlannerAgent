@@ -75,9 +75,6 @@ from deep_agent.prompts.skills import (
 from deep_agent.prompts.coding import GENERAL_PURPOSE_CODING_PROMPT
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
 from deep_agent.prompts.tool_contracts import (
-    BUILTIN_TOOLS_PROMPT_APPEND,
-    DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
-    SUPERVISOR_TOOLS_PROMPT_APPEND,
     TOOL_DESCRIPTION_OVERRIDES,
 )
 from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
@@ -261,15 +258,12 @@ def build_analytics_deep_agent(
     tool_loop_guard_middleware = ToolLoopGuardMiddleware(
         max_consecutive_tool_calls=settings.max_consecutive_tool_calls,
     )
-    # 3e. Prompt-only переопределение descriptions встроенных tools и финальный
-    #     русский блок с приоритетом над англоязычными examples из DeepAgents.
+    # 3e. Prompt-only переопределение descriptions встроенных tools.
     supervisor_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
         tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
-        system_prompt_append=SUPERVISOR_TOOLS_PROMPT_APPEND,
     )
     subagent_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
         tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
-        system_prompt_append=DATA_RETRIEVAL_TOOLS_PROMPT_APPEND,
     )
     general_purpose_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
         tool_descriptions={
@@ -277,7 +271,6 @@ def build_analytics_deep_agent(
             for name, description in TOOL_DESCRIPTION_OVERRIDES.items()
             if name != "task"
         },
-        system_prompt_append=BUILTIN_TOOLS_PROMPT_APPEND,
     )
     # 3f. Бюджет шагов субагента: нативный ModelCallLimitMiddleware ограничивает число
     #     ходов модели внутри одного запуска data-retrieval-agent. По исчерпании лимита

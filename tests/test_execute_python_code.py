@@ -50,11 +50,15 @@ class ExecutePythonCodeTests(unittest.TestCase):
         """
 
         self.assertIn(
-            'output_path = Path(TOOL_OUTPUTS_DIR) / "hits_age_category_jan2026.png"',
+            'output_path = Path(TOOL_OUTPUTS_DIR) / "generated_report.json"',
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
             "использовать `/tool_outputs` как локальный Python-путь",
+            EXECUTE_PYTHON_CODE_DESCRIPTION,
+        )
+        self.assertIn(
+            "для генерации и проверки алгоритмов",
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
 
