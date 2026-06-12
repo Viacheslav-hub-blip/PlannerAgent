@@ -1,0 +1,5 @@
+2026-06-11T13:23:18.335434Z [info     ] Starting dev persistence flush loop [langgraph_runtime_inmem._persistence] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T13:23:18.364091Z [info     ] Using langgraph_runtime_inmem  [langgraph_runtime] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T13:23:18.537232Z [info     ] Using auth of type=noop        [langgraph_api.auth.middleware] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
+2026-06-11T13:23:18.633698Z [info     ] Starting In-Memory runtime with langgraph-api=0.9.0 and in-memory runtime=0.29.0 [langgraph_runtime_inmem.lifespan] api_variant=local_dev langgraph_api_version=0.9.0 langgraph_runtime_inmem_version=0.29.0 thread_name=asyncio_0 version=0.9.0
+2026-06-11T13:23:19.023230Z [info     ] No license key or control plane API key set, skipping metadata loop [langgraph_api.metadata] api_variant=local_dev langgraph_api_version=0.9.0 thread_name=MainThread
