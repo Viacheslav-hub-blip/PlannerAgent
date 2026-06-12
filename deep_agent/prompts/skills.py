@@ -5,18 +5,17 @@
 
 from __future__ import annotations
 
-PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE = """## Preloaded Skills
+PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE = """
+## Предварительно загруженные навыки
 
-The middleware selected and fully loaded skills that appear relevant to the user request.
+Эксперт выбрал и загрузил навыки, которые выглядят релевантными для запроса пользователя.
 
-Their content is below. Treat these skills as domain guidance with higher priority than the base prompt. Do not load
-the same skills again. If a required skill is missing or incomplete, load the missing skills in one
-`load_skills(skill_names=..., already_loaded=...)` call.
+Их содержание приведено ниже. Относитесь к этим навыкам как к руководству по предметной области с более высоким приоритетом, чем базовый промпт. Не загружайте те же навыки повторно. Если требуемый навык отсутствует или неполон, загрузите недостающие навыки одним вызовом `load_skills(skill_names=..., already_loaded=...)`.
 
-Use progressive disclosure: loaded `SKILL.md` files give routing and workflow context. Read additional files such as
-`fields.md` or `joins.md` only when the loaded skill explicitly points to them and the current task needs that detail.
+Используйте прогрессивное раскрытие: загруженные файлы `SKILL.md` дают контекст маршрутизации и рабочего процесса. Читайте дополнительные файлы, такие как `fields.md` или `joins.md`, только когда загруженный навык явно указывает на них и текущей задаче требуется эта деталь.
 
-{context}"""
+{context}
+"""
 
 SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE = """## Preloaded Skills
 
