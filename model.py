@@ -13,6 +13,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_gigachat import GigaChat
 
+from deep_agent.middleware.model_errors import MODEL_MAX_RETRIES
+
 model = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     # api_key="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",
@@ -30,7 +32,7 @@ model = ChatOpenAI(
     # model="kwaipilot/kat-coder-pro:free",
     temperature=0.2,
     timeout=120,
-    max_retries=0,
+    max_retries=MODEL_MAX_RETRIES,
 )
 
 embeddings = OpenAIEmbeddings(

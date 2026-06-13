@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from deepagents.middleware.memory import MemoryMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.agent import (
@@ -396,6 +397,7 @@ class ReliableExecutionTests(unittest.TestCase):
             data_retrieval_middleware=[],
             coding_middleware=[],
             model=object(),
+            skill_sources=["/skills/"],
         )
 
         self.assertEqual(
@@ -405,6 +407,8 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn(python_tool, specs[0]["tools"])
         self.assertIn(load_skills_tool, specs[0]["tools"])
         self.assertIn(load_skills_tool, specs[1]["tools"])
+        self.assertEqual(specs[0]["skills"], ["/skills/"])
+        self.assertEqual(specs[1]["skills"], ["/skills/"])
         self.assertTrue(
             {
                 "task",
@@ -488,6 +492,34 @@ class ReliableExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "workspace"):
             _agents_memory_path("../AGENTS.md")
         self.assertIsInstance(build_conversation_checkpointer(), InMemorySaver)
+
+    def test_native_memory_middleware_loads_agents_file_into_prompt(self) -> None:
+        """Нативный MemoryMiddleware должен читать AGENTS.md и добавлять его в system prompt."""
+
+        settings = load_deep_agent_settings()
+        backend = build_skills_backend(settings)
+        memory_path = _agents_memory_path(settings.agents_file_name)
+        memory = MemoryMiddleware(backend=backend, sources=[memory_path])
+
+        update = memory.before_agent({}, None, {})
+        request = SimpleNamespace(
+            state=dict(update or {}),
+            system_message=SystemMessage(content="BASE"),
+            model=None,
+            override=lambda **kwargs: SimpleNamespace(**kwargs),
+        )
+
+        modified = memory.modify_request(request)
+        prompt_text = "\n".join(
+            str(block.get("text") or "")
+            for block in modified.system_message.content_blocks
+            if isinstance(block, dict)
+        )
+
+        self.assertIn("<agent_memory>", prompt_text)
+        self.assertIn("/AGENTS.md", prompt_text)
+        self.assertIn("# AGENTS.md", prompt_text)
+        self.assertIn("task(data-retrieval-agent)", prompt_text)
 
     def test_filesystem_tool_descriptions_define_correct_arguments_and_paging(self) -> None:
         """Описания filesystem tools должны предотвращать ошибочные аргументы и неполное чтение."""

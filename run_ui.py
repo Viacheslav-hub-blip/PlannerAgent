@@ -113,8 +113,7 @@ def _read_env_file(env_path: Path) -> dict[str, str]:
     if not env_path.exists():
         raise RuntimeError(
             f"Не найден env-файл: {env_path}\n"
-            "Создайте его отдельной командой, например скопируйте local_ui/.env.example "
-            "в local_ui/.env и заполните значения."
+            "Создайте local_ui/.env и заполните настройки запуска."
         )
 
     values: dict[str, str] = {}
@@ -430,7 +429,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--ui-port", type=int, default=3000)
     parser.add_argument("--assistant-id", default=ASSISTANT_ID)
     parser.add_argument("--frontend-dir", type=Path, default=DEFAULT_FRONTEND_ROOT)
-    parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV_PATH)
     parser.add_argument("--langgraph-config", type=Path, default=DEFAULT_LANGGRAPH_CONFIG)
     parser.add_argument("--backend-timeout", type=float, default=30.0)
     parser.add_argument(
@@ -462,7 +460,7 @@ def main() -> int:
 
     try:
         _validate_python_runtime(python)
-        env_values = _validate_env(args.env_file.resolve())
+        env_values = _validate_env(DEFAULT_ENV_PATH.resolve())
         _validate_frontend(args.frontend_dir.resolve(), strict_sdk=args.strict_frontend_sdk)
         return _start_services(args, python, env_values)
     except KeyboardInterrupt:

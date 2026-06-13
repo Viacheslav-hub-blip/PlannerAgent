@@ -1,0 +1,75 @@
+INFO:langgraph_api.cli:
+
+        Welcome to
+
+\u2566  \u250c\u2500\u2510\u250c\u2510\u250c\u250c\u2500\u2510\u2554\u2550\u2557\u252c\u2500\u2510\u250c\u2500\u2510\u250c\u2500\u2510\u252c \u252c
+\u2551  \u251c\u2500\u2524\u2502\u2502\u2502\u2502 \u252c\u2551 \u2566\u251c\u252c\u2518\u251c\u2500\u2524\u251c\u2500\u2518\u251c\u2500\u2524
+\u2569\u2550\u255d\u2534 \u2534\u2518\u2514\u2518\u2514\u2500\u2518\u255a\u2550\u255d\u2534\u2514\u2500\u2534 \u2534\u2534  \u2534 \u2534
+
+- \U0001f680 API: [36mhttp://127.0.0.1:2024[0m
+- \U0001f3a8 Studio UI: [36mhttps://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024[0m
+- \U0001f4da API Docs: [36mhttp://127.0.0.1:2024/docs[0m
+
+This in-memory server is designed for development and testing.
+For production use, please use LangSmith Deployment.
+
+
+[version] A newer version of langgraph-api is available: 0.9.0 \u2192 0.10.0  (pip install -U langgraph-api)
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\logging\__init__.py", line 1113, in emit
+    stream.write(msg + self.terminator)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 47, in write
+    self.__convertor.write(text)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 177, in write
+    self.write_and_convert(text)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 202, in write_and_convert
+    self.write_plain_text(text, cursor, start)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 210, in write_plain_text
+    self.wrapped.write(text[start:end])
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1251.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 63: character maps to <undefined>
+Call stack:
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002, in _bootstrap
+    self._bootstrap_inner()
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\cli.py", line 540, in _check_newer_version
+    log.info(
+Message: '[version] A newer version of %s is available: %s \u2192 %s  (pip install -U %s)'
+Arguments: ('langgraph-api', <Version('0.9.0')>, <Version('0.10.0')>, 'langgraph-api')
+\u26a0\ufe0f [support] langgraph-api 0.9.0 is in Critical support.
+Only critical security and installation fixes are provided.
+You are one minor version behind the latest (0.10.x).
+Please plan an upgrade soon. See changelog: https://docs.langchain.com/langgraph-platform/langgraph-server-changelog
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\logging\__init__.py", line 1113, in emit
+    stream.write(msg + self.terminator)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 47, in write
+    self.__convertor.write(text)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 177, in write
+    self.write_and_convert(text)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 202, in write_and_convert
+    self.write_plain_text(text, cursor, start)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\colorama\ansitowin32.py", line 210, in write_plain_text
+    self.wrapped.write(text[start:end])
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1251.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 0-1: character maps to <undefined>
+Call stack:
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1002, in _bootstrap
+    self._bootstrap_inner()
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Slav4ik\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\Slav4ik\PycharmProjects\deepagent\.venv\Lib\site-packages\langgraph_api\cli.py", line 559, in _check_newer_version
+    log.info(
+Message: '\u26a0\ufe0f [support] %s %s is in Critical support.\nOnly critical security and installation fixes are provided.\nYou are one minor version behind the latest (%d.%d.x).\nPlease plan an upgrade soon. See changelog: %s'
+Arguments: ('langgraph-api', <Version('0.9.0')>, 0, 10, 'https://docs.langchain.com/langgraph-platform/langgraph-server-changelog')

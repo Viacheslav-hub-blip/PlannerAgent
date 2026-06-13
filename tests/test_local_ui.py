@@ -65,6 +65,26 @@ class LocalUiIntegrationTests(unittest.TestCase):
 
         self.assertIn("DENY оплата обучения после смены устройства", query)
 
+    def test_ui_uses_run_model_initialization(self) -> None:
+        """Проверяет единый объект модели для консольного запуска и локального UI.
+
+        Returns:
+            ``None``. Проверка завершается успешно, если UI импортирует модель,
+            используемую консольным entrypoint.
+        """
+
+        project_root = Path(__file__).parents[1]
+        ui_source = (project_root / "local_ui" / "agent.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("from model import model as run_model", ui_source)
+        self.assertIn(
+            "build_fake_spark_data_tools(query_parser_model=run_model)",
+            ui_source,
+        )
+        self.assertIn("model=run_model", ui_source)
+
     def test_frontend_patch_enables_subagent_streaming(self) -> None:
         """Проверяет наличие frontend-контракта для прогресса sub-agents.
 
@@ -79,6 +99,7 @@ class LocalUiIntegrationTests(unittest.TestCase):
 
         self.assertIn('"@langchain/langgraph-sdk": "1.9.21"', patch_text)
         self.assertIn("getSubagentsByMessage", patch_text)
+        self.assertIn("streamSubgraphs: true", patch_text)
         self.assertIn("subAgent.toolCalls", patch_text)
         self.assertIn("subAgent.messages", patch_text)
 
@@ -112,28 +133,6 @@ class LocalUiIntegrationTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 self.assertFalse(_frontend_dependencies_ready())
-
-    def test_ui_model_has_bounded_completion_tokens(self) -> None:
-        """Проверяет ограничение максимального ответа модели для локального UI.
-
-        Returns:
-            ``None``. Проверка завершается успешно, если модель использует
-            ``DEEP_AGENT_MAX_TOKENS`` с безопасным значением по умолчанию.
-        """
-
-        project_root = Path(__file__).parents[1]
-        agent_source = (project_root / "local_ui" / "agent.py").read_text(
-            encoding="utf-8"
-        )
-        env_example = (project_root / "local_ui" / ".env.example").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn('"max_completion_tokens"', agent_source)
-        self.assertIn('os.environ.get("DEEP_AGENT_MAX_TOKENS", "8192")', agent_source)
-        self.assertIn("DEEP_AGENT_MAX_TOKENS=8192", env_example)
-        self.assertNotIn("OPENAI_API_KEY=sk-", env_example)
-
 
 if __name__ == "__main__":
     unittest.main()

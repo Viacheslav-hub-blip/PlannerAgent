@@ -19,6 +19,7 @@ def build_subagent_specs(
     data_retrieval_middleware: list[Any],
     coding_middleware: list[Any],
     model: Any,
+    skill_sources: list[str],
 ) -> list[dict[str, Any]]:
     """Собирает зарегистрированные спецификации subagents.
 
@@ -28,6 +29,7 @@ def build_subagent_specs(
         data_retrieval_middleware: Middleware data-retrieval-agent.
         coding_middleware: Middleware coding-subagent.
         model: Chat-модель LangChain для обоих subagents.
+        skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
     Returns:
         Список спецификаций для параметра ``subagents`` фабрики DeepAgent.
@@ -38,10 +40,12 @@ def build_subagent_specs(
             model=model,
             tools=general_purpose_tools,
             common_middleware=coding_middleware,
+            skill_sources=skill_sources,
         ),
         build_data_retrieval_subagent_spec(
             model=model,
             data_tools=data_tools,
             common_middleware=data_retrieval_middleware,
+            skill_sources=skill_sources,
         ),
     ]

@@ -18,6 +18,7 @@ def build_data_retrieval_subagent_spec(
     model: Any,
     data_tools: list[Any],
     common_middleware: list[Any],
+    skill_sources: list[str],
 ) -> dict[str, Any]:
     """Собирает спецификацию subagent для чтения табличных данных.
 
@@ -25,6 +26,7 @@ def build_data_retrieval_subagent_spec(
         model: Chat-модель LangChain для выполнения запросов subagent.
         data_tools: Инструменты чтения и обработки данных.
         common_middleware: Middleware, подключаемые к subagent.
+        skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
     Returns:
         Словарь спецификации, совместимый с ``create_deep_agent``.
@@ -39,5 +41,6 @@ def build_data_retrieval_subagent_spec(
         "system_prompt": DATA_RETRIEVAL_PROMPT,
         "model": model,
         "tools": data_tools,
+        "skills": list(skill_sources),
         "middleware": list(common_middleware),
     }

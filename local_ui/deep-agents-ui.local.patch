@@ -343,10 +343,18 @@ index 67b1aef..ae16849 100644
              {isExpanded ? (
                <ChevronUp
 diff --git a/src/app/hooks/useChat.ts b/src/app/hooks/useChat.ts
-index 139b78e..ec2a516 100644
+index 139b78e..1071771 100644
 --- a/src/app/hooks/useChat.ts
 +++ b/src/app/hooks/useChat.ts
-@@ -8,7 +8,10 @@ import {
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useCallback } from "react";
++import { useCallback, useState } from "react";
+ import { useStream } from "@langchain/langgraph-sdk/react";
+ import {
+   type Message,
+@@ -8,10 +8,14 @@ import {
    type Checkpoint,
  } from "@langchain/langgraph-sdk";
  import { v4 as uuidv4 } from "uuid";
@@ -358,26 +366,139 @@ index 139b78e..ec2a516 100644
  import type { TodoItem } from "@/app/types/types";
  import { useClient } from "@/providers/ClientProvider";
  import { useQueryState } from "nuqs";
-@@ -25,6 +28,10 @@ export type StateType = {
++import { toast } from "sonner";
+ 
+ export type StateType = {
+   messages: Message[];
+@@ -25,6 +29,33 @@ export type StateType = {
    ui?: any;
  };
--
-+
+ 
 +type DeepAgentStream = ReturnType<typeof useStream<StateType>> & {
 +  getSubagentsByMessage: (messageId: string) => SubagentStreamInterface[];
 +};
 +
++/**
++ * Преобразует ошибку stream в безопасное сообщение для пользователя.
++ *
++ * @param error Ошибка LangGraph SDK или сетевого запроса.
++ * @returns Короткое сообщение без внутренних деталей backend.
++ */
++function formatStreamError(error: unknown): string {
++  const errorName =
++    error instanceof Error
++      ? error.name
++      : typeof error === "object" && error !== null && "name" in error
++        ? String(error.name)
++        : "";
++
++  if (errorName.includes("APIConnection")) {
++    return "Не удалось подключиться к модели. Повторите запрос позже.";
++  }
++  if (errorName.includes("APIStatus")) {
++    return "Провайдер модели не смог обработать запрос. Повторите запрос позже.";
++  }
++  return "Выполнение запроса завершилось с ошибкой. Повторите запрос позже.";
++}
++
  export function useChat({
    activeAssistant,
    onHistoryRevalidate,
-@@ -50,8 +57,7 @@ export function useChat({
+@@ -35,6 +66,7 @@ export function useChat({
+   thread?: UseStreamThread<StateType>;
+ }) {
+   const [threadId, setThreadId] = useQueryState("threadId");
++  const [streamError, setStreamError] = useState<string | null>(null);
+   const client = useClient();
+ 
+   const stream = useStream<StateType>({
+@@ -48,17 +80,23 @@ export function useChat({
+     fetchStateHistory: true,
+     // Revalidate thread list when stream finishes, errors, or creates new thread
      onFinish: onHistoryRevalidate,
-     onError: onHistoryRevalidate,
+-    onError: onHistoryRevalidate,
++    onError: (error) => {
++      const message = formatStreamError(error);
++      setStreamError(message);
++      toast.error(message);
++      onHistoryRevalidate?.();
++    },
      onCreated: onHistoryRevalidate,
 -    experimental_thread: thread,
 -  });
 +  }) as DeepAgentStream;
--
-+
+ 
    const sendMessage = useCallback(
      (content: string) => {
++      setStreamError(null);
+       const newMessage: Message = { id: uuidv4(), type: "human", content };
+       stream.submit(
+         { messages: [newMessage] },
+         {
++          streamSubgraphs: true,
+           optimisticValues: (prev) => ({
+             messages: [...(prev.messages ?? []), newMessage],
+           }),
+@@ -85,6 +123,7 @@ export function useChat({
+             : {}),
+           config: activeAssistant?.config,
+           checkpoint: checkpoint,
++          streamSubgraphs: true,
+           ...(isRerunningSubagent
+             ? { interruptAfter: ["tools"] }
+             : { interruptBefore: ["tools"] }),
+@@ -92,7 +131,11 @@ export function useChat({
+       } else {
+         stream.submit(
+           { messages },
+-          { config: activeAssistant?.config, interruptBefore: ["tools"] }
++          {
++            config: activeAssistant?.config,
++            interruptBefore: ["tools"],
++            streamSubgraphs: true,
++          }
+         );
+       }
+     },
+@@ -111,7 +154,9 @@ export function useChat({
+ 
+   const continueStream = useCallback(
+     (hasTaskToolCall?: boolean) => {
++      setStreamError(null);
+       stream.submit(undefined, {
++        streamSubgraphs: true,
+         config: {
+           ...(activeAssistant?.config || {}),
+           recursion_limit: 100,
+@@ -127,14 +172,21 @@ export function useChat({
+   );
+ 
+   const markCurrentThreadAsResolved = useCallback(() => {
+-    stream.submit(null, { command: { goto: "__end__", update: null } });
++    stream.submit(null, {
++      command: { goto: "__end__", update: null },
++      streamSubgraphs: true,
++    });
+     // Update thread list when marking thread as resolved
+     onHistoryRevalidate?.();
+   }, [stream, onHistoryRevalidate]);
+ 
+   const resumeInterrupt = useCallback(
+     (value: any) => {
+-      stream.submit(null, { command: { resume: value } });
++      setStreamError(null);
++      stream.submit(null, {
++        command: { resume: value },
++        streamSubgraphs: true,
++      });
+       // Update thread list when resuming from interrupt
+       onHistoryRevalidate?.();
+     },
+@@ -153,6 +205,7 @@ export function useChat({
+     ui: stream.values.ui,
+     setFiles,
+     messages: stream.messages,
++    streamError,
+     isLoading: stream.isLoading,
+     isThreadLoading: stream.isThreadLoading,
+     interrupt: stream.interrupt,

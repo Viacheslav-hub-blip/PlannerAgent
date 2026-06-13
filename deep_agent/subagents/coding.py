@@ -18,6 +18,7 @@ def build_coding_subagent_spec(
     model: Any,
     tools: list[Any],
     common_middleware: list[Any],
+    skill_sources: list[str],
 ) -> dict[str, Any]:
     """Собирает спецификацию subagent для ограниченной работы с кодом.
 
@@ -25,6 +26,7 @@ def build_coding_subagent_spec(
         model: Chat-модель LangChain для выполнения coding-задачи.
         tools: Дополнительные инструменты general-purpose subagent.
         common_middleware: Middleware с управлением доступом к workspace tools.
+        skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
     Returns:
         Словарь спецификации, совместимый с ``create_deep_agent``.
@@ -40,5 +42,6 @@ def build_coding_subagent_spec(
         "system_prompt": GENERAL_PURPOSE_CODING_PROMPT,
         "model": model,
         "tools": list(tools),
+        "skills": list(skill_sources),
         "middleware": list(common_middleware),
     }

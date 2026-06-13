@@ -79,6 +79,8 @@ from deep_agent.prompts.tool_contracts import (
 )
 from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
+from deep_agent.middleware.model_errors import build_model_error_middleware
+from deep_agent.middleware.todo_reset import TodoResetMiddleware
 from deep_agent.middleware.tool_loop_guard import ToolLoopGuardMiddleware
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
 from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
@@ -258,6 +260,7 @@ def build_analytics_deep_agent(
     tool_loop_guard_middleware = ToolLoopGuardMiddleware(
         max_consecutive_tool_calls=settings.max_consecutive_tool_calls,
     )
+    model_error_middleware = build_model_error_middleware()
     # 3e. Prompt-only переопределение descriptions встроенных tools.
     supervisor_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
         tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
@@ -282,6 +285,7 @@ def build_analytics_deep_agent(
     )
     # Общие runtime middleware без agent-specific prompt scope.
     base_middleware = [
+        model_error_middleware,
         tool_output_file_middleware,
         context_editing_middleware,
         tool_loop_guard_middleware,
@@ -293,6 +297,7 @@ def build_analytics_deep_agent(
         supervisor_base_tools = supervisor_base_tools | CODE_WORKSPACE_TOOL_NAMES
 
     supervisor_middleware = [
+        TodoResetMiddleware(),
         supervisor_skills_middleware,
         ToolVisibilityMiddleware(
             allowed_tools=supervisor_base_tools,
@@ -337,6 +342,7 @@ def build_analytics_deep_agent(
         model=model,
         tools=[python_tool, load_skills_tool],
         system_prompt=GENERAL_PURPOSE_CODING_PROMPT,
+        skills=[settings.skills_virtual_dir],
         backend=backend,
         middleware=general_purpose_worker_middleware,
         memory=[_agents_memory_path(settings.agents_file_name)],
@@ -372,6 +378,7 @@ def build_analytics_deep_agent(
         data_retrieval_middleware=subagent_middleware,
         coding_middleware=general_purpose_middleware,
         model=model,
+        skill_sources=[settings.skills_virtual_dir],
     )
 
     # Шаг 6. Финальная сборка DeepAgents supervisor.
@@ -384,6 +391,7 @@ def build_analytics_deep_agent(
         tools=[python_tool, load_skills_tool],
         system_prompt=system_prompt,
         subagents=subagents,
+        skills=[settings.skills_virtual_dir],
         backend=backend,
         middleware=supervisor_middleware,
         memory=[_agents_memory_path(settings.agents_file_name)],
