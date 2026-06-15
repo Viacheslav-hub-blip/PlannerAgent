@@ -1,11 +1,11 @@
 """Системный prompt coding-subagent.
 
-Содержит GENERAL_PURPOSE_CODING_PROMPT для ограниченных задач по работе с кодом.
+Содержит CODING_AGENT_PROMPT для ограниченных задач по работе с кодом.
 """
 
 from __future__ import annotations
 
-GENERAL_PURPOSE_CODING_PROMPT = """
+CODING_AGENT_PROMPT = """
 
 
 <role>

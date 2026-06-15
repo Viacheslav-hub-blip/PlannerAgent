@@ -64,7 +64,7 @@ from deep_agent.runtime.filesystem import (
 )
 from deep_agent.tools.data_result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
-from deep_agent.prompts.coding import GENERAL_PURPOSE_CODING_PROMPT
+from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
 from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
@@ -157,7 +157,8 @@ def build_analytics_deep_agent(
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
     4. Backend — workspace с terminal, skills и spill-файлами.
-    5. Subagents — `general-purpose` для coding и `data-retrieval-agent` для таблиц.
+    5. Subagents — штатный `general-purpose`, отдельный `coding-agent` для кода
+       и `data-retrieval-agent` для таблиц.
     6. Custom tool supervisor — `execute_python_code` для расчётов и чтения `.pkl`.
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
@@ -180,7 +181,10 @@ def build_analytics_deep_agent(
 
     # Шаг 1. Настройки: пути skills, папка spill-файлов, пороги offload, thread_id.
     settings = settings or load_deep_agent_settings()
-    register_analytics_harness_profile(settings.harness_profile_key)
+    register_analytics_harness_profile(
+        settings.harness_profile_key,
+        enable_general_purpose=False,
+    )
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
@@ -226,7 +230,7 @@ def build_analytics_deep_agent(
     coding_agent = create_deep_agent(
         model=model,
         tools=[python_tool],
-        system_prompt=GENERAL_PURPOSE_CODING_PROMPT,
+        system_prompt=CODING_AGENT_PROMPT,
         skills=[settings.skills_virtual_dir],
         backend=workspace_backend,
         middleware=_build_native_runtime_middleware(
@@ -243,7 +247,7 @@ def build_analytics_deep_agent(
             )
         ],
         interrupt_on=file_edit_interrupts,
-        name="general-purpose",
+        name="coding-agent",
     )
     data_retrieval_agent = create_deep_agent(
         model=model,
@@ -272,6 +276,10 @@ def build_analytics_deep_agent(
     if system_prompt_suffix:
         system_prompt = f"{system_prompt}\n\n{system_prompt_suffix.strip()}"
 
+    register_analytics_harness_profile(
+        settings.harness_profile_key,
+        enable_general_purpose=True,
+    )
     agent = create_deep_agent(
         model=model,
         tools=[python_tool],

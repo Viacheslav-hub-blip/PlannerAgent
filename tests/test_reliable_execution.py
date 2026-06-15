@@ -387,17 +387,25 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertEqual(result, "executed")
 
-    def test_harness_profile_keeps_execute_for_explicit_coding_subagent(self) -> None:
-        """HarnessProfile должен сохранять execute и отключать только auto subagent."""
+    def test_harness_profile_keeps_default_general_purpose_subagent(self) -> None:
+        """HarnessProfile должен сохранять execute и штатный general-purpose."""
 
         profile = build_analytics_harness_profile()
 
         self.assertNotIn("execute", profile.excluded_tools)
         self.assertIsNotNone(profile.general_purpose_subagent)
+        self.assertTrue(profile.general_purpose_subagent.enabled)
+
+    def test_harness_profile_can_disable_nested_general_purpose_subagent(self) -> None:
+        """Compiled subagents не должны получать вложенный general-purpose."""
+
+        profile = build_analytics_harness_profile(enable_general_purpose=False)
+
+        self.assertIsNotNone(profile.general_purpose_subagent)
         self.assertFalse(profile.general_purpose_subagent.enabled)
 
     def test_subagent_specs_include_coding_and_data_agents(self) -> None:
-        """Сборка должна явно добавлять general-purpose и data-retrieval-agent."""
+        """Сборка должна явно добавлять coding-agent и data-retrieval-agent."""
 
         coding_agent = object()
         data_retrieval_agent = object()
@@ -408,7 +416,7 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertEqual(
             [spec["name"] for spec in specs],
-            ["general-purpose", "data-retrieval-agent"],
+            ["coding-agent", "data-retrieval-agent"],
         )
         self.assertIs(specs[0]["runnable"], coding_agent)
         self.assertIs(specs[1]["runnable"], data_retrieval_agent)

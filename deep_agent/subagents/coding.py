@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from deep_agent.prompts.coding import GENERAL_PURPOSE_CODING_PROMPT
+from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 
-CODING_AGENT_NAME = "general-purpose"
+CODING_AGENT_NAME = "coding-agent"
 
 
 def build_coding_subagent_spec(
@@ -24,7 +24,7 @@ def build_coding_subagent_spec(
 
     Args:
         model: Chat-модель LangChain для выполнения coding-задачи.
-        tools: Дополнительные инструменты general-purpose subagent.
+        tools: Дополнительные инструменты coding-agent.
         common_middleware: Middleware с управлением доступом к workspace tools.
         skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
@@ -39,7 +39,7 @@ def build_coding_subagent_spec(
             "кода, рефакторинг, исправление ошибок, создание тестов, документации и файловых артефактов. "
             "Проверяет результат доступными командами и не имеет доступа к load_data."
         ),
-        "system_prompt": GENERAL_PURPOSE_CODING_PROMPT,
+        "system_prompt": CODING_AGENT_PROMPT,
         "model": model,
         "tools": list(tools),
         "skills": list(skill_sources),

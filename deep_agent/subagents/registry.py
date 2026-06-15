@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from deep_agent.subagents.coding import CODING_AGENT_NAME
+
+
 def build_subagent_specs(
     *,
     coding_agent: Any,
@@ -25,7 +28,7 @@ def build_subagent_specs(
 
     return [
         {
-            "name": "general-purpose",
+            "name": CODING_AGENT_NAME,
             "description": (
                 "Исследует workspace и выполняет ограниченные coding-задачи, "
                 "изменения файлов и локальные проверки без доступа к load_data."
