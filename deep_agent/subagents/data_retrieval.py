@@ -1,7 +1,7 @@
 """Спецификация subagent для получения табличных данных.
 
 Содержит функцию:
-- build_data_retrieval_subagent_spec: сборка конфигурации data-retrieval-agent.
+- build_data_retrieval_subagent_spec: сборка параметров создания data-retrieval-agent.
 """
 
 from __future__ import annotations
@@ -11,6 +11,10 @@ from typing import Any
 from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 
 DATA_RETRIEVAL_AGENT_NAME = "data-retrieval-agent"
+DATA_RETRIEVAL_AGENT_DESCRIPTION = (
+    "Читает табличные данные через load_data и возвращает supervisor компактный проверяемый отчёт "
+    "по полям, фильтрам, ключам и периоду без доступа к shell."
+)
 
 
 def build_data_retrieval_subagent_spec(
@@ -20,7 +24,7 @@ def build_data_retrieval_subagent_spec(
     common_middleware: list[Any],
     skill_sources: list[str],
 ) -> dict[str, Any]:
-    """Собирает спецификацию subagent для чтения табличных данных.
+    """Собирает параметры создания subagent для чтения табличных данных.
 
     Args:
         model: Chat-модель LangChain для выполнения запросов subagent.
@@ -29,18 +33,14 @@ def build_data_retrieval_subagent_spec(
         skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
     Returns:
-        Словарь спецификации, совместимый с ``create_deep_agent``.
+        Словарь именованных аргументов, совместимый с ``create_deep_agent``.
     """
 
     return {
         "name": DATA_RETRIEVAL_AGENT_NAME,
-        "description": (
-            "Читает табличные данные через load_data и возвращает структурированный "
-            "отчет supervisor. Используй для выборок по полям, фильтрам, ключам и периоду."
-        ),
         "system_prompt": DATA_RETRIEVAL_PROMPT,
         "model": model,
-        "tools": data_tools,
+        "tools": list(data_tools),
         "skills": list(skill_sources),
         "middleware": list(common_middleware),
     }

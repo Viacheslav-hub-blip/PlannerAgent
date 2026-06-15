@@ -1,7 +1,7 @@
 """Спецификация coding-subagent.
 
 Содержит функцию:
-- build_coding_subagent_spec: сборка capability-aware coding subagent.
+- build_coding_subagent_spec: сборка параметров создания coding-agent.
 """
 
 from __future__ import annotations
@@ -11,6 +11,11 @@ from typing import Any
 from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 
 CODING_AGENT_NAME = "coding-agent"
+CODING_AGENT_DESCRIPTION = (
+    "Исследует кодовую базу и выполняет ограниченные coding-задачи: проектирование, генерацию и изменение "
+    "кода, рефакторинг, исправление ошибок, создание тестов, документации и файловых артефактов. "
+    "Проверяет результат доступными командами и не имеет доступа к load_data."
+)
 
 
 def build_coding_subagent_spec(
@@ -20,7 +25,7 @@ def build_coding_subagent_spec(
     common_middleware: list[Any],
     skill_sources: list[str],
 ) -> dict[str, Any]:
-    """Собирает спецификацию subagent для ограниченной работы с кодом.
+    """Собирает параметры создания subagent для ограниченной работы с кодом.
 
     Args:
         model: Chat-модель LangChain для выполнения coding-задачи.
@@ -29,16 +34,11 @@ def build_coding_subagent_spec(
         skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
 
     Returns:
-        Словарь спецификации, совместимый с ``create_deep_agent``.
+        Словарь именованных аргументов, совместимый с ``create_deep_agent``.
     """
 
     return {
         "name": CODING_AGENT_NAME,
-        "description": (
-            "Исследует кодовую базу и выполняет ограниченные coding-задачи: проектирование, генерацию и изменение "
-            "кода, рефакторинг, исправление ошибок, создание тестов, документации и файловых артефактов. "
-            "Проверяет результат доступными командами и не имеет доступа к load_data."
-        ),
         "system_prompt": CODING_AGENT_PROMPT,
         "model": model,
         "tools": list(tools),

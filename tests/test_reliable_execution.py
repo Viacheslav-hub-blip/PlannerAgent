@@ -11,10 +11,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from dataclasses import replace
+from inspect import signature
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
@@ -56,6 +58,14 @@ from deep_agent.prompts.tool_contracts import (
 from deep_agent.settings import load_deep_agent_settings
 from deep_agent.runtime.filesystem import Utf8LocalShellBackend
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
+from deep_agent.subagents.coding import (
+    CODING_AGENT_DESCRIPTION,
+    build_coding_subagent_spec,
+)
+from deep_agent.subagents.data_retrieval import (
+    DATA_RETRIEVAL_AGENT_DESCRIPTION,
+    build_data_retrieval_subagent_spec,
+)
 from deep_agent.subagents.registry import build_subagent_specs
 from deep_agent.middleware.skills_context import (
     SelectedSkillPaths,
@@ -420,6 +430,45 @@ class ReliableExecutionTests(unittest.TestCase):
         )
         self.assertIs(specs[0]["runnable"], coding_agent)
         self.assertIs(specs[1]["runnable"], data_retrieval_agent)
+        self.assertEqual(specs[0]["description"], CODING_AGENT_DESCRIPTION)
+        self.assertEqual(
+            specs[1]["description"],
+            DATA_RETRIEVAL_AGENT_DESCRIPTION,
+        )
+
+    def test_subagent_builders_return_create_deep_agent_kwargs(self) -> None:
+        """Builder-ы должны возвращать независимые kwargs без registry-описания."""
+
+        model = object()
+        tool = object()
+        middleware = object()
+        skill_source = "/skills/"
+
+        coding_spec = build_coding_subagent_spec(
+            model=model,
+            tools=[tool],
+            common_middleware=[middleware],
+            skill_sources=[skill_source],
+        )
+        data_spec = build_data_retrieval_subagent_spec(
+            model=model,
+            data_tools=[tool],
+            common_middleware=[middleware],
+            skill_sources=[skill_source],
+        )
+
+        self.assertNotIn("description", coding_spec)
+        self.assertNotIn("description", data_spec)
+        signature(create_deep_agent).bind_partial(**coding_spec)
+        signature(create_deep_agent).bind_partial(**data_spec)
+        self.assertIs(coding_spec["model"], model)
+        self.assertIs(data_spec["model"], model)
+        self.assertEqual(coding_spec["tools"], [tool])
+        self.assertEqual(data_spec["tools"], [tool])
+        self.assertEqual(coding_spec["middleware"], [middleware])
+        self.assertEqual(data_spec["middleware"], [middleware])
+        self.assertEqual(coding_spec["skills"], [skill_source])
+        self.assertEqual(data_spec["skills"], [skill_source])
 
     def test_code_workspace_skill_grants_filesystem_and_terminal_tools(self) -> None:
         """Skill code-workspace должен динамически расширять allowlist supervisor."""

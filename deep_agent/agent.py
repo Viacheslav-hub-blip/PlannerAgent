@@ -57,6 +57,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.runtime.harness import register_analytics_harness_profile
 from deep_agent.runtime.python_sandbox import build_python_sandbox
+from deep_agent.subagents.coding import build_coding_subagent_spec
+from deep_agent.subagents.data_retrieval import (
+    build_data_retrieval_subagent_spec,
+)
 from deep_agent.subagents.registry import build_subagent_specs
 from deep_agent.runtime.filesystem import (
     Utf8FilesystemBackend,
@@ -64,8 +68,6 @@ from deep_agent.runtime.filesystem import (
 )
 from deep_agent.tools.data_result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
-from deep_agent.prompts.coding import CODING_AGENT_PROMPT
-from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
 from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
@@ -227,17 +229,19 @@ def build_analytics_deep_agent(
     file_edit_interrupts = _build_file_edit_interrupts(settings)
     shared_permissions = _build_shared_backend_permissions(settings)
 
+    coding_agent_middleware = _build_native_runtime_middleware(
+        settings,
+        tool_output_file_middleware,
+        limit_model_calls=True,
+    )
     coding_agent = create_deep_agent(
-        model=model,
-        tools=[python_tool],
-        system_prompt=CODING_AGENT_PROMPT,
-        skills=[settings.skills_virtual_dir],
-        backend=workspace_backend,
-        middleware=_build_native_runtime_middleware(
-            settings,
-            tool_output_file_middleware,
-            limit_model_calls=True,
+        **build_coding_subagent_spec(
+            model=model,
+            tools=[python_tool],
+            common_middleware=coding_agent_middleware,
+            skill_sources=[settings.skills_virtual_dir],
         ),
+        backend=workspace_backend,
         memory=[_agents_memory_path(settings.agents_file_name)],
         permissions=[
             FilesystemPermission(
@@ -247,22 +251,22 @@ def build_analytics_deep_agent(
             )
         ],
         interrupt_on=file_edit_interrupts,
-        name="coding-agent",
+    )
+    data_retrieval_agent_middleware = _build_native_runtime_middleware(
+        settings,
+        tool_output_file_middleware,
+        limit_model_calls=True,
     )
     data_retrieval_agent = create_deep_agent(
-        model=model,
-        tools=[*data_tools, python_tool],
-        system_prompt=DATA_RETRIEVAL_PROMPT,
-        skills=[settings.skills_virtual_dir],
-        backend=supervisor_backend,
-        middleware=_build_native_runtime_middleware(
-            settings,
-            tool_output_file_middleware,
-            limit_model_calls=True,
+        **build_data_retrieval_subagent_spec(
+            model=model,
+            data_tools=[*data_tools, python_tool],
+            common_middleware=data_retrieval_agent_middleware,
+            skill_sources=[settings.skills_virtual_dir],
         ),
+        backend=supervisor_backend,
         memory=[_supervisor_memory_path(settings.agents_file_name)],
         permissions=shared_permissions,
-        name="data-retrieval-agent",
     )
 
     # Шаг 4. Сборка изолированных compiled subagents.

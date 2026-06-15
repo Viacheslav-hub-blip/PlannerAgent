@@ -8,7 +8,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from deep_agent.subagents.coding import CODING_AGENT_NAME
+from deep_agent.subagents.coding import (
+    CODING_AGENT_DESCRIPTION,
+    CODING_AGENT_NAME,
+)
+from deep_agent.subagents.data_retrieval import (
+    DATA_RETRIEVAL_AGENT_DESCRIPTION,
+    DATA_RETRIEVAL_AGENT_NAME,
+)
 
 
 def build_subagent_specs(
@@ -29,18 +36,12 @@ def build_subagent_specs(
     return [
         {
             "name": CODING_AGENT_NAME,
-            "description": (
-                "Исследует workspace и выполняет ограниченные coding-задачи, "
-                "изменения файлов и локальные проверки без доступа к load_data."
-            ),
+            "description": CODING_AGENT_DESCRIPTION,
             "runnable": coding_agent,
         },
         {
-            "name": "data-retrieval-agent",
-            "description": (
-                "Читает табличные данные через load_data и возвращает supervisor "
-                "компактный проверяемый отчёт без доступа к shell."
-            ),
+            "name": DATA_RETRIEVAL_AGENT_NAME,
+            "description": DATA_RETRIEVAL_AGENT_DESCRIPTION,
             "runnable": data_retrieval_agent,
         },
     ]
