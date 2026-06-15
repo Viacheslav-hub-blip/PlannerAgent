@@ -1,7 +1,7 @@
-"""Тесты обработки ошибок модели.
+"""Тесты встроенного middleware повторов модели.
 
 Содержит классы:
-- ModelErrorHandlingTests: проверка retry-классификации и безопасных сообщений.
+- ModelErrorHandlingTests: проверка конфигурации ``ModelRetryMiddleware``.
 """
 
 from __future__ import annotations
@@ -10,86 +10,92 @@ import unittest
 from pathlib import Path
 
 import httpx
-from openai import APIConnectionError, APIStatusError
+from langchain.agents.middleware import ModelRetryMiddleware
+from openai import APIStatusError
 
-from deep_agent.middleware.model_errors import (
-    MODEL_MAX_RETRIES,
-    ModelErrorMiddleware,
-    build_model_error_middleware,
-    format_model_error,
-    is_retryable_model_error,
-)
+from deep_agent.agent import _build_native_runtime_middleware
+from deep_agent.middleware.model_errors import format_model_error, is_retryable_model_error
+from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
+from deep_agent.settings import load_deep_agent_settings
 
 
-def _status_error(status_code: int) -> APIStatusError:
-    """Создаёт локальную HTTP-ошибку OpenAI SDK.
+def _status_error(status_code: int, message: str = "provider error") -> APIStatusError:
+    """Создаёт локальную HTTP-ошибку OpenAI SDK без сетевого запроса.
 
     Args:
-        status_code: HTTP-код ответа провайдера.
+        status_code: HTTP-код тестового ответа.
+        message: Текст тестовой ошибки.
 
     Returns:
-        ``APIStatusError`` без сетевого запроса.
+        Экземпляр ``APIStatusError`` с локальным ``httpx.Response``.
     """
 
     request = httpx.Request("POST", "https://provider.invalid/chat")
     response = httpx.Response(status_code, request=request)
-    return APIStatusError("provider error", response=response, body=None)
+    return APIStatusError(message, response=response, body=None)
 
 
 class ModelErrorHandlingTests(unittest.TestCase):
-    """Проверяет правила повторов и пользовательские сообщения."""
+    """Проверяет переход на встроенный ``ModelRetryMiddleware``."""
 
-    def test_retries_temporary_provider_errors(self) -> None:
-        """Проверяет повторы для connection, rate limit и HTTP 5xx.
+    def test_builds_native_retry_middleware(self) -> None:
+        """Проверяет наличие встроенного retry middleware.
 
         Returns:
             ``None``.
         """
 
-        request = httpx.Request("POST", "https://provider.invalid/chat")
-
-        self.assertTrue(
-            is_retryable_model_error(APIConnectionError(request=request))
+        settings = load_deep_agent_settings()
+        middleware = _build_native_runtime_middleware(
+            settings,
+            ToolOutputFileMiddleware(output_dir=settings.tool_outputs_dir),
+            limit_model_calls=False,
         )
-        for status_code in (408, 409, 429, 500, 503):
-            self.assertTrue(is_retryable_model_error(_status_error(status_code)))
+        retry = next(item for item in middleware if isinstance(item, ModelRetryMiddleware))
 
-    def test_does_not_retry_permanent_provider_errors(self) -> None:
-        """Проверяет отсутствие повторов для постоянных HTTP-ошибок.
+        self.assertEqual(retry.max_retries, settings.max_model_retries)
+        self.assertIs(retry.retry_on, is_retryable_model_error)
+        self.assertIs(retry.on_failure, format_model_error)
 
-        Returns:
-            ``None``.
-        """
-
-        for status_code in (400, 401, 402, 403, 404):
-            self.assertFalse(is_retryable_model_error(_status_error(status_code)))
-
-    def test_formats_safe_user_messages(self) -> None:
-        """Проверяет безопасные сообщения без исходного текста провайдера.
+    def test_formats_visible_error_and_masks_api_key(self) -> None:
+        """Проверяет пользовательскую диагностику без утечки API-ключа.
 
         Returns:
             ``None``.
         """
 
-        unavailable = format_model_error(_status_error(503))
-        account_restriction = format_model_error(_status_error(402))
+        message = format_model_error(
+            _status_error(401, "api_key=test-secret-value-123456")
+        )
 
-        self.assertIn("временно недоступен", unavailable)
-        self.assertIn("ограничений аккаунта", account_restriction)
-        self.assertNotIn("provider error", unavailable)
-        self.assertNotIn("provider error", account_restriction)
+        self.assertIn("отклонил авторизацию", message)
+        self.assertIn("HTTP-код: `401`", message)
+        self.assertIn("[REDACTED]", message)
+        self.assertNotIn("test-secret-value-123456", message)
 
-    def test_builds_final_error_handler_without_nested_retries(self) -> None:
-        """Проверяет отсутствие вложенных повторов в agent middleware.
+    def test_retry_middleware_returns_visible_ai_message(self) -> None:
+        """Проверяет преобразование финальной ошибки в сообщение для UI.
 
         Returns:
             ``None``.
         """
 
-        middleware = build_model_error_middleware()
+        settings = load_deep_agent_settings()
+        middleware = _build_native_runtime_middleware(
+            settings,
+            ToolOutputFileMiddleware(output_dir=settings.tool_outputs_dir),
+            limit_model_calls=False,
+        )
+        retry = next(item for item in middleware if isinstance(item, ModelRetryMiddleware))
 
-        self.assertEqual(MODEL_MAX_RETRIES, 5)
-        self.assertIsInstance(middleware, ModelErrorMiddleware)
+        response = retry.wrap_model_call(
+            None,  # type: ignore[arg-type]
+            lambda _: (_ for _ in ()).throw(_status_error(401)),
+        )
+
+        content = str(response.result[0].content)
+        self.assertIn("отклонил авторизацию", content)
+        self.assertIn("HTTP-код: `401`", content)
 
     def test_model_client_uses_shared_retry_limit(self) -> None:
         """Проверяет настройку повторов на общем клиенте модели.
@@ -102,28 +108,8 @@ class ModelErrorHandlingTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("max_retries=MODEL_MAX_RETRIES", model_source)
-
-    def test_middleware_converts_only_provider_errors(self) -> None:
-        """Проверяет преобразование ошибок провайдера без маскировки дефектов кода.
-
-        Returns:
-            ``None``.
-        """
-
-        middleware = build_model_error_middleware()
-
-        response = middleware.wrap_model_call(
-            None,  # type: ignore[arg-type]
-            lambda _: (_ for _ in ()).throw(_status_error(503)),
-        )
-        self.assertIn("временно недоступен", str(response.result[0].content))
-
-        with self.assertRaisesRegex(ValueError, "programming error"):
-            middleware.wrap_model_call(
-                None,  # type: ignore[arg-type]
-                lambda _: (_ for _ in ()).throw(ValueError("programming error")),
-            )
+        self.assertIn('os.environ.get("OPENAI_API_KEY")', model_source)
+        self.assertNotRegex(model_source, r"sk-[A-Za-z0-9_-]{12,}")
 
 
 if __name__ == "__main__":

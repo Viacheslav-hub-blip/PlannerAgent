@@ -8,44 +8,36 @@ from __future__ import annotations
 
 from typing import Any
 
-from deep_agent.subagents.coding import build_coding_subagent_spec
-from deep_agent.subagents.data_retrieval import build_data_retrieval_subagent_spec
-
-
 def build_subagent_specs(
     *,
-    data_tools: list[Any],
-    general_purpose_tools: list[Any],
-    data_retrieval_middleware: list[Any],
-    coding_middleware: list[Any],
-    model: Any,
-    skill_sources: list[str],
+    coding_agent: Any,
+    data_retrieval_agent: Any,
 ) -> list[dict[str, Any]]:
-    """Собирает зарегистрированные спецификации subagents.
+    """Собирает спецификации изолированных compiled subagents.
 
     Args:
-        data_tools: Инструменты чтения данных для data-retrieval-agent.
-        general_purpose_tools: Дополнительные инструменты general-purpose subagent.
-        data_retrieval_middleware: Middleware data-retrieval-agent.
-        coding_middleware: Middleware coding-subagent.
-        model: Chat-модель LangChain для обоих subagents.
-        skill_sources: Виртуальные каталоги skills для нативного ``SkillsMiddleware``.
+        coding_agent: Скомпилированный coding-agent с workspace backend.
+        data_retrieval_agent: Скомпилированный агент чтения данных без shell.
 
     Returns:
-        Список спецификаций для параметра ``subagents`` фабрики DeepAgent.
+        Список ``CompiledSubAgent``-совместимых словарей для supervisor.
     """
 
     return [
-        build_coding_subagent_spec(
-            model=model,
-            tools=general_purpose_tools,
-            common_middleware=coding_middleware,
-            skill_sources=skill_sources,
-        ),
-        build_data_retrieval_subagent_spec(
-            model=model,
-            data_tools=data_tools,
-            common_middleware=data_retrieval_middleware,
-            skill_sources=skill_sources,
-        ),
+        {
+            "name": "general-purpose",
+            "description": (
+                "Исследует workspace и выполняет ограниченные coding-задачи, "
+                "изменения файлов и локальные проверки без доступа к load_data."
+            ),
+            "runnable": coding_agent,
+        },
+        {
+            "name": "data-retrieval-agent",
+            "description": (
+                "Читает табличные данные через load_data и возвращает supervisor "
+                "компактный проверяемый отчёт без доступа к shell."
+            ),
+            "runnable": data_retrieval_agent,
+        },
     ]

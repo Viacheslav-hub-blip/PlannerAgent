@@ -16,30 +16,44 @@
 
 Скрытая цепочка рассуждений модели не публикуется.
 
-## Запуск одной командой
+## Подготовка и запуск
 
 Требования: Python 3.11+, Git и Node.js 20+. Виртуальное окружение `.venv` желательно,
 но скрипт работает и с текущим `python`.
+
+`run_ui.py` работает только с уже подготовленным окружением: он не устанавливает Python-
+или Node.js-зависимости, не клонирует репозиторий и не применяет patch. Перед первым
+запуском установите Python-зависимости и распакуйте подготовленный Linux frontend:
+
+```powershell
+python -m pip install -e .[models,data,analytics,ui]
+powershell -ExecutionPolicy Bypass -File local_ui\install.ps1 -Force
+```
+
+`install.ps1` работает без сети. Он использует
+`deep-agents-ui-node20-linux-x86_64.tar.gz` либо собирает его из файлов
+`.part001`, `.part002`, ...; затем проверяет SHA256 по корневому `SHA256SUMS` и
+атомарно устанавливает frontend в `local_ui/.runtime/deep-agents-ui`.
+
+После подготовки:
 
 ```powershell
 python run_ui.py
 ```
 
-Первый запуск сам:
+```powershell
+python run_ui.py --agent-port 2124 --ui-port 3100
+python run_ui.py --frontend-dir C:\path\to\deep-agents-ui
+```
 
-1. установит optional dependency `ui` и остальные extras;
-2. клонирует UI в `local_ui/.runtime/deep-agents-ui`;
-3. закрепит commit `f6a4f34565b42688be06498031fc9351c152614e`;
-4. применит patch автоподключения к локальному backend;
-5. прочитает настройки из `local_ui/.env`;
-6. поднимет Agent Server и UI.
+Архив содержит Linux x86_64 `node_modules`, собранные для Node.js 20. Его нельзя
+заменять архивом Windows `node_modules`. При изменении файлов frontend, patch,
+`package.json` или `yarn.lock` архив и `SHA256SUMS` нужно пересоздать.
 
-Повторные запуски быстрее: зависимости переустанавливаются только при необходимости.
+Сборка архива в WSL:
 
 ```powershell
-python run_ui.py --skip-install
-python run_ui.py --install-only
-python run_ui.py --agent-port 2124 --ui-port 3100
+wsl -d Ubuntu -- bash /mnt/c/path/to/deepagent/scripts/build_ui_archive.sh
 ```
 
 `local_ui/.env` является единственным файлом настроек UI. Используются только переменные
@@ -84,6 +98,16 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 
 В интерфейсе появятся план, вызов `load_data`, его аргументы/результат и итоговый
 ответ. Для этого кейса тестовая корзина ожидает число `7`.
+
+## Ошибки
+
+- Ошибки запуска backend и frontend печатаются в stderr launcher-а; для backend также
+  создаются отдельные stdout/stderr логи в `local_ui/.runtime/logs`.
+- После исчерпания повторов временная ошибка провайдера преобразуется backend в
+  пользовательское AI-сообщение. UI показывает краткое русскоязычное объяснение,
+  тип исключения, HTTP-код при наличии и очищенный текст без API-ключей.
+- Ошибки tools остаются в соответствующих карточках tool calls и доступны в истории
+  LangGraph thread.
 
 ## Стриминг
 

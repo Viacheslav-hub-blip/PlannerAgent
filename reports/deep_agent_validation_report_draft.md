@@ -601,7 +601,7 @@ skills и состав контрольной выборки.
 - `deep_agent/README.md` — описание возможностей и запуска;
 - `deep_agent/agent.py` — сборка архитектуры;
 - `deep_agent/prompts/` — контракты supervisor и subagent;
-- `deep_agent/resources/skills/` — доменный слой;
+- `deep_agent/skills/` — доменный слой;
 - `tests/evaluation/validation_cases.json` — автоматическая тестовая корзина;
 - `tests/evaluation/VALIDATION_CASES.md` — человекочитаемое описание тестов;
 - `tests/` — unit-тесты инструментов и middleware;

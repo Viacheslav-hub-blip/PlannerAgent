@@ -1,25 +1,31 @@
-"""Offline-only launcher for local Deep Agents UI.
+"""Офлайн-launcher локального Deep Agents UI.
 
-This script does not install, clone, patch, update, or download anything.
-It only validates that the project is already prepared and starts:
-- LangGraph Agent Server;
-- local frontend from an already unpacked deep-agents-ui directory.
+Скрипт проверяет подготовленное окружение и запускает LangGraph Agent Server вместе
+с уже распакованным frontend. Он не устанавливает и не скачивает зависимости.
 
-Expected layout by default:
-    project/
-      run_ui.py
-      local_ui/
-        .env
-        langgraph.json
-        .runtime/
-          deep-agents-ui/
-            package.json
-            node_modules/
-
-Examples:
-    python run_ui.py
-    python run_ui.py --agent-port 2124 --ui-port 3100
-    python run_ui.py --frontend-dir C:\\path\\to\\deep-agents-ui
+Содержит функции:
+- _eprint: печать сообщения в stderr;
+- _resolve_python: выбор Python-интерпретатора;
+- _resolve_argv: разрешение исполняемого файла команды;
+- _popen: безопасный запуск дочернего процесса;
+- _parse_env_value: очистка значения из env-файла;
+- _read_env_file: чтение env-файла;
+- _validate_env: проверка обязательных переменных;
+- _child_env: сборка окружения дочерних процессов;
+- _ensure_tool: проверка системного инструмента;
+- _python_dependencies_ready: проверка LangGraph CLI;
+- _validate_python_runtime: проверка Python-окружения;
+- _validate_frontend: проверка frontend и SDK;
+- _langgraph_command: построение команды LangGraph CLI;
+- _frontend_dev_command: построение команды frontend;
+- _wait_for_port: ожидание готовности TCP-порта;
+- _write_frontend_env: запись runtime-настроек frontend;
+- _stop_process: остановка дочернего процесса;
+- _cleanup: остановка backend и frontend;
+- _make_log_paths: создание путей логов;
+- _start_services: запуск backend и frontend;
+- _parse_args: разбор аргументов командной строки;
+- main: основная точка входа.
 """
 
 from __future__ import annotations
@@ -54,11 +60,24 @@ _frontend_process: subprocess.Popen[bytes] | None = None
 
 
 def _eprint(message: str) -> None:
+    """Печатает сообщение в стандартный поток ошибок.
+
+    Args:
+        message: Текст диагностического сообщения.
+
+    Returns:
+        ``None``.
+    """
+
     print(message, file=sys.stderr)
 
 
 def _resolve_python() -> Path:
-    """Return Python from .venv when it exists, otherwise the current interpreter."""
+    """Выбирает Python из ``.venv`` или текущий интерпретатор.
+
+    Returns:
+        Путь к доступному Python-интерпретатору.
+    """
 
     venv_python = (
         PROJECT_ROOT / ".venv" / ("Scripts" if os.name == "nt" else "bin") / "python"
@@ -71,7 +90,17 @@ def _resolve_python() -> Path:
 
 
 def _resolve_argv(command: list[str]) -> list[str]:
-    """Resolve executable path for subprocess without shell=True."""
+    """Разрешает путь исполняемого файла без ``shell=True``.
+
+    Args:
+        command: Команда и её аргументы.
+
+    Returns:
+        Команда с абсолютным путём к исполняемому файлу.
+
+    Raises:
+        RuntimeError: Исполняемый файл не найден.
+    """
 
     if not command:
         return command
@@ -99,16 +128,47 @@ def _popen(
     env: dict[str, str] | None = None,
     **kwargs: object,
 ) -> subprocess.Popen[bytes]:
+    """Запускает дочерний процесс без ``shell=True``.
+
+    Args:
+        command: Команда и её аргументы.
+        cwd: Рабочая директория процесса.
+        env: Переменные окружения процесса.
+        **kwargs: Дополнительные аргументы ``subprocess.Popen``.
+
+    Returns:
+        Запущенный объект ``subprocess.Popen``.
+    """
+
     argv = _resolve_argv(command)
     return subprocess.Popen(argv, cwd=cwd, env=env, **kwargs)  # type: ignore[arg-type]
 
 
 def _parse_env_value(value: str) -> str:
+    """Удаляет пробелы и внешние кавычки из значения env-файла.
+
+    Args:
+        value: Сырое значение после знака ``=``.
+
+    Returns:
+        Очищенная строка.
+    """
+
     return value.strip().strip('"').strip("'")
 
 
 def _read_env_file(env_path: Path) -> dict[str, str]:
-    """Read a simple KEY=VALUE env file without external dependencies."""
+    """Читает простой env-файл формата ``KEY=VALUE``.
+
+    Args:
+        env_path: Путь к env-файлу.
+
+    Returns:
+        Словарь переменных из файла.
+
+    Raises:
+        RuntimeError: Env-файл отсутствует.
+    """
 
     if not env_path.exists():
         raise RuntimeError(
@@ -133,6 +193,18 @@ def _read_env_file(env_path: Path) -> dict[str, str]:
 
 
 def _validate_env(env_path: Path) -> dict[str, str]:
+    """Проверяет наличие обязательных переменных в env-файле.
+
+    Args:
+        env_path: Путь к env-файлу.
+
+    Returns:
+        Словарь прочитанных переменных.
+
+    Raises:
+        RuntimeError: Обязательные переменные отсутствуют.
+    """
+
     values = _read_env_file(env_path)
     missing = [key for key in REQUIRED_ENV_KEYS if not values.get(key)]
     if missing:
@@ -143,7 +215,14 @@ def _validate_env(env_path: Path) -> dict[str, str]:
 
 
 def _child_env(env_values: dict[str, str]) -> dict[str, str]:
-    """Build environment for backend/frontend without installing anything."""
+    """Собирает окружение backend и frontend без установки зависимостей.
+
+    Args:
+        env_values: Переменные из env-файла.
+
+    Returns:
+        Копия системного окружения с настройками проекта и ``PYTHONPATH``.
+    """
 
     env = os.environ.copy()
     env.update(env_values)
@@ -158,12 +237,32 @@ def _child_env(env_values: dict[str, str]) -> dict[str, str]:
 
 
 def _ensure_tool(name: str, install_hint: str) -> None:
+    """Проверяет наличие исполняемого файла в ``PATH``.
+
+    Args:
+        name: Имя системного инструмента.
+        install_hint: Подсказка по подготовке окружения.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        RuntimeError: Инструмент не найден.
+    """
+
     if shutil.which(name) is None:
         raise RuntimeError(f"Не найден `{name}`. {install_hint}")
 
 
 def _python_dependencies_ready(python: Path) -> bool:
-    """Check only runtime import. Installation is handled outside this script."""
+    """Проверяет импорт LangGraph CLI без установки зависимостей.
+
+    Args:
+        python: Путь к Python-интерпретатору.
+
+    Returns:
+        ``True``, если ``langgraph_cli`` импортируется успешно.
+    """
 
     probe = subprocess.run(
         [str(python), "-c", "import langgraph_cli"],
@@ -175,6 +274,18 @@ def _python_dependencies_ready(python: Path) -> bool:
 
 
 def _validate_python_runtime(python: Path) -> None:
+    """Проверяет готовность Python-окружения к запуску LangGraph CLI.
+
+    Args:
+        python: Путь к Python-интерпретатору.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        RuntimeError: Runtime-зависимости не установлены.
+    """
+
     if _python_dependencies_ready(python):
         return
     raise RuntimeError(
@@ -185,6 +296,19 @@ def _validate_python_runtime(python: Path) -> None:
 
 
 def _validate_frontend(frontend_root: Path, *, strict_sdk: bool) -> None:
+    """Проверяет структуру frontend, зависимости и версию SDK.
+
+    Args:
+        frontend_root: Корень подготовленного frontend.
+        strict_sdk: Считать несовпадение версии SDK ошибкой.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        RuntimeError: Frontend не готов к запуску.
+    """
+
     if not frontend_root.exists():
         raise RuntimeError(
             f"Не найдена директория frontend: {frontend_root}\n"
@@ -233,6 +357,15 @@ def _validate_frontend(frontend_root: Path, *, strict_sdk: bool) -> None:
 
 
 def _langgraph_command(python: Path) -> list[str]:
+    """Строит команду запуска LangGraph CLI.
+
+    Args:
+        python: Путь к Python-интерпретатору.
+
+    Returns:
+        Команда с найденным CLI или fallback через Python-модуль.
+    """
+
     if os.name == "nt":
         langgraph_exe = PROJECT_ROOT / ".venv" / "Scripts" / "langgraph.exe"
         if langgraph_exe.exists():
@@ -252,7 +385,17 @@ def _frontend_dev_command(
     ui_port: int,
     package_manager: str,
 ) -> list[str]:
-    """Build frontend dev command without npx/corepack/download fallbacks."""
+    """Строит команду frontend без скачивающих fallback-механизмов.
+
+    Args:
+        frontend_root: Корень frontend.
+        ui_host: Хост UI.
+        ui_port: Порт UI.
+        package_manager: Выбранный package manager или ``auto``.
+
+    Returns:
+        Команда запуска frontend dev server.
+    """
 
     frontend_args = ["--port", str(ui_port), "--hostname", ui_host]
 
@@ -279,6 +422,17 @@ def _frontend_dev_command(
 
 
 def _wait_for_port(host: str, port: int, timeout_seconds: float) -> bool:
+    """Ожидает открытия TCP-порта в пределах таймаута.
+
+    Args:
+        host: Хост проверяемого сервиса.
+        port: TCP-порт сервиса.
+        timeout_seconds: Максимальное время ожидания в секундах.
+
+    Returns:
+        ``True`` при успешном подключении, иначе ``False``.
+    """
+
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -292,7 +446,17 @@ def _wait_for_port(host: str, port: int, timeout_seconds: float) -> bool:
 
 
 def _write_frontend_env(frontend_root: Path, *, agent_host: str, agent_port: int, assistant_id: str) -> None:
-    """Write runtime-only frontend config. This file points UI to local Agent Server."""
+    """Записывает runtime-конфигурацию подключения UI к Agent Server.
+
+    Args:
+        frontend_root: Корень frontend.
+        agent_host: Хост Agent Server.
+        agent_port: Порт Agent Server.
+        assistant_id: Идентификатор LangGraph assistant.
+
+    Returns:
+        ``None``.
+    """
 
     deployment_url = f"http://{agent_host}:{agent_port}"
     frontend_env_path = frontend_root / ".env.local"
@@ -309,6 +473,15 @@ def _write_frontend_env(frontend_root: Path, *, agent_host: str, agent_port: int
 
 
 def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
+    """Останавливает дочерний процесс с принудительным fallback.
+
+    Args:
+        process: Процесс для остановки или ``None``.
+
+    Returns:
+        ``None``.
+    """
+
     if process is None or process.poll() is not None:
         return
     process.terminate()
@@ -320,6 +493,12 @@ def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
 
 
 def _cleanup() -> None:
+    """Останавливает frontend и backend и очищает ссылки на процессы.
+
+    Returns:
+        ``None``.
+    """
+
     global _backend_process, _frontend_process
     _stop_process(_frontend_process)
     _stop_process(_backend_process)
@@ -328,7 +507,11 @@ def _cleanup() -> None:
 
 
 def _make_log_paths() -> tuple[Path, Path]:
-    """Create unique log files, so old locked logs do not break Windows launches."""
+    """Создаёт уникальные пути stdout/stderr логов backend.
+
+    Returns:
+        Пара путей для stdout и stderr.
+    """
 
     RUNTIME_LOGS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -340,6 +523,20 @@ def _make_log_paths() -> tuple[Path, Path]:
 
 
 def _start_services(args: argparse.Namespace, python: Path, env_values: dict[str, str]) -> int:
+    """Запускает Agent Server и frontend после локальных проверок.
+
+    Args:
+        args: Аргументы командной строки.
+        python: Путь к Python-интерпретатору.
+        env_values: Проверенные переменные из env-файла.
+
+    Returns:
+        Код завершения frontend-процесса.
+
+    Raises:
+        RuntimeError: Backend не запустился или конфигурация отсутствует.
+    """
+
     global _backend_process, _frontend_process
 
     frontend_root = args.frontend_dir.resolve()
@@ -417,6 +614,12 @@ def _start_services(args: argparse.Namespace, python: Path, env_values: dict[str
 
 
 def _parse_args() -> argparse.Namespace:
+    """Разбирает аргументы командной строки launcher-а.
+
+    Returns:
+        Пространство имён с параметрами backend и frontend.
+    """
+
     parser = argparse.ArgumentParser(
         description=(
             "Запустить локальный Deep Agents UI без установки, скачивания, "
@@ -449,6 +652,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Проверяет окружение, запускает сервисы и обрабатывает ошибки launcher-а.
+
+    Returns:
+        ``0`` или код frontend при штатном завершении, ``1`` при ошибке, ``130`` при прерывании.
+    """
+
     args = _parse_args()
     python = _resolve_python()
 

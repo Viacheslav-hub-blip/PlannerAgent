@@ -16,7 +16,7 @@
 ## Структура
 
 ```text
-resources/skills/
+skills/
   hit-table/
     SKILL.md
     fields.md

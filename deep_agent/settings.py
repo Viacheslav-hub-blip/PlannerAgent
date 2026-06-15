@@ -24,14 +24,13 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = Path(__file__).resolve().parent
-DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "resources" / "config" / "defaults.json"
+DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "defaults.json"
 CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
 REQUIRED_CONFIG_KEYS = (
     "harness_profile_key",
     "thread_id",
     "workspace_root",
     "agents_file_name",
-    "coding_tools_enabled_by_default",
     "enable_interrupts",
     "terminal_timeout",
     "terminal_max_output_bytes",
@@ -40,14 +39,14 @@ REQUIRED_CONFIG_KEYS = (
     "data_tools_factory",
     "data_tools_factory_kwargs",
     "tool_outputs_dir",
-    "max_chars_per_skill",
     "tool_output_min_rows_to_save",
     "tool_output_min_content_chars_to_save",
     "tool_output_preview_rows",
     "tool_output_inline_original_chars",
     "context_edit_trigger_tokens",
     "context_edit_keep_tool_results",
-    "max_consecutive_tool_calls",
+    "max_model_retries",
+    "max_tool_calls_per_run",
     "max_subagent_model_calls",
     "graph_recursion_limit",
     "trace_log_dir",
@@ -62,7 +61,6 @@ class DeepAgentSettings:
     thread_id: str
     workspace_root: Path
     agents_file_name: str
-    coding_tools_enabled_by_default: bool
     enable_interrupts: bool
     terminal_timeout: int
     terminal_max_output_bytes: int
@@ -71,14 +69,14 @@ class DeepAgentSettings:
     data_tools_factory: str | None
     data_tools_factory_kwargs: dict[str, Any]
     tool_outputs_dir: Path
-    max_chars_per_skill: int
     tool_output_min_rows_to_save: int
     tool_output_min_content_chars_to_save: int
     tool_output_preview_rows: int
     tool_output_inline_original_chars: int
     context_edit_trigger_tokens: int
     context_edit_keep_tool_results: int
-    max_consecutive_tool_calls: int
+    max_model_retries: int
+    max_tool_calls_per_run: int
     max_subagent_model_calls: int
     graph_recursion_limit: int
     trace_log_dir: Path
@@ -104,10 +102,6 @@ class DeepAgentSettings:
             thread_id=str(payload["thread_id"]),
             workspace_root=_resolve_project_path(payload["workspace_root"], project_root),
             agents_file_name=str(payload["agents_file_name"]).strip() or "AGENTS.md",
-            coding_tools_enabled_by_default=_bool_from_config(
-                payload,
-                "coding_tools_enabled_by_default",
-            ),
             enable_interrupts=_interrupts_enabled_from_config(payload),
             terminal_timeout=_int_from_config(payload, "terminal_timeout"),
             terminal_max_output_bytes=_int_from_config(
@@ -119,7 +113,6 @@ class DeepAgentSettings:
             data_tools_factory=_optional_str_from_config(payload, "data_tools_factory"),
             data_tools_factory_kwargs=_dict_from_config(payload, "data_tools_factory_kwargs"),
             tool_outputs_dir=_resolve_project_path(payload["tool_outputs_dir"], project_root),
-            max_chars_per_skill=_int_from_config(payload, "max_chars_per_skill"),
             tool_output_min_rows_to_save=_int_from_config(payload, "tool_output_min_rows_to_save"),
             tool_output_min_content_chars_to_save=_int_from_config(
                 payload,
@@ -129,7 +122,8 @@ class DeepAgentSettings:
             tool_output_inline_original_chars=_int_from_config(payload, "tool_output_inline_original_chars"),
             context_edit_trigger_tokens=_int_from_config(payload, "context_edit_trigger_tokens"),
             context_edit_keep_tool_results=_int_from_config(payload, "context_edit_keep_tool_results"),
-            max_consecutive_tool_calls=_int_from_config(payload, "max_consecutive_tool_calls"),
+            max_model_retries=_int_from_config(payload, "max_model_retries"),
+            max_tool_calls_per_run=_int_from_config(payload, "max_tool_calls_per_run"),
             max_subagent_model_calls=_int_from_config(payload, "max_subagent_model_calls"),
             graph_recursion_limit=_int_from_config(payload, "graph_recursion_limit"),
             trace_log_dir=_resolve_project_path(payload["trace_log_dir"], project_root),

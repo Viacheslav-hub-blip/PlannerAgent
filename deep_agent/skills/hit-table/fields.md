@@ -99,4 +99,3 @@
 - `previous_events_additional_info` - детали событий до сработки.
 - `posterious_events_additional_info` - детали событий после сработки.
 - `hits_extra_facts` - дополнительные факты сработки.
-

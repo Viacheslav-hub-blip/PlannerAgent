@@ -32,6 +32,7 @@ from deep_agent.middleware.skills_context import (
 )
 
 LOAD_SKILLS_TOOL_NAME = "load_skills"
+LOAD_SKILLS_MAX_CHARS = 12000
 
 LOAD_SKILLS_DESCRIPTION = """
 Loads selected skill content (`SKILL.md`) in one call.
@@ -134,7 +135,7 @@ def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
     """Собирает общий tool ``load_skills`` для агента с замыканием на settings."""
 
     lookup = _build_skill_lookup(settings)
-    max_chars = settings.max_chars_per_skill
+    max_chars = LOAD_SKILLS_MAX_CHARS
 
     @tool(LOAD_SKILLS_TOOL_NAME, description=LOAD_SKILLS_DESCRIPTION)
     def load_skills(
@@ -197,6 +198,7 @@ def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
 
 __all__ = [
     "LOAD_SKILLS_DESCRIPTION",
+    "LOAD_SKILLS_MAX_CHARS",
     "LOAD_SKILLS_TOOL_NAME",
     "build_load_skills_tool",
 ]

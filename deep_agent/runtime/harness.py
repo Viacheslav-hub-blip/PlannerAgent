@@ -13,6 +13,8 @@ from deepagents import (
     register_harness_profile,
 )
 
+from deep_agent.prompts.tool_contracts import TOOL_DESCRIPTION_OVERRIDES
+
 
 def build_analytics_harness_profile() -> HarnessProfile:
     """Создаёт профиль harness для аналитического coding-agent.
@@ -24,6 +26,7 @@ def build_analytics_harness_profile() -> HarnessProfile:
     """
 
     return HarnessProfile(
+        tool_description_overrides=TOOL_DESCRIPTION_OVERRIDES,
         excluded_tools=frozenset(),
         general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
     )

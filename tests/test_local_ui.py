@@ -13,18 +13,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from deepagents.backends import StateBackend
 
 from deep_agent.agent import (
     _normalize_virtual_directory,
-    build_skills_backend,
+    build_supervisor_backend,
 )
 from local_ui.example_query import load_basket_query
 from run_ui import (
     REQUIRED_FRONTEND_SDK_VERSION,
-    _frontend_dependencies_ready,
+    _validate_frontend,
 )
 
 
@@ -39,7 +38,7 @@ class LocalUiIntegrationTests(unittest.TestCase):
             ``/artifacts/`` на ``StateBackend``.
         """
 
-        backend = build_skills_backend(state_artifacts_virtual_dir="artifacts")
+        backend = build_supervisor_backend(state_artifacts_virtual_dir="artifacts")
 
         self.assertEqual(backend.artifacts_root, "/artifacts/")
         self.assertIsInstance(backend.routes["/artifacts/"], StateBackend)
@@ -113,6 +112,7 @@ class LocalUiIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             frontend_root = Path(temporary_directory)
+            (frontend_root / "package.json").write_text("{}", encoding="utf-8")
             sdk_package = (
                 frontend_root
                 / "node_modules"
@@ -126,13 +126,34 @@ class LocalUiIntegrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with patch("run_ui.FRONTEND_ROOT", frontend_root):
-                self.assertTrue(_frontend_dependencies_ready())
-                sdk_package.write_text(
-                    json.dumps({"version": "1.0.3"}),
-                    encoding="utf-8",
-                )
-                self.assertFalse(_frontend_dependencies_ready())
+            _validate_frontend(frontend_root, strict_sdk=True)
+            sdk_package.write_text(
+                json.dumps({"version": "1.0.3"}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "ожидалась"):
+                _validate_frontend(frontend_root, strict_sdk=True)
+
+    def test_offline_installer_uses_archive_and_checksum(self) -> None:
+        """Проверяет offline-установку UI без устаревшего ``--install-only``.
+
+        Returns:
+            ``None``.
+        """
+
+        project_root = Path(__file__).parents[1]
+        installer = (project_root / "local_ui" / "install.ps1").read_text(
+            encoding="utf-8"
+        )
+        readme = (project_root / "local_ui" / "README.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("--install-only", installer)
+        self.assertNotIn("--install-only", readme)
+        self.assertIn("SHA256SUMS", installer)
+        self.assertIn("Join-ArchiveParts", installer)
+        self.assertIn("deep-agents-ui-node20-linux-x86_64.tar.gz", installer)
 
 if __name__ == "__main__":
     unittest.main()

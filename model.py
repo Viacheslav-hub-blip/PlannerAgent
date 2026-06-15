@@ -1,11 +1,17 @@
 """Конфигурация моделей LangChain для локальных запусков агента.
 
 Содержит:
-- model: ChatOpenAI-клиент OpenRouter для основного research-agent.
-- embeddings: OpenAIEmbeddings-клиент OpenRouter для эмбеддингов.
-- gigachat: GigaChat-клиент для ручных экспериментов.
+- model: ChatOpenAI-клиент основного агента.
+- embeddings: OpenAIEmbeddings-клиент для эмбеддингов.
+- gigachat: опциональный GigaChat-клиент для ручных экспериментов.
+- _build_optional_gigachat: сборка GigaChat только при наличии credentials в окружении.
 - get_answer: простой helper для вызова prompt-template через выбранную модель.
 """
+
+from __future__ import annotations
+
+import os
+from typing import Any
 
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -13,57 +19,53 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_gigachat import GigaChat
 
-from deep_agent.middleware.model_errors import MODEL_MAX_RETRIES
-
 model = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    # api_key="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",
-    api_key="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",
-    # model="deepseek/deepseek-v4-pro",
-    #model="nvidia/nemotron-3-super-120b-a12b",
-    #model="qwen/qwen3.5-35b-a3b",
-    # google/gemini-3-pro-preview
-    #model="google/gemini-2.5-flash",
-    #model="z-ai/glm-5",
-    #model="openai/gpt-oss-120b",
-    model="deepseek/deepseek-v4-flash",
-    #model="google/gemini-2.5-flash-lite",
-    #model="tencent/hy3-preview",
-    # model="kwaipilot/kat-coder-pro:free",
-    temperature=0.2,
-    timeout=120,
-    max_retries=MODEL_MAX_RETRIES,
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+    model=os.environ.get("DEEP_AGENT_MODEL", "deepseek/deepseek-v4-flash"),
+    temperature=float(os.environ.get("DEEP_AGENT_TEMPERATURE", "0.2")),
+    timeout=float(os.environ.get("DEEP_AGENT_TIMEOUT", "120")),
+    max_retries=int(os.environ.get("DEEP_AGENT_MAX_RETRIES", "0")),
 )
 
 embeddings = OpenAIEmbeddings(
-    # 1. Меняем базовый URL на OpenRouter
-    base_url="https://openrouter.ai/api/v1",
-
-    # 2. Передаем ключ OpenRouter
-    api_key="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",
-
-    # 3. Указываем модель (OpenRouter требует указывать провайдера, например 'openai/')
-    model="openai/text-embedding-3-small",
-
-    # Опционально: отключаем проверку SSL, если возникают странные ошибки сети
-    # check_embeddings=True
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+    model=os.environ.get("DEEP_AGENT_EMBEDDING_MODEL", "openai/text-embedding-3-small"),
 )
 
 
-gigachat  = GigaChat(
-    credentials="ZTk3ZjdmYjMtNmMwOC00NGE1LTk0MzktYzA3ZjU4Yzc2YWI3OmY5YmQwYjEzLTE0MDctNGNhOC1iYmViLTA1YjlkNTk3OTA0Yg==",
-    model="GigaChat-2-Max",
-    verify_ssl_certs=False,
-)
+def _build_optional_gigachat() -> GigaChat | None:
+    """Создаёт GigaChat-клиент при наличии credentials в окружении.
 
-""
+    Returns:
+        Настроенный ``GigaChat`` или ``None``, если ``GIGACHAT_CREDENTIALS`` не задан.
+    """
 
-def get_answer(prompt: str, model, prompt_params: dict = None) -> str:
+    credentials = os.environ.get("GIGACHAT_CREDENTIALS")
+    if not credentials:
+        return None
+    return GigaChat(
+        credentials=credentials,
+        model=os.environ.get("GIGACHAT_MODEL", "GigaChat-2-Max"),
+        verify_ssl_certs=os.environ.get("GIGACHAT_VERIFY_SSL_CERTS", "true").lower()
+        not in {"0", "false", "no"},
+    )
+
+
+gigachat = _build_optional_gigachat()
+
+
+def get_answer(
+    prompt: str,
+    chat_model: Any,
+    prompt_params: dict[str, Any] | None = None,
+) -> str:
     """Возвращает текстовый ответ модели на prompt-template.
 
     Args:
         prompt: Шаблон пользовательского или системного prompt.
-        model: LangChain chat model, через которую выполняется запрос.
+        chat_model: LangChain chat model, через которую выполняется запрос.
         prompt_params: Параметры для подстановки в шаблон prompt.
 
     Returns:
@@ -72,9 +74,11 @@ def get_answer(prompt: str, model, prompt_params: dict = None) -> str:
 
     if prompt_params is None:
         prompt_params = {}
-    chain = ChatPromptTemplate.from_template(prompt) | model | StrOutputParser()
+    chain = ChatPromptTemplate.from_template(prompt) | chat_model | StrOutputParser()
     return chain.invoke(prompt_params)
 
 
 if __name__ == "__main__":
+    if gigachat is None:
+        raise RuntimeError("Для ручного запуска задайте GIGACHAT_CREDENTIALS.")
     print(gigachat.invoke("hi"))

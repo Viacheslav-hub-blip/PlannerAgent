@@ -6,11 +6,11 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 Как редактировать/кастомизировать (подробности — в ``README.md``):
 - Данные: передай свои ``data_tools=[...]`` в :func:`build_analytics_deep_agent` или укажи
-  ``data_tools_factory`` в конфиге (``resources/config/defaults.json`` / override через
+  ``data_tools_factory`` в конфиге (``config/defaults.json`` / override через
   ``DEEP_AGENT_CONFIG_PATH``).
-- Конфиг и пороги: ключи в ``resources/config/defaults.json`` (offload, skills, лимиты).
+- Конфиг и пороги: ключи в ``config/defaults.json`` (offload, skills, лимиты).
 - Поведение supervisor/subagent: правь тематические модули в ``prompts`` без доменной логики.
-- Доменные знания: добавляй/редактируй ``resources/skills/<name>/SKILL.md`` — менять код не нужно.
+- Доменные знания: добавляй/редактируй ``skills/<name>/SKILL.md`` — менять код не нужно.
 - Новые subagents: добавь отдельный модуль в ``subagents`` и зарегистрируй его в ``registry.py``.
 
 Служебные функции:
@@ -18,7 +18,8 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _load_callable_from_path: импорт callable по строковому пути.
 - _normalize_data_tools: проверка и нормализация списка инструментов.
 - build_analytics_deep_agent: сборка supervisor и subagents.
-- build_skills_backend: сборка workspace backend для файлов, terminal, skills и tool outputs.
+- build_skills_backend: сборка workspace backend для coding-agent.
+- build_supervisor_backend: сборка backend без shell для supervisor и data-agent.
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
@@ -42,22 +43,18 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents import SubAgentMiddleware, create_deep_agent
+from deepagents import FilesystemPermission, create_deep_agent
+from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
     ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+    ToolCallLimitMiddleware,
 )
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 
-from deep_agent.capabilities import (
-    BASE_SUPERVISOR_TOOL_NAMES,
-    CODE_WORKSPACE_TOOL_NAMES,
-    DATA_RETRIEVAL_TOOL_NAMES,
-    GENERAL_PURPOSE_BASE_TOOL_NAMES,
-    SUPERVISOR_SKILL_TOOL_GRANTS,
-)
 from deep_agent.runtime.harness import register_analytics_harness_profile
 from deep_agent.runtime.python_sandbox import build_python_sandbox
 from deep_agent.subagents.registry import build_subagent_specs
@@ -67,24 +64,15 @@ from deep_agent.runtime.filesystem import (
 )
 from deep_agent.tools.data_result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
-from deep_agent.tools.skill_loader import build_load_skills_tool
-from deep_agent.prompts.skills import (
-    DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-)
 from deep_agent.prompts.coding import GENERAL_PURPOSE_CODING_PROMPT
+from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
-from deep_agent.prompts.tool_contracts import (
-    TOOL_DESCRIPTION_OVERRIDES,
-)
 from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
-from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
-from deep_agent.middleware.model_errors import build_model_error_middleware
-from deep_agent.middleware.todo_reset import TodoResetMiddleware
-from deep_agent.middleware.tool_loop_guard import ToolLoopGuardMiddleware
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
-from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
-from deep_agent.middleware.tool_visibility import ToolVisibilityMiddleware
+from deep_agent.middleware.model_errors import (
+    format_model_error,
+    is_retryable_model_error,
+)
 
 _DEFAULT_CHECKPOINTER = object()
 
@@ -97,7 +85,7 @@ def build_data_tools(settings: DeepAgentSettings | None = None) -> list[BaseTool
         raise ValueError(
             "Не настроена фабрика tools чтения данных. "
             "Передайте data_tools в build_analytics_deep_agent или укажите "
-            "data_tools_factory в deep_agent/resources/config/defaults.json или override-конфиге."
+            "data_tools_factory в deep_agent/config/defaults.json или override-конфиге."
         )
     factory = _load_callable_from_path(settings.data_tools_factory)
     return _normalize_data_tools(factory(**settings.data_tools_factory_kwargs))
@@ -152,24 +140,25 @@ def build_analytics_deep_agent(
 
     Это главная точка сборки агента. Сборка нативная для DeepAgents: supervisor получает
     встроенные tools (`write_todos`, `task`, filesystem, `execute`), custom tools
-    `execute_python_code` и `load_skills`, project memory из ``AGENTS.md`` и два
+    `execute_python_code`, project memory из ``AGENTS.md`` и два
     специализированных subagents.
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
 
-    1. Settings — все пороги и пути. Кастомизация: `resources/config/defaults.json`, override-файл
+    1. Settings — все пороги и пути. Кастомизация: `config/defaults.json`, override-файл
        через env `DEEP_AGENT_CONFIG_PATH`, либо готовый ``settings`` в аргументе.
     2. Data tools — инструменты чтения данных (`load_data`). Кастомизация: передай свои
        ``BaseTool`` в ``data_tools`` или укажи фабрику в ``data_tools_factory`` конфига.
-    3. Middleware — два custom-механизма (принудительная загрузка skills, offload больших
-       tool outputs в pickle) плюс нативные/кастомные middleware:
+    3. Middleware — project-specific offload больших tool outputs в pickle плюс
+       встроенные middleware LangChain/Deep Agents:
        ContextEditingMiddleware (очистка старых tool-результатов при лимите токенов),
-       ToolLoopGuardMiddleware (защита от зацикливания на повторных вызовах tool),
+       ToolCallLimitMiddleware (общий бюджет вызовов tools),
+       ModelRetryMiddleware (повторы ошибок модели),
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
     4. Backend — workspace с terminal, skills и spill-файлами.
     5. Subagents — `general-purpose` для coding и `data-retrieval-agent` для таблиц.
-    6. Custom tools supervisor — `execute_python_code` (расчёты, чтение `.pkl`) и `load_skills` (пакетная загрузка skills).
+    6. Custom tool supervisor — `execute_python_code` для расчётов и чтения `.pkl`.
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
@@ -204,40 +193,9 @@ def build_analytics_deep_agent(
         data_tools = build_data_tools(settings)
     data_tools = wrap_data_tools_with_query_code(data_tools)
 
-    # Шаг 3. Два custom middleware.
-    # 3a. Принудительная загрузка skills. Supervisor через LLM выбирает релевантные skills
-    #     по запросу и кладёт их контент в system prompt до первого хода модели, кэшируя
-    #     выбор в общий словарь. Субагенты переиспользуют этот же выбор (тот же набор
-    #     skills, без повторного LLM-вызова и дублей в контексте).
-    shared_skills_selection: dict[str, Any] = {}
-    supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
-        skills_root=settings.skills_root,
-        skills_virtual_dir=settings.skills_virtual_dir,
-        max_chars_per_file=settings.max_chars_per_skill,
-        model=model,
-        select_skills=True,
-        shared_selection=shared_skills_selection,
-        prompt_template=SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    )
-    subagent_skills_middleware = PreloadedSkillsContextMiddleware(
-        skills_root=settings.skills_root,
-        skills_virtual_dir=settings.skills_virtual_dir,
-        max_chars_per_file=settings.max_chars_per_skill,
-        model=model,
-        select_skills=False,
-        shared_selection=shared_skills_selection,
-        prompt_template=DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    )
-    general_purpose_skills_middleware = PreloadedSkillsContextMiddleware(
-        skills_root=settings.skills_root,
-        skills_virtual_dir=settings.skills_virtual_dir,
-        max_chars_per_file=settings.max_chars_per_skill,
-        model=model,
-        select_skills=False,
-        shared_selection=shared_skills_selection,
-        prompt_template=SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    )
-    # 3b. Offload больших табличных tool outputs в pickle, чтобы не раздувать контекст.
+    # Шаг 3. Единственный project-specific middleware сохраняет табличные результаты
+    # в pickle. Skills, retries, limits, filesystem, memory, HITL и subagents собираются
+    # штатными middleware LangChain/Deep Agents.
     tool_output_file_middleware = ToolOutputFileMiddleware(
         output_dir=session_tool_outputs_dir,
         min_rows_to_save=settings.tool_output_min_rows_to_save,
@@ -245,80 +203,16 @@ def build_analytics_deep_agent(
         preview_rows=settings.tool_output_preview_rows,
         inline_original_content_chars=settings.tool_output_inline_original_chars,
     )
-    # 3c. Context editing: очищает старые tool-результаты при достижении лимита токенов,
-    #     оставляя последние N (дополняет offload, держит контекст компактным).
-    context_editing_middleware = ContextEditingMiddleware(
-        edits=[
-            ClearToolUsesEdit(
-                trigger=settings.context_edit_trigger_tokens,
-                keep=settings.context_edit_keep_tool_results,
-            )
-        ]
-    )
-    # 3d. Loop guard: блокирует серию подряд идущих вызовов одного tool после N повторов
-    #     и просит модель сменить подход или завершить шаг (защита от зацикливания).
-    tool_loop_guard_middleware = ToolLoopGuardMiddleware(
-        max_consecutive_tool_calls=settings.max_consecutive_tool_calls,
-    )
-    model_error_middleware = build_model_error_middleware()
-    # 3e. Prompt-only переопределение descriptions встроенных tools.
-    supervisor_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
-        tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
-    )
-    subagent_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
-        tool_descriptions=TOOL_DESCRIPTION_OVERRIDES,
-    )
-    general_purpose_tool_descriptions_middleware = PromptToolDescriptionsMiddleware(
-        tool_descriptions={
-            name: description
-            for name, description in TOOL_DESCRIPTION_OVERRIDES.items()
-            if name != "task"
-        },
-    )
-    # 3f. Бюджет шагов субагента: нативный ModelCallLimitMiddleware ограничивает число
-    #     ходов модели внутри одного запуска data-retrieval-agent. По исчерпании лимита
-    #     (exit_behavior="end") субагент мягко завершается и возвращает supervisor-у то,
-    #     что уже собрал, вместо упора в recursion limit графа.
-    subagent_step_limit_middleware = ModelCallLimitMiddleware(
-        run_limit=settings.max_subagent_model_calls,
-        exit_behavior="end",
-    )
-    # Общие runtime middleware без agent-specific prompt scope.
-    base_middleware = [
-        model_error_middleware,
-        tool_output_file_middleware,
-        context_editing_middleware,
-        tool_loop_guard_middleware,
-    ]
-    # Supervisor выбирает skills; data-retrieval-agent переиспользует тот же выбор и ограничен
-    # бюджетом шагов на запуск.
-    supervisor_base_tools = BASE_SUPERVISOR_TOOL_NAMES
-    if settings.coding_tools_enabled_by_default:
-        supervisor_base_tools = supervisor_base_tools | CODE_WORKSPACE_TOOL_NAMES
-
-    supervisor_middleware = [
-        TodoResetMiddleware(),
-        supervisor_skills_middleware,
-        ToolVisibilityMiddleware(
-            allowed_tools=supervisor_base_tools,
-            skill_tool_grants=SUPERVISOR_SKILL_TOOL_GRANTS,
-        ),
-        *base_middleware,
-        supervisor_tool_descriptions_middleware,
-    ]
-    subagent_middleware = [
-        subagent_skills_middleware,
-        ToolVisibilityMiddleware(allowed_tools=DATA_RETRIEVAL_TOOL_NAMES),
-        *base_middleware,
-        subagent_tool_descriptions_middleware,
-        subagent_step_limit_middleware,
-    ]
-    # Workspace backend и дополнительные tools нужны для сборки вложенного general-purpose worker.
-    backend = build_skills_backend(
+    supervisor_backend = build_supervisor_backend(
         settings,
         tool_outputs_dir=session_tool_outputs_dir,
         workspace_root=resolved_workspace_root,
         state_artifacts_virtual_dir=state_artifacts_virtual_dir,
+    )
+    workspace_backend = build_skills_backend(
+        settings,
+        tool_outputs_dir=session_tool_outputs_dir,
+        workspace_root=resolved_workspace_root,
     )
     python_sandbox = build_python_sandbox(
         settings,
@@ -326,59 +220,51 @@ def build_analytics_deep_agent(
         workspace_root=resolved_workspace_root,
     )
     python_tool = build_execute_python_code_tool(python_sandbox)
-    load_skills_tool = build_load_skills_tool(settings)
     file_edit_interrupts = _build_file_edit_interrupts(settings)
+    shared_permissions = _build_shared_backend_permissions(settings)
 
-    general_purpose_worker_middleware = [
-        general_purpose_skills_middleware,
-        ToolVisibilityMiddleware(
-            allowed_tools=GENERAL_PURPOSE_BASE_TOOL_NAMES - {"task"},
-        ),
-        *base_middleware,
-        general_purpose_tool_descriptions_middleware,
-        subagent_step_limit_middleware,
-    ]
-    general_purpose_worker = create_deep_agent(
+    coding_agent = create_deep_agent(
         model=model,
-        tools=[python_tool, load_skills_tool],
+        tools=[python_tool],
         system_prompt=GENERAL_PURPOSE_CODING_PROMPT,
         skills=[settings.skills_virtual_dir],
-        backend=backend,
-        middleware=general_purpose_worker_middleware,
+        backend=workspace_backend,
+        middleware=_build_native_runtime_middleware(
+            settings,
+            tool_output_file_middleware,
+            limit_model_calls=True,
+        ),
         memory=[_agents_memory_path(settings.agents_file_name)],
-        interrupt_on=file_edit_interrupts,
-        name="general-purpose-worker",
-    )
-    general_purpose_task_middleware = SubAgentMiddleware(
-        backend=backend,
-        subagents=[
-            {
-                "name": "general-purpose-worker",
-                "description": (
-                    "Выполняет независимую задачу по поиску, чтению, изменению файлов "
-                    "или запуску локальных проверок без доступа к load_data."
-                ),
-                "runnable": general_purpose_worker,
-            }
+        permissions=[
+            FilesystemPermission(
+                operations=["write"],
+                paths=[f"{settings.skills_virtual_dir.rstrip('/')}/**"],
+                mode="deny",
+            )
         ],
+        interrupt_on=file_edit_interrupts,
+        name="general-purpose",
     )
-    general_purpose_middleware = [
-        general_purpose_skills_middleware,
-        general_purpose_task_middleware,
-        ToolVisibilityMiddleware(allowed_tools=GENERAL_PURPOSE_BASE_TOOL_NAMES),
-        *base_middleware,
-        general_purpose_tool_descriptions_middleware,
-        subagent_step_limit_middleware,
-    ]
-
-    # Шаг 4. Сборка subagents.
-    subagents = build_subagent_specs(
-        data_tools=[*data_tools, python_tool, load_skills_tool],
-        general_purpose_tools=[python_tool, load_skills_tool],
-        data_retrieval_middleware=subagent_middleware,
-        coding_middleware=general_purpose_middleware,
+    data_retrieval_agent = create_deep_agent(
         model=model,
-        skill_sources=[settings.skills_virtual_dir],
+        tools=[*data_tools, python_tool],
+        system_prompt=DATA_RETRIEVAL_PROMPT,
+        skills=[settings.skills_virtual_dir],
+        backend=supervisor_backend,
+        middleware=_build_native_runtime_middleware(
+            settings,
+            tool_output_file_middleware,
+            limit_model_calls=True,
+        ),
+        memory=[_supervisor_memory_path(settings.agents_file_name)],
+        permissions=shared_permissions,
+        name="data-retrieval-agent",
+    )
+
+    # Шаг 4. Сборка изолированных compiled subagents.
+    subagents = build_subagent_specs(
+        coding_agent=coding_agent,
+        data_retrieval_agent=data_retrieval_agent,
     )
 
     # Шаг 6. Финальная сборка DeepAgents supervisor.
@@ -388,13 +274,18 @@ def build_analytics_deep_agent(
 
     agent = create_deep_agent(
         model=model,
-        tools=[python_tool, load_skills_tool],
+        tools=[python_tool],
         system_prompt=system_prompt,
         subagents=subagents,
         skills=[settings.skills_virtual_dir],
-        backend=backend,
-        middleware=supervisor_middleware,
-        memory=[_agents_memory_path(settings.agents_file_name)],
+        backend=supervisor_backend,
+        middleware=_build_native_runtime_middleware(
+            settings,
+            tool_output_file_middleware,
+            limit_model_calls=False,
+        ),
+        memory=[_supervisor_memory_path(settings.agents_file_name)],
+        permissions=shared_permissions,
         interrupt_on=file_edit_interrupts,
         checkpointer=(
             build_conversation_checkpointer()
@@ -404,6 +295,53 @@ def build_analytics_deep_agent(
     )
     register_session_tool_outputs_cleanup(agent, session_tool_outputs_dir)
     return agent
+
+
+def _build_native_runtime_middleware(
+    settings: DeepAgentSettings,
+    tool_output_file_middleware: ToolOutputFileMiddleware,
+    *,
+    limit_model_calls: bool,
+) -> list[Any]:
+    """Собирает runtime middleware из публичных реализаций LangChain.
+
+    Args:
+        settings: Настройки лимитов и управления контекстом.
+        tool_output_file_middleware: Единственный project-specific middleware.
+        limit_model_calls: Нужно ли ограничивать число model calls для subagent.
+
+    Returns:
+        Список middleware для передачи в ``create_deep_agent``.
+    """
+
+    middleware: list[Any] = [
+        ModelRetryMiddleware(
+            max_retries=settings.max_model_retries,
+            retry_on=is_retryable_model_error,
+            on_failure=format_model_error,
+        ),
+        tool_output_file_middleware,
+        ContextEditingMiddleware(
+            edits=[
+                ClearToolUsesEdit(
+                    trigger=settings.context_edit_trigger_tokens,
+                    keep=settings.context_edit_keep_tool_results,
+                )
+            ]
+        ),
+        ToolCallLimitMiddleware(
+            run_limit=settings.max_tool_calls_per_run,
+            exit_behavior="continue",
+        ),
+    ]
+    if limit_model_calls:
+        middleware.append(
+            ModelCallLimitMiddleware(
+                run_limit=settings.max_subagent_model_calls,
+                exit_behavior="end",
+            )
+        )
+    return middleware
 
 
 def build_skills_backend(
@@ -425,8 +363,6 @@ def build_skills_backend(
     Returns:
         ``CompositeBackend`` с terminal в workspace и маршрутами skills/tool outputs/artifacts.
     """
-
-    from deepagents.backends import CompositeBackend, StateBackend
 
     settings = settings or load_deep_agent_settings()
     resolved_workspace_root = _resolve_workspace_root(
@@ -461,6 +397,81 @@ def build_skills_backend(
         routes=routes,
         artifacts_root=artifacts_root,
     )
+
+
+def build_supervisor_backend(
+    settings: DeepAgentSettings | None = None,
+    tool_outputs_dir: Path | None = None,
+    workspace_root: str | Path | None = None,
+    state_artifacts_virtual_dir: str | None = None,
+) -> Any:
+    """Собирает backend supervisor без доступа к shell и workspace tools.
+
+    Args:
+        settings: Настройки агента; если ``None``, загружаются defaults.
+        tool_outputs_dir: Папка pickle-результатов текущей сессии.
+        workspace_root: Корень проекта для read-only project memory.
+        state_artifacts_virtual_dir: Виртуальная директория UI-артефактов.
+
+    Returns:
+        ``CompositeBackend`` со state filesystem, skills, tool outputs и project memory.
+    """
+
+    settings = settings or load_deep_agent_settings()
+    resolved_workspace_root = _resolve_workspace_root(
+        workspace_root or settings.workspace_root
+    )
+    resolved_tool_outputs_dir = tool_outputs_dir or settings.tool_outputs_dir
+    routes: dict[str, Any] = {
+        settings.skills_virtual_dir: Utf8FilesystemBackend(
+            root_dir=settings.skills_root,
+            virtual_mode=True,
+        ),
+        "/tool_outputs/": Utf8FilesystemBackend(
+            root_dir=resolved_tool_outputs_dir,
+            virtual_mode=True,
+        ),
+        "/project_memory/": Utf8FilesystemBackend(
+            root_dir=resolved_workspace_root,
+            virtual_mode=True,
+        ),
+    }
+    artifacts_root = "/"
+    if state_artifacts_virtual_dir:
+        artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
+        routes[artifacts_root] = StateBackend()
+
+    return CompositeBackend(
+        default=StateBackend(),
+        routes=routes,
+        artifacts_root=artifacts_root,
+    )
+
+
+def _build_shared_backend_permissions(
+    settings: DeepAgentSettings,
+) -> list[FilesystemPermission]:
+    """Запрещает supervisor и data-agent изменять skills и project memory.
+
+    Args:
+        settings: Настройки виртуального пути skills.
+
+    Returns:
+        Декларативные permissions встроенного ``FilesystemMiddleware``.
+    """
+
+    return [
+        FilesystemPermission(
+            operations=["write"],
+            paths=[f"{settings.skills_virtual_dir.rstrip('/')}/**"],
+            mode="deny",
+        ),
+        FilesystemPermission(
+            operations=["read", "write"],
+            paths=["/project_memory/**"],
+            mode="deny",
+        ),
+    ]
 
 
 def _normalize_virtual_directory(value: str) -> str:
@@ -588,6 +599,19 @@ def _agents_memory_path(file_name: str) -> str:
     return f"/{normalized}"
 
 
+def _supervisor_memory_path(file_name: str) -> str:
+    """Возвращает путь project memory в backend без workspace-доступа.
+
+    Args:
+        file_name: Имя или относительный путь project memory.
+
+    Returns:
+        Виртуальный путь внутри read-only route ``/project_memory/``.
+    """
+
+    return f"/project_memory{_agents_memory_path(file_name)}"
+
+
 def create_session_tool_outputs_dir(base_dir: Path) -> Path:
     """Создаёт отдельную папку tool outputs для одного запуска агента.
 
@@ -643,6 +667,7 @@ __all__ = [
     "build_conversation_checkpointer",
     "build_data_tools",
     "build_skills_backend",
+    "build_supervisor_backend",
     "cleanup_session_tool_outputs_dir",
     "create_session_tool_outputs_dir",
     "register_session_tool_outputs_cleanup",

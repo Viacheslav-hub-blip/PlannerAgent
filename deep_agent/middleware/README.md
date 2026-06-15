@@ -1,5 +1,8 @@
 # Middleware
 
-LangChain middleware для загрузки skills, контроля доступных tools, защиты от
-циклов и сохранения крупных результатов. Новый middleware добавляется отдельным
-модулем и подключается в `deep_agent/agent.py`.
+Project-specific код middleware используется для записи полных табличных результатов
+в pickle (`ToolOutputFileMiddleware`) и безопасного форматирования финальных ошибок
+провайдера (`model_errors.py`).
+
+Skills, retries, tool/model limits, filesystem, memory, HITL, planning и subagents
+предоставляются встроенными middleware LangChain и Deep Agents.

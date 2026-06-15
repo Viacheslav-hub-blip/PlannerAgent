@@ -747,7 +747,7 @@ def write_trainable_skill(skill_content: str, rollout_dir: Path) -> Path:
         Путь к временной папке skills.
     """
 
-    source_root = ROOT / "deep_agent" / "resources" / "skills"
+    source_root = ROOT / "deep_agent" / "skills"
     skills_root = rollout_dir / "skills"
     if skills_root.exists():
         shutil.rmtree(skills_root)

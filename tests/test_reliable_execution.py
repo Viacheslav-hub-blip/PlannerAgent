@@ -16,14 +16,23 @@ from types import SimpleNamespace
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.agents.middleware import (
+    ModelCallLimitMiddleware,
+    ModelRetryMiddleware,
+    ToolCallLimitMiddleware,
+)
+from deepagents.backends import StateBackend
 from deepagents.middleware.memory import MemoryMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.agent import (
     _agents_memory_path,
     _build_file_edit_interrupts,
+    _build_native_runtime_middleware,
+    _supervisor_memory_path,
     build_conversation_checkpointer,
     build_skills_backend,
+    build_supervisor_backend,
 )
 from deep_agent.capabilities import (
     BASE_SUPERVISOR_TOOL_NAMES,
@@ -46,6 +55,7 @@ from deep_agent.prompts.tool_contracts import (
 )
 from deep_agent.settings import load_deep_agent_settings
 from deep_agent.runtime.filesystem import Utf8LocalShellBackend
+from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
 from deep_agent.subagents.registry import build_subagent_specs
 from deep_agent.middleware.skills_context import (
     SelectedSkillPaths,
@@ -389,37 +399,19 @@ class ReliableExecutionTests(unittest.TestCase):
     def test_subagent_specs_include_coding_and_data_agents(self) -> None:
         """Сборка должна явно добавлять general-purpose и data-retrieval-agent."""
 
-        load_skills_tool = {"name": "load_skills"}
-        python_tool = {"name": "execute_python_code"}
+        coding_agent = object()
+        data_retrieval_agent = object()
         specs = build_subagent_specs(
-            data_tools=[load_skills_tool],
-            general_purpose_tools=[python_tool, load_skills_tool],
-            data_retrieval_middleware=[],
-            coding_middleware=[],
-            model=object(),
-            skill_sources=["/skills/"],
+            coding_agent=coding_agent,
+            data_retrieval_agent=data_retrieval_agent,
         )
 
         self.assertEqual(
             [spec["name"] for spec in specs],
             ["general-purpose", "data-retrieval-agent"],
         )
-        self.assertIn(python_tool, specs[0]["tools"])
-        self.assertIn(load_skills_tool, specs[0]["tools"])
-        self.assertIn(load_skills_tool, specs[1]["tools"])
-        self.assertEqual(specs[0]["skills"], ["/skills/"])
-        self.assertEqual(specs[1]["skills"], ["/skills/"])
-        self.assertTrue(
-            {
-                "task",
-                "write_todos",
-                "execute_python_code",
-                "load_skills",
-                *CODE_WORKSPACE_TOOL_NAMES,
-            }.issubset(GENERAL_PURPOSE_BASE_TOOL_NAMES)
-        )
-        self.assertNotIn("load_data", GENERAL_PURPOSE_BASE_TOOL_NAMES)
-        self.assertIn("load_skills", DATA_RETRIEVAL_TOOL_NAMES)
+        self.assertIs(specs[0]["runnable"], coding_agent)
+        self.assertIs(specs[1]["runnable"], data_retrieval_agent)
 
     def test_code_workspace_skill_grants_filesystem_and_terminal_tools(self) -> None:
         """Skill code-workspace должен динамически расширять allowlist supervisor."""
@@ -461,6 +453,41 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIsInstance(backend.default, Utf8LocalShellBackend)
         self.assertEqual(backend.default.cwd, workspace.resolve())
         self.assertNotIn("OPENAI_API_KEY", backend.default._env)
+
+    def test_supervisor_backend_has_no_shell_access(self) -> None:
+        """Проверяет изоляцию supervisor и data-agent от shell.
+
+        Returns:
+            ``None``.
+        """
+
+        settings = load_deep_agent_settings()
+        backend = build_supervisor_backend(settings)
+
+        self.assertIsInstance(backend.default, StateBackend)
+        self.assertIn("/skills/", backend.routes)
+        self.assertEqual(
+            _supervisor_memory_path(settings.agents_file_name),
+            "/project_memory/AGENTS.md",
+        )
+
+    def test_runtime_uses_native_langchain_limits_and_retries(self) -> None:
+        """Проверяет встроенные retry и execution limits LangChain.
+
+        Returns:
+            ``None``.
+        """
+
+        settings = load_deep_agent_settings()
+        middleware = _build_native_runtime_middleware(
+            settings,
+            ToolOutputFileMiddleware(output_dir=settings.tool_outputs_dir),
+            limit_model_calls=True,
+        )
+
+        self.assertTrue(any(isinstance(item, ModelRetryMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, ToolCallLimitMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, ModelCallLimitMiddleware) for item in middleware))
 
     def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
         """HITL должен применяться только к write_file и edit_file."""

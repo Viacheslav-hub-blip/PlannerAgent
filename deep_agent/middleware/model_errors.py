@@ -2,22 +2,23 @@
 
 Содержит функции:
 - is_retryable_model_error: определение ошибок, для которых допустим повторный вызов.
-- format_model_error: формирование безопасного сообщения пользователю после неудачных попыток.
+- format_model_error: формирование сообщения пользователю после неудачных попыток.
+- _format_error_details: формирование технического блока ошибки.
+- _redact_sensitive_data: маскирование секретов в тексте исключения.
 
-Содержит классы:
-- ModelErrorMiddleware: преобразование окончательной ошибки провайдера в AI-сообщение.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import re
 
-from langchain.agents.middleware import AgentMiddleware
-from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage
-from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAIError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
-MODEL_MAX_RETRIES = 5
+SECRET_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b"),
+    re.compile(r"(?i)(api[_-]?key[\"'=:\s]+)[^,\s}\"']+"),
+    re.compile(r"(?i)(/keys/)[A-Za-z0-9_-]{12,}"),
+)
 
 
 def is_retryable_model_error(error: Exception) -> bool:
@@ -39,112 +40,94 @@ def is_retryable_model_error(error: Exception) -> bool:
 
 
 def format_model_error(error: Exception) -> str:
-    """Формирует безопасное сообщение о недоступности модели.
+    """Формирует пользовательское сообщение с техническими деталями ошибки.
 
     Args:
         error: Последнее исключение после завершения повторных попыток.
 
     Returns:
-        Русскоязычное сообщение для пользователя без технических деталей и секретов.
+        Русскоязычное пояснение и очищенный технический блок ошибки.
     """
 
     if isinstance(error, (APIConnectionError, APITimeoutError)):
-        return (
+        summary = (
             "Не удалось подключиться к модели после нескольких попыток. "
             "Проверьте соединение и повторите запрос позже."
         )
-
-    if isinstance(error, APIStatusError):
+    elif isinstance(error, APIStatusError):
         status_code = error.status_code
         if status_code in {401, 403}:
-            return (
+            summary = (
                 "Провайдер модели отклонил авторизацию. "
                 "Проверьте настройки доступа к модели."
             )
-        if status_code == 402:
-            return (
+        elif status_code == 402:
+            summary = (
                 "Провайдер модели отклонил запрос из-за ограничений аккаунта. "
                 "Проверьте доступность выбранной модели у провайдера."
             )
-        if status_code == 429:
-            return (
+        elif status_code == 429:
+            summary = (
                 "Модель временно перегружена. Выполнено несколько повторных попыток, "
                 "но провайдер по-прежнему не принимает запрос. Повторите позже."
             )
-        if status_code >= 500:
-            return (
+        elif status_code >= 500:
+            summary = (
                 "Провайдер модели временно недоступен. Выполнено несколько повторных "
                 "попыток. Повторите запрос позже."
             )
-
-    return (
-        "Не удалось получить ответ модели. Запрос завершён с ошибкой; "
-        "попробуйте повторить его позже."
-    )
-
-
-class ModelErrorMiddleware(AgentMiddleware):
-    """Преобразует окончательную ошибку OpenAI-совместимого провайдера в ответ.
-
-    Повторы выполняются самим клиентом ``ChatOpenAI``. Middleware вызывается после
-    исчерпания попыток и не перехватывает ошибки программирования вне OpenAI SDK.
-    """
-
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        """Синхронно обрабатывает окончательную ошибку модели.
-
-        Args:
-            request: Запрос LangChain к модели.
-            handler: Следующий обработчик model call.
-
-        Returns:
-            Ответ модели либо безопасное AI-сообщение об ошибке провайдера.
-        """
-
-        try:
-            return handler(request)
-        except OpenAIError as error:
-            return ModelResponse(result=[AIMessage(content=format_model_error(error))])
-
-    async def awrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
-        """Асинхронно обрабатывает окончательную ошибку модели.
-
-        Args:
-            request: Запрос LangChain к модели.
-            handler: Следующий асинхронный обработчик model call.
-
-        Returns:
-            Ответ модели либо безопасное AI-сообщение об ошибке провайдера.
-        """
-
-        try:
-            return await handler(request)
-        except OpenAIError as error:
-            return ModelResponse(result=[AIMessage(content=format_model_error(error))])
+        else:
+            summary = (
+                "Не удалось получить ответ модели. Провайдер отклонил запрос; "
+                "проверьте технические детали ниже."
+            )
+    else:
+        summary = (
+            "Не удалось получить ответ модели. Запрос завершён с ошибкой; "
+            "попробуйте повторить его позже."
+        )
+    return f"{summary}\n\n{_format_error_details(error)}"
 
 
-def build_model_error_middleware() -> ModelErrorMiddleware:
-    """Собирает middleware окончательной ошибки модели.
+def _format_error_details(error: Exception) -> str:
+    """Формирует технический блок ошибки для отображения в чате.
+
+    Args:
+        error: Исключение провайдера модели.
 
     Returns:
-        Настроенный ``ModelErrorMiddleware``.
+        Markdown-блок с типом, HTTP-кодом и очищенным текстом исключения.
     """
 
-    return ModelErrorMiddleware()
+    lines = [f"- Тип: `{type(error).__name__}`"]
+    if isinstance(error, APIStatusError):
+        lines.append(f"- HTTP-код: `{error.status_code}`")
+    lines.append(f"- Сообщение: `{_redact_sensitive_data(str(error))}`")
+    return "**Технические детали**\n\n" + "\n".join(lines)
+
+
+def _redact_sensitive_data(value: str) -> str:
+    """Маскирует секреты и чувствительные идентификаторы в тексте ошибки.
+
+    Args:
+        value: Исходный текст исключения.
+
+    Returns:
+        Текст с заменёнными API-ключами и идентификаторами ключей.
+    """
+
+    redacted = value
+    for pattern in SECRET_PATTERNS:
+        if pattern.pattern.startswith("(?i)(api"):
+            redacted = pattern.sub(r"\1[REDACTED]", redacted)
+        elif pattern.pattern.startswith("(?i)(/keys/"):
+            redacted = pattern.sub(r"\1[REDACTED]", redacted)
+        else:
+            redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
 
 
 __all__ = [
-    "MODEL_MAX_RETRIES",
-    "ModelErrorMiddleware",
-    "build_model_error_middleware",
     "format_model_error",
     "is_retryable_model_error",
 ]
