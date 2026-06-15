@@ -23,6 +23,7 @@ from deep_agent.agent import (
 from local_ui.example_query import load_basket_query
 from run_ui import (
     REQUIRED_FRONTEND_SDK_VERSION,
+    _validate_env,
     _validate_frontend,
 )
 
@@ -101,6 +102,33 @@ class LocalUiIntegrationTests(unittest.TestCase):
         self.assertIn("streamSubgraphs: true", patch_text)
         self.assertIn("subAgent.toolCalls", patch_text)
         self.assertIn("subAgent.messages", patch_text)
+
+    def test_kitai_env_does_not_require_openai_api_key(self) -> None:
+        """Проверяет provider-specific валидацию KitAI-настроек.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_path = Path(temporary_directory) / ".env"
+            env_path.write_text(
+                "\n".join(
+                    [
+                        "DEEP_AGENT_MODEL_PROVIDER=kitai",
+                        "DEEP_AGENT_MODEL=GigaChat-2-Max",
+                        "KITAI_HOST_SDK=https://kitai.internal",
+                        "KITAI_CERT_FILE_PATH=/certs/client.crt",
+                        "KITAI_CERT_KEY_FILE_PATH=/certs/client.key",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            values = _validate_env(env_path)
+
+        self.assertEqual(values["DEEP_AGENT_MODEL_PROVIDER"], "kitai")
+        self.assertNotIn("OPENAI_API_KEY", values)
 
     def test_frontend_dependencies_require_streaming_sdk(self) -> None:
         """Проверяет повторную установку UI при устаревшем frontend SDK.

@@ -44,7 +44,15 @@ from datetime import datetime
 from pathlib import Path
 
 ASSISTANT_ID = "analytics-agent"
-REQUIRED_ENV_KEYS = ("OPENAI_API_KEY", "DEEP_AGENT_MODEL")
+COMMON_REQUIRED_ENV_KEYS = ("DEEP_AGENT_MODEL",)
+PROVIDER_REQUIRED_ENV_KEYS = {
+    "openai": ("OPENAI_API_KEY",),
+    "kitai": (
+        "KITAI_HOST_SDK",
+        "KITAI_CERT_FILE_PATH",
+        "KITAI_CERT_KEY_FILE_PATH",
+    ),
+}
 REQUIRED_FRONTEND_SDK_VERSION = "1.9.21"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -193,7 +201,7 @@ def _read_env_file(env_path: Path) -> dict[str, str]:
 
 
 def _validate_env(env_path: Path) -> dict[str, str]:
-    """Проверяет наличие обязательных переменных в env-файле.
+    """Проверяет обязательные настройки выбранного модельного провайдера.
 
     Args:
         env_path: Путь к env-файлу.
@@ -202,11 +210,20 @@ def _validate_env(env_path: Path) -> dict[str, str]:
         Словарь прочитанных переменных.
 
     Raises:
-        RuntimeError: Обязательные переменные отсутствуют.
+        RuntimeError: Провайдер неизвестен или обязательные переменные отсутствуют.
     """
 
     values = _read_env_file(env_path)
-    missing = [key for key in REQUIRED_ENV_KEYS if not values.get(key)]
+    provider = values.get("DEEP_AGENT_MODEL_PROVIDER", "openai").strip().lower()
+    provider_keys = PROVIDER_REQUIRED_ENV_KEYS.get(provider)
+    if provider_keys is None:
+        supported = ", ".join(sorted(PROVIDER_REQUIRED_ENV_KEYS))
+        raise RuntimeError(
+            f"Неподдерживаемый DEEP_AGENT_MODEL_PROVIDER={provider!r}. "
+            f"Доступные значения: {supported}."
+        )
+    required_keys = (*COMMON_REQUIRED_ENV_KEYS, *provider_keys)
+    missing = [key for key in required_keys if not values.get(key)]
     if missing:
         raise RuntimeError(
             f"В {env_path} не заданы обязательные переменные: {', '.join(missing)}"

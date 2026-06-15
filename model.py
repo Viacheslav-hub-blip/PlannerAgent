@@ -1,9 +1,10 @@
 """Конфигурация моделей LangChain для локальных запусков агента.
 
 Содержит:
-- model: ChatOpenAI-клиент основного агента.
+- model: выбранный через окружение chat-клиент основного агента.
 - embeddings: OpenAIEmbeddings-клиент для эмбеддингов.
 - gigachat: опциональный GigaChat-клиент для ручных экспериментов.
+- _build_model: сборка OpenAI-compatible или KitAI chat-модели.
 - _build_optional_gigachat: сборка GigaChat только при наличии credentials в окружении.
 - get_answer: простой helper для вызова prompt-template через выбранную модель.
 """
@@ -19,14 +20,35 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_gigachat import GigaChat
 
-model = ChatOpenAI(
-    base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
-    api_key=os.environ.get("OPENAI_API_KEY"),
-    model=os.environ.get("DEEP_AGENT_MODEL", "deepseek/deepseek-v4-flash"),
-    temperature=float(os.environ.get("DEEP_AGENT_TEMPERATURE", "0.2")),
-    timeout=float(os.environ.get("DEEP_AGENT_TIMEOUT", "120")),
-    max_retries=int(os.environ.get("DEEP_AGENT_MAX_RETRIES", "0")),
-)
+
+def _build_model() -> Any:
+    """Создаёт основную chat-модель по выбранному провайдеру.
+
+    Returns:
+        OpenAI-compatible либо KitAI LangChain chat-модель.
+
+    Raises:
+        ValueError: Указан неподдерживаемый ``DEEP_AGENT_MODEL_PROVIDER``.
+    """
+
+    provider = os.environ.get("DEEP_AGENT_MODEL_PROVIDER", "openai").strip().lower()
+    if provider == "kitai":
+        from deep_agent.models import build_kitai_model
+
+        return build_kitai_model()
+    if provider != "openai":
+        raise ValueError(f"Неподдерживаемый провайдер модели: {provider}")
+    return ChatOpenAI(
+        base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
+        api_key=os.environ.get("OPENAI_API_KEY"),
+        model=os.environ.get("DEEP_AGENT_MODEL", "deepseek/deepseek-v4-flash"),
+        temperature=float(os.environ.get("DEEP_AGENT_TEMPERATURE", "0.2")),
+        timeout=float(os.environ.get("DEEP_AGENT_TIMEOUT", "120")),
+        max_retries=int(os.environ.get("DEEP_AGENT_MAX_RETRIES", "0")),
+    )
+
+
+model = _build_model()
 
 embeddings = OpenAIEmbeddings(
     base_url=os.environ.get("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
