@@ -68,6 +68,12 @@ class DeepAgentPythonSandbox:
         def _assert_readable_path(path: Path) -> Path:
             """Проверяет, что путь существует и лежит в разрешённых для чтения корнях."""
 
+            raw_path = str(path)
+            if raw_path.startswith(("/", "\\")) and not path.drive:
+                path = project_root / raw_path.lstrip("/\\")
+            elif not path.is_absolute():
+                path = project_root / path
+
             resolved = path.expanduser().resolve()
             if not resolved.exists():
                 raise FileNotFoundError(f"Файл не найден: {resolved}")

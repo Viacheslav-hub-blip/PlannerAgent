@@ -217,7 +217,7 @@ result_path = str(output_path)
 - изменять исходники проекта через Python вместо approval-gated filesystem tools;
 - запускать `subprocess`, `os.system` или удалять файлы из Python;
 - передавать `target_variable="result"`, не создав переменную `result`;
-- использовать `/tool_outputs` как локальный Python-путь.
+- использовать устаревший alias `/tool_outputs`; бери точный `workspace_file` из результата tool.
 
 Ограничения и обработка ошибок:
 - для stdout используй `print()` и не передавай `target_variable`;

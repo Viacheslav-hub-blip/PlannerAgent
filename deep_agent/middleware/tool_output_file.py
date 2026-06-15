@@ -5,7 +5,7 @@
 - _extract_tabular_payload: извлечение табличного payload из ToolMessage.
 - _extract_rows_from_value: получение строк из JSON-подобного значения.
 - _write_rows_to_pkl: запись строк в pickle-файл.
-- _virtual_tool_output_path: построение виртуального пути tool output.
+- _workspace_tool_output_path: построение workspace-пути tool output.
 - _build_file_summary: формирование summary сохранённого файла.
 - _extract_query_metadata: извлечение описания запроса из payload.
 - _build_inline_saved_file_note: формирование короткой пометки о сохранённом файле.
@@ -42,9 +42,18 @@ class ToolOutputFileMiddleware(AgentMiddleware):
     - маленький результат — исходный content без замены + пометка с путём к pkl;
     - большой результат — summary с preview (пороги ``min_rows_to_save`` /
       ``min_content_chars_to_save``), как раньше.
+
+    Args:
+        output_dir: Реальная директория текущей сессии для pickle-файлов.
+        workspace_root: Корень, относительно которого строится единый ``workspace_file``.
+        min_rows_to_save: Порог строк для замены полного результата на preview.
+        min_content_chars_to_save: Порог символов для замены полного результата на preview.
+        preview_rows: Число строк в preview большого результата.
+        inline_original_content_chars: Максимальный размер исходного inline-вывода.
     """
 
     output_dir: Path
+    workspace_root: Path
     min_rows_to_save: int = 10
     min_content_chars_to_save: int = 60000
     preview_rows: int = 3
@@ -88,11 +97,13 @@ class ToolOutputFileMiddleware(AgentMiddleware):
             output_dir=self.output_dir,
             tool_name=tool_name,
         )
-        virtual_path = _virtual_tool_output_path(file_path=file_path, output_dir=self.output_dir)
+        workspace_path = _workspace_tool_output_path(
+            file_path=file_path,
+            workspace_root=self.workspace_root,
+        )
         query_metadata = _extract_query_metadata(result.artifact)
         artifact = {
-            "saved_file": str(file_path),
-            "virtual_file": virtual_path,
+            "workspace_file": workspace_path,
             "format": "pkl",
             "rows": len(rows),
             "columns": sorted({key for row in rows for key in row}),
@@ -106,7 +117,7 @@ class ToolOutputFileMiddleware(AgentMiddleware):
             content = _build_file_summary(
                 tool_name=tool_name,
                 file_path=file_path,
-                virtual_path=virtual_path,
+                workspace_path=workspace_path,
                 rows=rows,
                 preview_rows=self.preview_rows,
                 original_content=content_text,
@@ -115,8 +126,7 @@ class ToolOutputFileMiddleware(AgentMiddleware):
             )
         else:
             content = content_text + _build_inline_saved_file_note(
-                file_path=file_path,
-                virtual_path=virtual_path,
+                workspace_path=workspace_path,
                 rows=rows,
                 query_metadata=query_metadata,
             )
@@ -183,30 +193,34 @@ def _write_rows_to_pkl(*, rows: list[dict[str, Any]], output_dir: Path, tool_nam
     return file_path.resolve()
 
 
-def _virtual_tool_output_path(*, file_path: Path, output_dir: Path) -> str:
-    """Строит виртуальный путь `/tool_outputs/...` для файловых инструментов DeepAgents.
+def _workspace_tool_output_path(*, file_path: Path, workspace_root: Path) -> str:
+    """Строит единый путь к tool output относительно ``workspace_root``.
 
     Args:
         file_path: Абсолютный путь к сохранённому pickle-файлу.
-        output_dir: Локальная папка, смонтированная в backend как `/tool_outputs/`.
+        workspace_root: Корень файлового пространства агента.
 
     Returns:
-        Виртуальный путь, который можно передавать в filesystem tools (`read_file`, `ls`,
-        `glob`) внутри DeepAgents.
+        Путь вида ``/runs/deep_agent_tool_outputs/session_x/data.pkl``.
+
+    Raises:
+        ValueError: Файл находится вне workspace.
     """
 
     try:
-        relative_path = file_path.resolve().relative_to(output_dir.resolve()).as_posix()
+        relative_path = file_path.resolve().relative_to(workspace_root.resolve()).as_posix()
     except ValueError:
-        relative_path = file_path.name
-    return f"/tool_outputs/{relative_path}"
+        raise ValueError(
+            f"Tool output must be inside workspace_root: {file_path.resolve()}"
+        ) from None
+    return f"/{relative_path}"
 
 
 def _build_file_summary(
     *,
     tool_name: str,
     file_path: Path,
-    virtual_path: str,
+    workspace_path: str,
     rows: list[dict[str, Any]],
     preview_rows: int,
     original_content: str,
@@ -230,16 +244,15 @@ def _build_file_summary(
         f"ВАЖНО: всего в результате (в файле) {len(rows)} строк — это полный объём этого "
         f"запроса; в контексте сейчас лишь {len(preview)} строк для ознакомления.\n"
         f"Файл: {resolved_path.name}\n"
-        f"saved_file: {resolved_path}\n"
-        f"virtual_file: {virtual_path}\n"
+        f"workspace_file: {workspace_path}\n"
         f"Формат: pickle (list[dict]).\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Чтобы работать со ВСЕМИ строками или с урезанной выборкой из этого набора, используй "
         "`execute_python_code` (НЕ новый load_data). Helpers: read_pickle_file, "
-        "describe_pickle_file, rows_to_dataframe, pd, np. Для Python используй `saved_file`; "
-        "для filesystem tools (`read_file`, `ls`, `glob`) используй `virtual_file`. Пример:\n"
-        f"rows = read_pickle_file(r\"{resolved_path}\")\n"
+        "describe_pickle_file, rows_to_dataframe, pd, np. Один и тот же `workspace_file` "
+        "используется в `execute_python_code` и filesystem tools. Пример:\n"
+        f"rows = read_pickle_file(r\"{workspace_path}\")\n"
         "df = rows_to_dataframe(rows)\n"
         "При ошибке execute_python_code читай traceback из ответа tool и исправляй код.\n"
         f"Preview первых {len(preview)} строк:\n{preview_text}"
@@ -264,27 +277,24 @@ def _extract_query_metadata(artifact: Any) -> dict[str, Any] | None:
 
 def _build_inline_saved_file_note(
     *,
-    file_path: Path,
-    virtual_path: str,
+    workspace_path: str,
     rows: list[dict[str, Any]],
     query_metadata: dict[str, Any] | None = None,
 ) -> str:
     """Дополняет inline-ответ пометкой о pkl для переиспользования без повторного load_data."""
 
     columns = sorted({key for row in rows for key in row})
-    resolved_path = file_path.resolve()
     query_note = _format_query_metadata(query_metadata)
     return (
         "\n\n[Полный результат сохранён в pickle для переиспользования без повторного load_data]\n"
         f"{query_note}"
-        f"saved_file: {resolved_path}\n"
-        f"virtual_file: {virtual_path}\n"
+        f"workspace_file: {workspace_path}\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Если следующий шаг — урезанная выборка из ЭТОГО же набора (другие фильтры, подмножество "
         "строк, агрегация, уникальные значения), НЕ запускай новый load_data: отфильтруй через "
         "`execute_python_code` (`read_pickle_file` → `rows_to_dataframe` / pandas).\n"
-        f"Пример: rows = read_pickle_file(r\"{resolved_path}\")\n"
+        f"Пример: rows = read_pickle_file(r\"{workspace_path}\")\n"
     )
 
 

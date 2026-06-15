@@ -8,6 +8,8 @@
 - _read_json_file: чтение JSON-файла.
 - _validate_required_config_keys: проверка обязательных ключей.
 - _resolve_project_path: приведение пути к абсолютному.
+- _resolve_workspace_path: разрешение и проверка пути внутри workspace.
+- workspace_tool_path: преобразование реального пути в путь filesystem tools.
 - _int_from_config: чтение целого числа из конфига.
 - _bool_from_config: чтение boolean из конфига.
 - _dict_from_config: чтение словаря из конфига.
@@ -34,7 +36,6 @@ REQUIRED_CONFIG_KEYS = (
     "enable_interrupts",
     "terminal_timeout",
     "terminal_max_output_bytes",
-    "skills_virtual_dir",
     "skills_root",
     "data_tools_factory",
     "data_tools_factory_kwargs",
@@ -45,6 +46,7 @@ REQUIRED_CONFIG_KEYS = (
     "tool_output_inline_original_chars",
     "context_edit_trigger_tokens",
     "context_edit_keep_tool_results",
+    "read_file_default_limit",
     "max_model_retries",
     "max_tool_calls_per_run",
     "max_subagent_model_calls",
@@ -64,7 +66,6 @@ class DeepAgentSettings:
     enable_interrupts: bool
     terminal_timeout: int
     terminal_max_output_bytes: int
-    skills_virtual_dir: str
     skills_root: Path
     data_tools_factory: str | None
     data_tools_factory_kwargs: dict[str, Any]
@@ -75,6 +76,7 @@ class DeepAgentSettings:
     tool_output_inline_original_chars: int
     context_edit_trigger_tokens: int
     context_edit_keep_tool_results: int
+    read_file_default_limit: int
     max_model_retries: int
     max_tool_calls_per_run: int
     max_subagent_model_calls: int
@@ -97,10 +99,11 @@ class DeepAgentSettings:
         """
 
         _validate_required_config_keys(payload)
+        workspace_root = _resolve_project_path(payload["workspace_root"], project_root)
         return cls(
             harness_profile_key=str(payload["harness_profile_key"]),
             thread_id=str(payload["thread_id"]),
-            workspace_root=_resolve_project_path(payload["workspace_root"], project_root),
+            workspace_root=workspace_root,
             agents_file_name=str(payload["agents_file_name"]).strip() or "AGENTS.md",
             enable_interrupts=_interrupts_enabled_from_config(payload),
             terminal_timeout=_int_from_config(payload, "terminal_timeout"),
@@ -108,11 +111,13 @@ class DeepAgentSettings:
                 payload,
                 "terminal_max_output_bytes",
             ),
-            skills_virtual_dir=str(payload["skills_virtual_dir"]),
-            skills_root=_resolve_project_path(payload["skills_root"], project_root),
+            skills_root=_resolve_workspace_path(payload["skills_root"], workspace_root),
             data_tools_factory=_optional_str_from_config(payload, "data_tools_factory"),
             data_tools_factory_kwargs=_dict_from_config(payload, "data_tools_factory_kwargs"),
-            tool_outputs_dir=_resolve_project_path(payload["tool_outputs_dir"], project_root),
+            tool_outputs_dir=_resolve_workspace_path(
+                payload["tool_outputs_dir"],
+                workspace_root,
+            ),
             tool_output_min_rows_to_save=_int_from_config(payload, "tool_output_min_rows_to_save"),
             tool_output_min_content_chars_to_save=_int_from_config(
                 payload,
@@ -122,11 +127,12 @@ class DeepAgentSettings:
             tool_output_inline_original_chars=_int_from_config(payload, "tool_output_inline_original_chars"),
             context_edit_trigger_tokens=_int_from_config(payload, "context_edit_trigger_tokens"),
             context_edit_keep_tool_results=_int_from_config(payload, "context_edit_keep_tool_results"),
+            read_file_default_limit=_int_from_config(payload, "read_file_default_limit"),
             max_model_retries=_int_from_config(payload, "max_model_retries"),
             max_tool_calls_per_run=_int_from_config(payload, "max_tool_calls_per_run"),
             max_subagent_model_calls=_int_from_config(payload, "max_subagent_model_calls"),
             graph_recursion_limit=_int_from_config(payload, "graph_recursion_limit"),
-            trace_log_dir=_resolve_project_path(payload["trace_log_dir"], project_root),
+            trace_log_dir=_resolve_workspace_path(payload["trace_log_dir"], workspace_root),
         )
 
 
@@ -178,6 +184,65 @@ def _resolve_project_path(value: Any, project_root: Path) -> Path:
     if path.is_absolute():
         return path.resolve()
     return (project_root / path).resolve()
+
+
+def _resolve_workspace_path(value: Any, workspace_root: Path) -> Path:
+    """Разрешает путь относительно workspace и запрещает выход за его пределы.
+
+    Args:
+        value: Абсолютный путь или путь относительно ``workspace_root``.
+        workspace_root: Настроенный корень файлового пространства агента.
+
+    Returns:
+        Абсолютный путь внутри ``workspace_root``.
+
+    Raises:
+        ValueError: Разрешённый путь находится вне ``workspace_root``.
+    """
+
+    path = Path(str(value))
+    resolved = path.resolve() if path.is_absolute() else (workspace_root / path).resolve()
+    try:
+        resolved.relative_to(workspace_root)
+    except ValueError:
+        raise ValueError(
+            f"Config path must be inside workspace_root: {resolved}"
+        ) from None
+    return resolved
+
+
+def workspace_tool_path(
+    path: Path,
+    workspace_root: Path,
+    *,
+    directory: bool = False,
+) -> str:
+    """Преобразует реальный путь внутри workspace в путь filesystem tools.
+
+    Args:
+        path: Реальный абсолютный путь.
+        workspace_root: Корень файлового пространства агента.
+        directory: Нужно ли добавить завершающий слеш.
+
+    Returns:
+        Путь вида ``/deep_agent/skills/``, однозначно соответствующий
+        ``workspace_root/deep_agent/skills``.
+
+    Raises:
+        ValueError: Путь находится вне workspace.
+    """
+
+    resolved_root = workspace_root.resolve()
+    resolved_path = path.resolve()
+    try:
+        relative_path = resolved_path.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(f"Path must be inside workspace_root: {resolved_path}") from None
+
+    result = f"/{relative_path.as_posix()}" if relative_path.parts else "/"
+    if directory and not result.endswith("/"):
+        result += "/"
+    return result
 
 
 def _int_from_config(payload: dict[str, Any], key: str) -> int:
@@ -251,4 +316,5 @@ __all__ = [
     "REQUIRED_CONFIG_KEYS",
     "DeepAgentSettings",
     "load_deep_agent_settings",
+    "workspace_tool_path",
 ]

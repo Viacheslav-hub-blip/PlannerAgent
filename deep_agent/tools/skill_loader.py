@@ -23,11 +23,11 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
-from deep_agent.settings import DeepAgentSettings
+from deep_agent.settings import DeepAgentSettings, workspace_tool_path
 from deep_agent.middleware.skills_context import (
     _parse_skill_index_entry,
     _read_context_file,
-    _virtual_skill_path,
+    _workspace_skill_path,
     discover_skill_context_files,
 )
 
@@ -48,16 +48,16 @@ Do not use when:
 
 What it does:
 - reads each requested `SKILL.md` and returns its verbatim content;
-- prefixes every loaded skill with its name and virtual path;
+- prefixes every loaded skill with its name and workspace path;
 - skips skills that were already loaded through middleware preload, previous `load_skills` calls, or `already_loaded`.
 
 Arguments:
-- `skill_names`: comma-separated known skill names or virtual paths in one string, for example
-  `skill-a, skill-b` or `/skills/skill-a/SKILL.md, /skills/skill-b/SKILL.md`;
+- `skill_names`: comma-separated known skill names or workspace paths in one string, for example
+  `skill-a, skill-b` or `/deep_agent/skills/skill-a/SKILL.md, /deep_agent/skills/skill-b/SKILL.md`;
 - `already_loaded`: comma-separated skills that should not be loaded again. This can be empty.
 
 Use `load_skills` only for batch loading verified skills into the supervisor context. Do not guess names and do not
-request every available skill. Do not pass paths like `/skills/name/fields.md`; they are not skills.
+request every available skill. Do not pass paths like `/deep_agent/skills/name/fields.md`; they are not skills.
 """.strip()
 
 
@@ -72,13 +72,22 @@ def _split_tokens(raw: str) -> list[str]:
 def _build_skill_lookup(settings: DeepAgentSettings) -> dict[str, dict[str, str]]:
     """Строит индекс соответствий токен (lower) -> запись skill.
 
-    Один skill доступен по нескольким токенам: виртуальный путь, относительный путь,
+    Один skill доступен по нескольким токенам: workspace-путь, относительный путь,
     имя папки и ``name`` из front matter.
     """
 
     lookup: dict[str, dict[str, str]] = {}
+    skills_workspace_dir = workspace_tool_path(
+        settings.skills_root,
+        settings.workspace_root,
+        directory=True,
+    )
     for local_path in discover_skill_context_files(settings.skills_root):
-        virtual_path = _virtual_skill_path(settings.skills_root, local_path, settings.skills_virtual_dir)
+        workspace_path = _workspace_skill_path(
+            settings.skills_root,
+            local_path,
+            skills_workspace_dir,
+        )
         header = _read_context_file(local_path, max_chars=4000) or ""
         parsed = _parse_skill_index_entry(header)
         name = parsed.get("name") or local_path.parent.name
@@ -86,8 +95,12 @@ def _build_skill_lookup(settings: DeepAgentSettings) -> dict[str, dict[str, str]
             relative_path = local_path.relative_to(settings.skills_root).as_posix()
         except ValueError:
             relative_path = local_path.name
-        entry = {"virtual_path": virtual_path, "local_path": str(local_path), "name": name}
-        for token in {virtual_path, relative_path, local_path.parent.name, name}:
+        entry = {
+            "workspace_path": workspace_path,
+            "local_path": str(local_path),
+            "name": name,
+        }
+        for token in {workspace_path, relative_path, local_path.parent.name, name}:
             token = (token or "").strip().lower()
             if token:
                 lookup.setdefault(token, entry)
@@ -159,7 +172,7 @@ def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
         already_seen.update(state.get("materialized_skill_paths") or [])
         for token in _split_tokens(already_loaded):
             entry = _resolve_token(token, lookup)
-            already_seen.add(entry["virtual_path"] if entry else token)
+            already_seen.add(entry["workspace_path"] if entry else token)
 
         blocks: list[str] = []
         newly_loaded: list[str] = []
@@ -170,17 +183,17 @@ def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
             if entry is None:
                 unknown.append(token)
                 continue
-            virtual_path = entry["virtual_path"]
-            if virtual_path in already_seen:
-                skipped.append(virtual_path)
+            workspace_path = entry["workspace_path"]
+            if workspace_path in already_seen:
+                skipped.append(workspace_path)
                 continue
             content = _read_context_file(Path(entry["local_path"]), max_chars)
             if content is None:
                 unknown.append(token)
                 continue
-            already_seen.add(virtual_path)
-            newly_loaded.append(virtual_path)
-            blocks.append(f"### {entry['name']} ({virtual_path})\n\n{content}")
+            already_seen.add(workspace_path)
+            newly_loaded.append(workspace_path)
+            blocks.append(f"### {entry['name']} ({workspace_path})\n\n{content}")
 
         report = _build_report(blocks, newly_loaded, skipped, unknown)
         materialized = [*(state.get("materialized_skill_paths") or []), *newly_loaded]

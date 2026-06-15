@@ -25,7 +25,8 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
 - _build_file_edit_interrupts: конфигурация approval для изменения файлов.
-- _agents_memory_path: виртуальный путь ``AGENTS.md``.
+- _agents_memory_path: workspace-путь ``AGENTS.md``.
+- _require_workspace_path: проверка принадлежности пути workspace.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
 - register_session_tool_outputs_cleanup: регистрация удаления tool outputs при закрытии агента.
 - cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
@@ -43,7 +44,7 @@ from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents import FilesystemPermission, create_deep_agent
+from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -65,11 +66,21 @@ from deep_agent.subagents.registry import build_subagent_specs
 from deep_agent.runtime.filesystem import (
     Utf8FilesystemBackend,
     Utf8LocalShellBackend,
+    configure_read_file_default_limit,
 )
 from deep_agent.tools.data_result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
+from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
+from deep_agent.prompts.skills import (
+    DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+)
 from deep_agent.prompts.supervisor import SYSTEM_PROMPT
-from deep_agent.settings import DeepAgentSettings, load_deep_agent_settings
+from deep_agent.settings import (
+    DeepAgentSettings,
+    load_deep_agent_settings,
+    workspace_tool_path,
+)
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
 from deep_agent.middleware.model_errors import (
     format_model_error,
@@ -183,6 +194,7 @@ def build_analytics_deep_agent(
 
     # Шаг 1. Настройки: пути skills, папка spill-файлов, пороги offload, thread_id.
     settings = settings or load_deep_agent_settings()
+    configure_read_file_default_limit(settings.read_file_default_limit)
     register_analytics_harness_profile(
         settings.harness_profile_key,
         enable_general_purpose=False,
@@ -190,7 +202,24 @@ def build_analytics_deep_agent(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    session_tool_outputs_dir = create_session_tool_outputs_dir(settings.tool_outputs_dir)
+    resolved_skills_root = _rebase_workspace_path(
+        settings.skills_root,
+        settings.workspace_root,
+        resolved_workspace_root,
+    )
+    resolved_tool_outputs_root = _rebase_workspace_path(
+        settings.tool_outputs_dir,
+        settings.workspace_root,
+        resolved_workspace_root,
+    )
+    session_tool_outputs_dir = create_session_tool_outputs_dir(
+        resolved_tool_outputs_root
+    )
+    skills_workspace_dir = workspace_tool_path(
+        resolved_skills_root,
+        resolved_workspace_root,
+        directory=True,
+    )
 
     # Шаг 2. Инструменты чтения данных. Аргумент имеет приоритет над фабрикой из конфига.
     # Оборачиваем их в слой прозрачности: агент получает сгенерированный код запроса и
@@ -204,6 +233,7 @@ def build_analytics_deep_agent(
     # штатными middleware LangChain/Deep Agents.
     tool_output_file_middleware = ToolOutputFileMiddleware(
         output_dir=session_tool_outputs_dir,
+        workspace_root=resolved_workspace_root,
         min_rows_to_save=settings.tool_output_min_rows_to_save,
         min_content_chars_to_save=settings.tool_output_min_content_chars_to_save,
         preview_rows=settings.tool_output_preview_rows,
@@ -227,7 +257,23 @@ def build_analytics_deep_agent(
     )
     python_tool = build_execute_python_code_tool(python_sandbox)
     file_edit_interrupts = _build_file_edit_interrupts(settings)
-    shared_permissions = _build_shared_backend_permissions(settings)
+    shared_skills_selection: dict[str, Any] = {}
+    supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
+        skills_root=resolved_skills_root,
+        skills_workspace_dir=skills_workspace_dir,
+        model=model,
+        select_skills=True,
+        shared_selection=shared_skills_selection,
+        prompt_template=SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    )
+    subagent_skills_middleware = PreloadedSkillsContextMiddleware(
+        skills_root=resolved_skills_root,
+        skills_workspace_dir=skills_workspace_dir,
+        model=model,
+        select_skills=False,
+        shared_selection=shared_skills_selection,
+        prompt_template=DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+    )
 
     coding_agent_middleware = _build_native_runtime_middleware(
         settings,
@@ -239,34 +285,29 @@ def build_analytics_deep_agent(
             model=model,
             tools=[python_tool],
             common_middleware=coding_agent_middleware,
-            skill_sources=[settings.skills_virtual_dir],
+            skill_sources=[skills_workspace_dir],
         ),
         backend=workspace_backend,
         memory=[_agents_memory_path(settings.agents_file_name)],
-        permissions=[
-            FilesystemPermission(
-                operations=["write"],
-                paths=[f"{settings.skills_virtual_dir.rstrip('/')}/**"],
-                mode="deny",
-            )
-        ],
         interrupt_on=file_edit_interrupts,
     )
-    data_retrieval_agent_middleware = _build_native_runtime_middleware(
-        settings,
-        tool_output_file_middleware,
-        limit_model_calls=True,
-    )
+    data_retrieval_agent_middleware = [
+        subagent_skills_middleware,
+        *_build_native_runtime_middleware(
+            settings,
+            tool_output_file_middleware,
+            limit_model_calls=True,
+        ),
+    ]
     data_retrieval_agent = create_deep_agent(
         **build_data_retrieval_subagent_spec(
             model=model,
             data_tools=[*data_tools, python_tool],
             common_middleware=data_retrieval_agent_middleware,
-            skill_sources=[settings.skills_virtual_dir],
+            skill_sources=[skills_workspace_dir],
         ),
         backend=supervisor_backend,
-        memory=[_supervisor_memory_path(settings.agents_file_name)],
-        permissions=shared_permissions,
+        memory=[_agents_memory_path(settings.agents_file_name)],
     )
 
     # Шаг 4. Сборка изолированных compiled subagents.
@@ -289,15 +330,17 @@ def build_analytics_deep_agent(
         tools=[python_tool],
         system_prompt=system_prompt,
         subagents=subagents,
-        skills=[settings.skills_virtual_dir],
+        skills=[skills_workspace_dir],
         backend=supervisor_backend,
-        middleware=_build_native_runtime_middleware(
-            settings,
-            tool_output_file_middleware,
-            limit_model_calls=False,
-        ),
-        memory=[_supervisor_memory_path(settings.agents_file_name)],
-        permissions=shared_permissions,
+        middleware=[
+            supervisor_skills_middleware,
+            *_build_native_runtime_middleware(
+                settings,
+                tool_output_file_middleware,
+                limit_model_calls=False,
+            ),
+        ],
+        memory=[_agents_memory_path(settings.agents_file_name)],
         interrupt_on=file_edit_interrupts,
         checkpointer=(
             build_conversation_checkpointer()
@@ -362,36 +405,31 @@ def build_skills_backend(
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
 ) -> Any:
-    """Собирает CompositeBackend с workspace shell, skills и tool outputs.
+    """Собирает backend coding-agent с единым файловым корнем workspace.
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
-        tool_outputs_dir: Папка tool outputs текущего запуска. Если ``None``, используется
-            базовая папка из настроек.
+        tool_outputs_dir: Папка tool outputs текущего запуска, которая должна находиться
+            внутри workspace.
         workspace_root: Корень доступного агенту workspace.
         state_artifacts_virtual_dir: Виртуальная директория, направляемая в ``StateBackend``
             для отображения текстовых артефактов в LangGraph UI.
 
     Returns:
-        ``CompositeBackend`` с terminal в workspace и маршрутами skills/tool outputs/artifacts.
+        ``CompositeBackend`` с terminal и полным файловым доступом внутри workspace.
     """
 
     settings = settings or load_deep_agent_settings()
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    resolved_tool_outputs_dir = tool_outputs_dir or settings.tool_outputs_dir
-    tool_outputs_virtual = "/tool_outputs/"
-    routes = {
-        settings.skills_virtual_dir: Utf8FilesystemBackend(
-            root_dir=settings.skills_root,
-            virtual_mode=True,
-        ),
-        tool_outputs_virtual: Utf8FilesystemBackend(
-            root_dir=resolved_tool_outputs_dir,
-            virtual_mode=True,
-        ),
-    }
+    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_workspace_path(
+        settings.tool_outputs_dir,
+        settings.workspace_root,
+        resolved_workspace_root,
+    )
+    _require_workspace_path(resolved_tool_outputs_dir, resolved_workspace_root)
+    routes: dict[str, Any] = {}
     artifacts_root = "/"
     if state_artifacts_virtual_dir:
         artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
@@ -417,73 +455,42 @@ def build_supervisor_backend(
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
 ) -> Any:
-    """Собирает backend supervisor без доступа к shell и workspace tools.
+    """Собирает backend supervisor с полным filesystem-доступом к workspace.
 
     Args:
         settings: Настройки агента; если ``None``, загружаются defaults.
-        tool_outputs_dir: Папка pickle-результатов текущей сессии.
-        workspace_root: Корень проекта для read-only project memory.
+        tool_outputs_dir: Папка pickle-результатов внутри workspace.
+        workspace_root: Единый корень доступного файлового пространства.
         state_artifacts_virtual_dir: Виртуальная директория UI-артефактов.
 
     Returns:
-        ``CompositeBackend`` со state filesystem, skills, tool outputs и project memory.
+        ``CompositeBackend`` без shell, но с чтением и записью всех папок workspace.
     """
 
     settings = settings or load_deep_agent_settings()
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    resolved_tool_outputs_dir = tool_outputs_dir or settings.tool_outputs_dir
-    routes: dict[str, Any] = {
-        settings.skills_virtual_dir: Utf8FilesystemBackend(
-            root_dir=settings.skills_root,
-            virtual_mode=True,
-        ),
-        "/tool_outputs/": Utf8FilesystemBackend(
-            root_dir=resolved_tool_outputs_dir,
-            virtual_mode=True,
-        ),
-        "/project_memory/": Utf8FilesystemBackend(
-            root_dir=resolved_workspace_root,
-            virtual_mode=True,
-        ),
-    }
+    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_workspace_path(
+        settings.tool_outputs_dir,
+        settings.workspace_root,
+        resolved_workspace_root,
+    )
+    _require_workspace_path(resolved_tool_outputs_dir, resolved_workspace_root)
+    routes: dict[str, Any] = {}
     artifacts_root = "/"
     if state_artifacts_virtual_dir:
         artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
         routes[artifacts_root] = StateBackend()
 
     return CompositeBackend(
-        default=StateBackend(),
+        default=Utf8FilesystemBackend(
+            root_dir=resolved_workspace_root,
+            virtual_mode=True,
+        ),
         routes=routes,
         artifacts_root=artifacts_root,
     )
-
-
-def _build_shared_backend_permissions(
-    settings: DeepAgentSettings,
-) -> list[FilesystemPermission]:
-    """Запрещает supervisor и data-agent изменять skills и project memory.
-
-    Args:
-        settings: Настройки виртуального пути skills.
-
-    Returns:
-        Декларативные permissions встроенного ``FilesystemMiddleware``.
-    """
-
-    return [
-        FilesystemPermission(
-            operations=["write"],
-            paths=[f"{settings.skills_virtual_dir.rstrip('/')}/**"],
-            mode="deny",
-        ),
-        FilesystemPermission(
-            operations=["read", "write"],
-            paths=["/project_memory/**"],
-            mode="deny",
-        ),
-    ]
 
 
 def _normalize_virtual_directory(value: str) -> str:
@@ -534,6 +541,57 @@ def _resolve_workspace_root(value: str | Path) -> Path:
         raise ValueError(f"Workspace не существует: {resolved}")
     if not resolved.is_dir():
         raise ValueError(f"Workspace должен быть директорией: {resolved}")
+    return resolved
+
+
+def _rebase_workspace_path(
+    path: Path,
+    source_workspace_root: Path,
+    target_workspace_root: Path,
+) -> Path:
+    """Переносит настроенный workspace-путь на runtime workspace с тем же относительным именем.
+
+    Args:
+        path: Абсолютный путь из настроек.
+        source_workspace_root: ``workspace_root``, относительно которого загружены настройки.
+        target_workspace_root: Фактический workspace текущей сборки агента.
+
+    Returns:
+        Абсолютный путь внутри ``target_workspace_root``.
+
+    Raises:
+        ValueError: Исходный путь находится вне настроенного workspace.
+    """
+
+    source_root = source_workspace_root.resolve()
+    try:
+        relative_path = path.resolve().relative_to(source_root)
+    except ValueError:
+        raise ValueError(
+            f"Configured path must be inside workspace_root: {path.resolve()}"
+        ) from None
+    return (target_workspace_root / relative_path).resolve()
+
+
+def _require_workspace_path(path: Path, workspace_root: Path) -> Path:
+    """Проверяет, что путь находится внутри workspace, и возвращает его абсолютный вид.
+
+    Args:
+        path: Проверяемый путь.
+        workspace_root: Разрешённый корень файловой системы агента.
+
+    Returns:
+        Абсолютный путь внутри workspace.
+
+    Raises:
+        ValueError: Путь выходит за пределы workspace.
+    """
+
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(workspace_root.resolve())
+    except ValueError:
+        raise ValueError(f"Path must be inside workspace_root: {resolved}") from None
     return resolved
 
 
@@ -609,19 +667,6 @@ def _agents_memory_path(file_name: str) -> str:
     if ".." in PurePosixPath(normalized).parts:
         raise ValueError("Путь AGENTS.md не должен выходить за пределы workspace.")
     return f"/{normalized}"
-
-
-def _supervisor_memory_path(file_name: str) -> str:
-    """Возвращает путь project memory в backend без workspace-доступа.
-
-    Args:
-        file_name: Имя или относительный путь project memory.
-
-    Returns:
-        Виртуальный путь внутри read-only route ``/project_memory/``.
-    """
-
-    return f"/project_memory{_agents_memory_path(file_name)}"
 
 
 def create_session_tool_outputs_dir(base_dir: Path) -> Path:

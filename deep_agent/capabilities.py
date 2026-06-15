@@ -1,7 +1,7 @@
 """Декларативные capabilities аналитического coding-agent.
 
 Содержит:
-- CODE_WORKSPACE_SKILL_PATH: виртуальный путь skill режима работы с кодом.
+- CODE_WORKSPACE_SKILL_PATH: workspace-путь skill режима работы с кодом.
 - BASE_SUPERVISOR_TOOL_NAMES: инструменты supervisor, доступные всегда.
 - CODE_WORKSPACE_TOOL_NAMES: инструменты workspace, доступные после загрузки skill.
 - DATA_RETRIEVAL_TOOL_NAMES: инструменты data-retrieval-agent.
@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-CODE_WORKSPACE_SKILL_PATH = "/skills/code-workspace/SKILL.md"
+CODE_WORKSPACE_SKILL_PATH = "/deep_agent/skills/code-workspace/SKILL.md"
 
 BASE_SUPERVISOR_TOOL_NAMES = frozenset(
     {"task", "execute_python_code", "load_skills", "write_todos"}

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,7 +55,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
-            "использовать `/tool_outputs` как локальный Python-путь",
+            "использовать устаревший alias `/tool_outputs`",
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
@@ -94,6 +95,39 @@ class ExecutePythonCodeTests(unittest.TestCase):
 
         self.assertTrue(payload["success"])
         self.assertIn("value:\n1", payload["variable_preview"])
+
+    def test_read_pickle_file_maps_workspace_path(self) -> None:
+        """Проверяет чтение pickle по единому пути относительно workspace.
+
+        Returns:
+            ``None``; тест подтверждает преобразование ``/runs`` в реальный каталог.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pickle_path = root / "runs" / "data.pkl"
+            pickle_path.parent.mkdir()
+            with pickle_path.open("wb") as file:
+                pickle.dump([{"value": 7}], file)
+
+            sandbox = DeepAgentPythonSandbox(
+                working_directory=root,
+                readable_roots=(root,),
+                tool_outputs_dir=root,
+            )
+            tool = build_execute_python_code_tool(sandbox)
+
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": "result = read_pickle_file('/runs/data.pkl')",
+                        "target_variable": "result",
+                    }
+                )
+            )
+
+        self.assertTrue(payload["success"])
+        self.assertIn('"value": 7', payload["variable_preview"])
 
     def test_runtime_error_contains_only_short_error(self) -> None:
         """Проверяет удаление traceback и служебных полей из ошибки.

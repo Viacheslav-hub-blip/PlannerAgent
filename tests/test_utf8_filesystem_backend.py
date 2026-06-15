@@ -11,11 +11,46 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from deep_agent.runtime.filesystem import Utf8FilesystemBackend
+from deepagents.middleware import filesystem as filesystem_middleware
+
+from deep_agent.runtime.filesystem import (
+    Utf8FilesystemBackend,
+    configure_read_file_default_limit,
+)
 
 
 class Utf8FilesystemBackendTests(unittest.TestCase):
     """Проверяет поиск по UTF-8 файлам при недоступном ripgrep."""
+
+    def test_configures_builtin_read_file_default_limit(self) -> None:
+        """Изменяет default ``read_file.limit`` для функции и tool schema.
+
+        Returns:
+            ``None``.
+        """
+
+        original_limit = filesystem_middleware.DEFAULT_READ_LIMIT
+        original_schema_limit = (
+            filesystem_middleware.ReadFileSchema.model_fields["limit"].default
+        )
+        try:
+            configure_read_file_default_limit(500)
+            middleware = filesystem_middleware.FilesystemMiddleware()
+            read_file_tool = next(
+                tool for tool in middleware.tools if tool.name == "read_file"
+            )
+
+            self.assertEqual(filesystem_middleware.DEFAULT_READ_LIMIT, 500)
+            self.assertEqual(
+                read_file_tool.args_schema.model_fields["limit"].default,
+                500,
+            )
+        finally:
+            filesystem_middleware.DEFAULT_READ_LIMIT = original_limit
+            filesystem_middleware.ReadFileSchema.model_fields[
+                "limit"
+            ].default = original_schema_limit
+            filesystem_middleware.ReadFileSchema.model_rebuild(force=True)
 
     def test_read_marks_incomplete_page_with_next_offset(self) -> None:
         """Добавляет маркер продолжения, если после страницы остались строки.

@@ -210,22 +210,25 @@ deep_agent/config/defaults.json
 
 - `workspace_root` - корень coding workspace и рабочая директория terminal.
 - `agents_file_name` - project memory, по умолчанию `AGENTS.md`.
-- `enable_interrupts` - human-in-the-loop для `write_file` и `edit_file` (`true` по умолчанию).
+- `enable_interrupts` - human-in-the-loop для `write_file` и `edit_file` (`false` по умолчанию).
   Устаревший alias: `enable_file_edit_approval`.
 - `terminal_timeout` - timeout terminal-команды.
 - `terminal_max_output_bytes` - предел возвращаемого terminal output.
 - terminal всегда получает только allowlist системных переменных; API-ключи и другие
   переменные пользовательского environment в subprocess не передаются.
-- `skills_root` - локальная папка со skills.
-- `skills_virtual_dir` - виртуальный путь, который видит DeepAgent.
+- `skills_root` - папка со skills внутри `workspace_root`.
+- filesystem tools используют единый путь от `workspace_root`: например,
+  `/deep_agent/skills/x/SKILL.md` соответствует `workspace_root/deep_agent/skills/x/SKILL.md`.
+- aliases `/skills`, `/tool_outputs` и `/project_memory` не используются.
 - `harness_profile_key` - provider или `provider:model` для регистрации HarnessProfile.
-- `tool_outputs_dir` - папка для pickle-файлов с большими результатами.
+- `tool_outputs_dir` - папка внутри `workspace_root` для pickle-файлов с большими результатами.
 - `tool_output_min_rows_to_save` - после какого числа строк сохранять результат в файл.
 - `context_edit_trigger_tokens` - когда чистить старые tool results из контекста.
 - `max_model_retries` - число повторов model call через `ModelRetryMiddleware`.
+- `read_file_default_limit` - число строк, которое `read_file` читает по умолчанию без явного `limit`.
 - `max_tool_calls_per_run` - общий бюджет tool calls одного запуска.
 - `max_subagent_model_calls` - лимит шагов модели внутри data-retrieval-agent.
-- `trace_log_dir` - папка для txt-логов с содержимым запросов к LLM.
+- `trace_log_dir` - папка внутри `workspace_root` для txt-логов с содержимым запросов к LLM.
 
 Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
 `DEEP_AGENT_CONFIG_PATH`. Значения из этого файла переопределят defaults.

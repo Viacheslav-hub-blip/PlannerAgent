@@ -9,19 +9,19 @@ description: "Находи подходящий fields.md, когда польз
 
 Не загружай полный справочник заранее. Сначала используй краткие карточки таблиц:
 
-- `/skills/hit-table/SKILL.md`
-- `/skills/cards-event-table/SKILL.md`
-- `/skills/uko-event-table/SKILL.md`
+- `/deep_agent/skills/hit-table/SKILL.md`
+- `/deep_agent/skills/cards-event-table/SKILL.md`
+- `/deep_agent/skills/uko-event-table/SKILL.md`
 
 Если нужен полный список полей, прочитай один конкретный файл:
 
-- `/skills/hit-table/fields.md` - поля `hits`.
-- `/skills/cards-event-table/fields.md` - поля `cards`.
-- `/skills/uko-event-table/fields.md` - поля `uko`.
+- `/deep_agent/skills/hit-table/fields.md` - поля `hits`.
+- `/deep_agent/skills/cards-event-table/fields.md` - поля `cards`.
+- `/deep_agent/skills/uko-event-table/fields.md` - поля `uko`.
 
 Если известно точное имя поля, сначала найди его через `grep` с параметром `pattern`.
 В `grep` передавай директорию в `path` и имя файла в `glob`, например:
-`{"pattern": "age_category", "path": "/skills/hit-table", "glob": "fields.md"}`.
+`{"pattern": "age_category", "path": "/deep_agent/skills/hit-table", "glob": "fields.md"}`.
 Если используешь `read_file`, передавай путь в `file_path`. Результат с `limit` является
 только одной страницей: если поле не найдено, продолжай чтение со следующим `offset`
 до конца файла. Нельзя делать вывод об отсутствии поля по первым 20 строкам.

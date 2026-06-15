@@ -96,15 +96,15 @@ Do not use:
 read_file
 ---
 Description:
-Читает текстовый файл из workspace или virtual backend.
+Читает текстовый файл внутри настроенного `workspace_root`.
 
 Parameters:
-- `file_path`: absolute virtual path to the file;
+- `file_path`: absolute workspace path to the file;
 - `offset`: first line to read when paging is needed;
-- `limit`: maximum number of lines to read.
+- `limit`: maximum number of lines to read; defaults to 500.
 
 Correct call example:
-`{"file_path": "/skills/hit-table/fields.md", "offset": 0, "limit": 100}`
+`{"file_path": "/deep_agent/skills/hit-table/fields.md", "offset": 0, "limit": 500}`
 
 Use when:
 - нужно изучить исходный код, тесты, конфигурацию, инструкции или документацию;
@@ -118,7 +118,8 @@ Do not use:
 - ограниченная страница не доказывает окончание файла: продолжай со следующим `offset`;
 - перед изменением исходника прочитай достаточный связный контекст, а не только строку из `grep`;
 - для `.pkl` используй `execute_python_code`;
-- передавай виртуальные абсолютные пути, например `/src/app.py`, а не host-пути.
+- путь `/src/app.py` всегда означает реальный файл `workspace_root/src/app.py`;
+- не используй отдельные aliases вроде `/skills` или `/tool_outputs`.
 """.strip(),
     "write_file": """
 write_file
@@ -170,7 +171,7 @@ Policy:
 glob
 ---
 Description:
-Находит файлы по glob-шаблону в virtual filesystem.
+Находит файлы по glob-шаблону внутри настроенного `workspace_root`.
 
 Parameters:
 - `pattern`: glob pattern, for example `**/*.md`;
@@ -189,7 +190,7 @@ Do not use:
 grep
 ---
 Description:
-Ищет текст в файлах workspace или virtual backend.
+Ищет текст в файлах внутри настроенного `workspace_root`.
 
 Parameters:
 - `pattern`: literal text to search for;
@@ -221,6 +222,13 @@ execute
 Description:
 Выполняет неинтерактивную команду в терминале с активным workspace как рабочей директорией.
 
+Path model:
+- filesystem path `/deep_agent/skills/...` означает `workspace_root/deep_agent/skills/...`;
+- aliases `/skills`, `/tool_outputs` и `/project_memory` не используются;
+- в `execute` рабочая директория уже равна `workspace_root`, поэтому используй тот же путь без ведущего `/`,
+  например `deep_agent/skills/...`;
+- создание и изменение файлов выполняй через `write_file` или `edit_file`, не через shell.
+
 Use when:
 - нужно запустить тесты, линтер, formatter, type checker, сборку или генератор;
 - нужно исследовать зависимости, runtime, git state или поведение программы;
@@ -230,6 +238,7 @@ Use when:
 Do not use:
 - для изменения исходников через redirection, Python, PowerShell, Git или другой процесс: используй `write_file` или
   `edit_file`;
+- для изменения файлов через shell, даже если путь находится внутри workspace;
 - для вычислений и преобразований, предназначенных для `execute_python_code`;
 - для интерактивных команд, credential prompts, API-ключей и сетевых проверок с секретами;
 - для доступа за пределы активного workspace.

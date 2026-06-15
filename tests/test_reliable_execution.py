@@ -23,7 +23,6 @@ from langchain.agents.middleware import (
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
 )
-from deepagents.backends import StateBackend
 from deepagents.middleware.memory import MemoryMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -31,7 +30,6 @@ from deep_agent.agent import (
     _agents_memory_path,
     _build_file_edit_interrupts,
     _build_native_runtime_middleware,
-    _supervisor_memory_path,
     build_conversation_checkpointer,
     build_skills_backend,
     build_supervisor_backend,
@@ -56,8 +54,8 @@ from deep_agent.prompts.tool_contracts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
-from deep_agent.settings import load_deep_agent_settings
-from deep_agent.runtime.filesystem import Utf8LocalShellBackend
+from deep_agent.settings import load_deep_agent_settings, workspace_tool_path
+from deep_agent.runtime.filesystem import Utf8FilesystemBackend, Utf8LocalShellBackend
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
 from deep_agent.subagents.coding import (
     CODING_AGENT_DESCRIPTION,
@@ -188,7 +186,7 @@ class ReliableExecutionTests(unittest.TestCase):
 
             selection = build_preloaded_skills_context(
                 skills_root=skills_root,
-                skills_virtual_dir="/skills/",
+                skills_workspace_dir="/deep_agent/skills/",
                 max_chars_per_file=1000,
                 model=selector_model,
                 user_query="Что такое медиана?",
@@ -212,11 +210,11 @@ class ReliableExecutionTests(unittest.TestCase):
             structured_model = SequencedStructuredModel(
                 [
                     SelectedSkillPaths(
-                        paths=["/skills/missing/SKILL.md"],
+                        paths=["/deep_agent/skills/missing/SKILL.md"],
                         selection_reason="Ошибочный путь.",
                     ),
                     SelectedSkillPaths(
-                        paths=["/skills/hit-table/SKILL.md"],
+                        paths=["/deep_agent/skills/hit-table/SKILL.md"],
                         selection_reason="Нужна карточка hits.",
                     ),
                 ]
@@ -227,11 +225,14 @@ class ReliableExecutionTests(unittest.TestCase):
                 user_query="Покажи сработки.",
                 skill_files=skill_files,
                 skills_root=skills_root,
-                skills_virtual_dir="/skills/",
+                skills_workspace_dir="/deep_agent/skills/",
             )
 
         self.assertEqual(outcome.selection_status, "success")
-        self.assertEqual(outcome.selected_paths, ["/skills/hit-table/SKILL.md"])
+        self.assertEqual(
+            outcome.selected_paths,
+            ["/deep_agent/skills/hit-table/SKILL.md"],
+        )
         self.assertTrue(outcome.retry_performed)
         self.assertEqual(structured_model.calls, 2)
         self.assertIn("Неизвестные пути", outcome.validation_errors[0])
@@ -251,7 +252,7 @@ class ReliableExecutionTests(unittest.TestCase):
                 user_query="Покажи сработки.",
                 skill_files=skill_files,
                 skills_root=skills_root,
-                skills_virtual_dir="/skills/",
+                skills_workspace_dir="/deep_agent/skills/",
             )
 
         self.assertEqual(outcome.selection_status, "selection_failed")
@@ -443,7 +444,7 @@ class ReliableExecutionTests(unittest.TestCase):
         model = object()
         tool = object()
         middleware = object()
-        skill_source = "/skills/"
+        skill_source = "/deep_agent/skills/"
 
         coding_spec = build_coding_subagent_spec(
             model=model,
@@ -503,6 +504,7 @@ class ReliableExecutionTests(unittest.TestCase):
             settings = replace(
                 load_deep_agent_settings(),
                 workspace_root=workspace,
+                skills_root=workspace / "deep_agent" / "skills",
                 tool_outputs_dir=workspace / "tool_outputs",
             )
 
@@ -512,22 +514,57 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertEqual(backend.default.cwd, workspace.resolve())
         self.assertNotIn("OPENAI_API_KEY", backend.default._env)
 
-    def test_supervisor_backend_has_no_shell_access(self) -> None:
-        """Проверяет изоляцию supervisor и data-agent от shell.
+    def test_backends_use_one_workspace_namespace_and_access_all_directories(self) -> None:
+        """Проверяет единый корень и доступ к произвольным папкам workspace.
 
         Returns:
             ``None``.
         """
 
-        settings = load_deep_agent_settings()
-        backend = build_supervisor_backend(settings)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            arbitrary_file = workspace / "nested" / "folder" / "value.txt"
+            arbitrary_file.parent.mkdir(parents=True)
+            arbitrary_file.write_text("value", encoding="utf-8")
+            skills_root = workspace / "deep_agent" / "skills"
+            skills_root.mkdir(parents=True)
+            settings = replace(
+                load_deep_agent_settings(),
+                workspace_root=workspace,
+                skills_root=skills_root,
+                tool_outputs_dir=workspace / "runs",
+            )
 
-        self.assertIsInstance(backend.default, StateBackend)
-        self.assertIn("/skills/", backend.routes)
-        self.assertEqual(
-            _supervisor_memory_path(settings.agents_file_name),
-            "/project_memory/AGENTS.md",
-        )
+            coding_backend = build_skills_backend(settings)
+            supervisor_backend = build_supervisor_backend(settings)
+
+            self.assertIsInstance(coding_backend.default, Utf8LocalShellBackend)
+            self.assertIsInstance(supervisor_backend.default, Utf8FilesystemBackend)
+            self.assertEqual(coding_backend.routes, {})
+            self.assertEqual(supervisor_backend.routes, {})
+            self.assertEqual(
+                workspace_tool_path(skills_root, workspace, directory=True),
+                "/deep_agent/skills/",
+            )
+            self.assertEqual(
+                supervisor_backend.read("/nested/folder/value.txt").file_data[
+                    "content"
+                ],
+                "value",
+            )
+
+            write_result = supervisor_backend.write(
+                "/deep_agent/skills/generated/SKILL.md",
+                "# Generated\n",
+            )
+
+            self.assertIsNone(write_result.error)
+            self.assertEqual(
+                (skills_root / "generated" / "SKILL.md").read_text(
+                    encoding="utf-8"
+                ),
+                "# Generated\n",
+            )
 
     def test_runtime_uses_native_langchain_limits_and_retries(self) -> None:
         """Проверяет встроенные retry и execution limits LangChain.
@@ -539,7 +576,10 @@ class ReliableExecutionTests(unittest.TestCase):
         settings = load_deep_agent_settings()
         middleware = _build_native_runtime_middleware(
             settings,
-            ToolOutputFileMiddleware(output_dir=settings.tool_outputs_dir),
+            ToolOutputFileMiddleware(
+                output_dir=settings.tool_outputs_dir,
+                workspace_root=settings.workspace_root,
+            ),
             limit_model_calls=True,
         )
 
@@ -550,7 +590,7 @@ class ReliableExecutionTests(unittest.TestCase):
     def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
         """HITL должен применяться только к write_file и edit_file."""
 
-        settings = load_deep_agent_settings()
+        settings = replace(load_deep_agent_settings(), enable_interrupts=True)
         interrupts = _build_file_edit_interrupts(settings)
 
         self.assertEqual(set(interrupts or {}), {"write_file", "edit_file"})
@@ -618,12 +658,23 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("`path` должен быть директорией", grep_description)
         self.assertIn('"glob": "settings.yaml"', grep_description)
         self.assertIn('"pattern": "build_client"', grep_description)
+        self.assertIn(
+            "aliases `/skills`, `/tool_outputs` и `/project_memory` не используются",
+            TOOL_DESCRIPTION_OVERRIDES["execute"],
+        )
+        self.assertIn(
+            "например `deep_agent/skills/...`",
+            TOOL_DESCRIPTION_OVERRIDES["execute"],
+        )
 
     def test_load_skills_description_rejects_auxiliary_files(self) -> None:
         """Описание load_skills должно запрещать загрузку fields.md как skill."""
 
         self.assertIn("loads only `SKILL.md` files", LOAD_SKILLS_DESCRIPTION)
-        self.assertIn("Do not pass paths like `/skills/name/fields.md`", LOAD_SKILLS_DESCRIPTION)
+        self.assertIn(
+            "Do not pass paths like `/deep_agent/skills/name/fields.md`",
+            LOAD_SKILLS_DESCRIPTION,
+        )
 
     def test_tool_rules_are_kept_in_descriptions_not_system_prompts(self) -> None:
         """Правила tools должны находиться в descriptions, а не в system prompts."""
@@ -638,6 +689,22 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertNotIn("инструмент", SYSTEM_PROMPT.lower())
         self.assertIn("Do not repeat the same delegation", SYSTEM_PROMPT)
         self.assertIn("report without factual evidence", SYSTEM_PROMPT)
+        self.assertIn("Create a plan before executing every non-trivial task", SYSTEM_PROMPT)
+        self.assertIn("Use delegation as the default execution strategy", SYSTEM_PROMPT)
+        self.assertIn(
+            "may call a non-delegation tool directly only for a very small atomic action",
+            SYSTEM_PROMPT,
+        )
+        self.assertIn("Never expose private chain-of-thought", SYSTEM_PROMPT)
+        self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
+        self.assertIn(
+            "When creating or updating a skill under `/deep_agent/skills`",
+            CODING_AGENT_PROMPT,
+        )
+        self.assertIn(
+            "maps directly to `workspace_root/deep_agent/skills/...`",
+            CODING_AGENT_PROMPT,
+        )
         self.assertIn("для чтения и проверки табличных данных", TASK_TOOL_DESCRIPTION)
         self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
         self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)

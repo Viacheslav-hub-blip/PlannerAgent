@@ -18,8 +18,8 @@
 - _read_context_file: чтение одного context-файла с ограничением размера.
 - _latest_user_query: получение последнего пользовательского запроса из state.
 - _parse_skill_index_entry: извлечение имени и описания skill.
-- _virtual_skill_path: построение виртуального пути skills для найденного файла.
-- _normalize_virtual_dir: нормализация виртуальной папки skills.
+- _workspace_skill_path: построение workspace-пути skills для найденного файла.
+- _normalize_workspace_dir: нормализация workspace-папки skills.
 - _truncate_text: ограничение длины текста skill.
 """
 
@@ -48,14 +48,14 @@ class SelectedSkillPaths(BaseModel):
     """Результат выбора релевантных skills перед запуском агента.
 
     Attributes:
-        paths: Виртуальные пути выбранных файлов ``SKILL.md``.
+        paths: Workspace-пути выбранных файлов ``SKILL.md``.
         selection_reason: Краткое объяснение выбора skills.
     """
 
     paths: list[str] = Field(
         default_factory=list,
         description=(
-            "Список виртуальных путей выбранных skill-файлов. "
+            "Список workspace-путей выбранных skill-файлов. "
             "Допустим пустой список или любое необходимое число существующих путей."
         ),
     )
@@ -91,7 +91,7 @@ class PreloadedSkillsSelection:
 
     Attributes:
         context: Объединённый текст выбранных ``SKILL.md``.
-        paths: Фактически загруженные виртуальные пути.
+        paths: Фактически загруженные workspace-пути.
         outcome: Технический результат selector.
     """
 
@@ -113,7 +113,7 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
 
     Args:
         skills_root: Локальная папка проекта, которую нужно рекурсивно просканировать.
-        skills_virtual_dir: Виртуальная папка skills внутри DeepAgents backend.
+        skills_workspace_dir: Папка skills относительно ``workspace_root``.
         max_chars_per_file: Максимальная длина текста одного ``SKILL.md`` в context.
         model: Chat model для выбора релевантных skills по index. Если ``None``,
             выбор завершается со статусом ``selection_failed``.
@@ -129,7 +129,7 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
     """
 
     skills_root: Path
-    skills_virtual_dir: str = "/skills/"
+    skills_workspace_dir: str = "/deep_agent/skills/"
     max_chars_per_file: int = 18000
     model: Any | None = None
     select_skills: bool = True
@@ -200,7 +200,7 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
 
         selection = build_preloaded_skills_context(
             skills_root=self.skills_root,
-            skills_virtual_dir=self.skills_virtual_dir,
+            skills_workspace_dir=self.skills_workspace_dir,
             max_chars_per_file=self.max_chars_per_file,
             model=self.model,
             user_query=user_query,
@@ -264,7 +264,7 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
 
 def build_preloaded_skills_context(
     skills_root: Path,
-    skills_virtual_dir: str,
+    skills_workspace_dir: str,
     max_chars_per_file: int,
     model: Any | None = None,
     user_query: str = "",
@@ -273,7 +273,7 @@ def build_preloaded_skills_context(
 
     Args:
         skills_root: Локальная папка проекта ``skills`` или другая переданная папка.
-        skills_virtual_dir: Виртуальная папка, через которую DeepAgents видит skills.
+        skills_workspace_dir: Папка skills относительно ``workspace_root``.
         max_chars_per_file: Максимальная длина текста одного ``SKILL.md``.
         model: Chat model для LLM-выбора skills по index.
         user_query: Последний пользовательский запрос для выбора skills.
@@ -288,20 +288,24 @@ def build_preloaded_skills_context(
         user_query=user_query,
         skill_files=skill_files,
         skills_root=skills_root,
-        skills_virtual_dir=skills_virtual_dir,
+        skills_workspace_dir=skills_workspace_dir,
     )
     selected_path_set = set(outcome.selected_paths)
     blocks: list[str] = []
     loaded_paths: list[str] = []
     for skill_path in skill_files:
-        virtual_path = _virtual_skill_path(skills_root, skill_path, skills_virtual_dir)
-        if virtual_path not in selected_path_set:
+        workspace_path = _workspace_skill_path(
+            skills_root,
+            skill_path,
+            skills_workspace_dir,
+        )
+        if workspace_path not in selected_path_set:
             continue
         content = _read_context_file(skill_path, max_chars_per_file)
         if content is None:
             continue
-        loaded_paths.append(virtual_path)
-        blocks.append(f"### {virtual_path}\n\n{content}")
+        loaded_paths.append(workspace_path)
+        blocks.append(f"### {workspace_path}\n\n{content}")
     return PreloadedSkillsSelection(
         context="\n\n".join(blocks),
         paths=loaded_paths,
@@ -315,7 +319,7 @@ def select_relevant_skill_paths_with_llm(
     user_query: str,
     skill_files: list[Path],
     skills_root: Path,
-    skills_virtual_dir: str,
+    skills_workspace_dir: str,
 ) -> SkillSelectionOutcome:
     """Выбирает релевантные skills через LLM по компактному index.
 
@@ -324,7 +328,7 @@ def select_relevant_skill_paths_with_llm(
         user_query: Последний пользовательский запрос.
         skill_files: Найденные файлы ``SKILL.md``.
         skills_root: Корневая папка локальных skills.
-        skills_virtual_dir: Виртуальная папка skills внутри DeepAgents.
+        skills_workspace_dir: Папка skills относительно ``workspace_root``.
 
     Returns:
         Технический результат выбора. Пустой выбор является успешным результатом.
@@ -335,7 +339,7 @@ def select_relevant_skill_paths_with_llm(
     index = build_skills_index(
         skill_files=skill_files,
         skills_root=skills_root,
-        skills_virtual_dir=skills_virtual_dir,
+        skills_workspace_dir=skills_workspace_dir,
     )
     if not index:
         return SkillSelectionOutcome(
@@ -502,14 +506,14 @@ def build_skills_index(
     *,
     skill_files: list[Path],
     skills_root: Path,
-    skills_virtual_dir: str,
+    skills_workspace_dir: str,
 ) -> list[dict[str, str]]:
     """Строит компактный index skills для LLM-выбора.
 
     Args:
         skill_files: Найденные файлы ``SKILL.md``.
         skills_root: Корневая папка локальных skills.
-        skills_virtual_dir: Виртуальная папка skills внутри DeepAgents.
+        skills_workspace_dir: Папка skills относительно ``workspace_root``.
 
     Returns:
         Список словарей с путем, именем и описанием skill.
@@ -521,7 +525,11 @@ def build_skills_index(
         parsed = _parse_skill_index_entry(content)
         index.append(
             {
-                "path": _virtual_skill_path(skills_root, skill_path, skills_virtual_dir),
+                "path": _workspace_skill_path(
+                    skills_root,
+                    skill_path,
+                    skills_workspace_dir,
+                ),
                 "name": parsed.get("name") or skill_path.parent.name,
                 "description": parsed.get("description") or "",
             }
@@ -602,36 +610,40 @@ def _parse_skill_index_entry(content: str) -> dict[str, str]:
     return result
 
 
-def _virtual_skill_path(skills_root: Path, path: Path, skills_virtual_dir: str) -> str:
-    """Строит виртуальный путь skills для найденного файла.
+def _workspace_skill_path(
+    skills_root: Path,
+    path: Path,
+    skills_workspace_dir: str,
+) -> str:
+    """Строит путь skill относительно ``workspace_root``.
 
     Args:
         skills_root: Локальная папка skills.
         path: Найденный markdown-файл внутри ``skills_root``.
-        skills_virtual_dir: Виртуальная папка skills внутри DeepAgents backend.
+        skills_workspace_dir: Workspace-папка skills внутри DeepAgents backend.
 
     Returns:
-        Виртуальный путь файла для prompt context и логов.
+        Путь файла для prompt context и filesystem tools.
     """
 
     try:
         relative_path = path.relative_to(skills_root).as_posix()
     except ValueError:
         relative_path = path.name
-    return f"{_normalize_virtual_dir(skills_virtual_dir)}{relative_path}"
+    return f"{_normalize_workspace_dir(skills_workspace_dir)}{relative_path}"
 
 
-def _normalize_virtual_dir(value: str) -> str:
-    """Нормализует виртуальную папку skills к виду ``/name/``.
+def _normalize_workspace_dir(value: str) -> str:
+    """Нормализует workspace-папку skills к виду ``/name/``.
 
     Args:
-        value: Виртуальный путь из настроек.
+        value: Путь относительно ``workspace_root``.
 
     Returns:
-        Виртуальная папка с ведущим и завершающим слешем.
+        Workspace-папка с ведущим и завершающим слешем.
     """
 
-    stripped = value.strip() or "/skills/"
+    stripped = value.strip() or "/deep_agent/skills/"
     if not stripped.startswith("/"):
         stripped = f"/{stripped}"
     if not stripped.endswith("/"):

@@ -1,6 +1,7 @@
 """Backend файловой системы и локального shell с UTF-8 fallback-поиском.
 
 Содержит:
+- configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
@@ -16,6 +17,33 @@ import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
 
 logger = logging.getLogger(__name__)
+
+
+def configure_read_file_default_limit(limit: int) -> None:
+    """Настраивает число строк встроенного инструмента ``read_file`` по умолчанию.
+
+    DeepAgents не предоставляет публичный параметр для изменения default значения
+    ``limit``. Настройка применяется до создания ``FilesystemMiddleware`` и меняет
+    одновременно default функции и Pydantic-схемы инструмента.
+
+    Args:
+        limit: Положительное число строк, читаемых при отсутствии аргумента ``limit``.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        ValueError: Передано неположительное значение.
+    """
+
+    if limit <= 0:
+        raise ValueError("read_file_default_limit должен быть положительным.")
+
+    from deepagents.middleware import filesystem as filesystem_middleware
+
+    filesystem_middleware.DEFAULT_READ_LIMIT = limit
+    filesystem_middleware.ReadFileSchema.model_fields["limit"].default = limit
+    filesystem_middleware.ReadFileSchema.model_rebuild(force=True)
 
 
 class Utf8SearchMixin:
@@ -142,4 +170,9 @@ class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
     """LocalShellBackend рабочего workspace с UTF-8 fallback grep."""
 
 
-__all__ = ["Utf8FilesystemBackend", "Utf8LocalShellBackend", "Utf8SearchMixin"]
+__all__ = [
+    "Utf8FilesystemBackend",
+    "Utf8LocalShellBackend",
+    "Utf8SearchMixin",
+    "configure_read_file_default_limit",
+]

@@ -49,5 +49,5 @@ WHERE main_rule CONTAINS '<текст правила>'
 
 ## Дополнительный контекст
 
-- `/skills/hit-table/SKILL.md` - краткая карточка `hits`.
-- `/skills/hit-table/fields.md` - редкие поля `hits`, если нужна расширенная выгрузка.
+- `/deep_agent/skills/hit-table/SKILL.md` - краткая карточка `hits`.
+- `/deep_agent/skills/hit-table/fields.md` - редкие поля `hits`, если нужна расширенная выгрузка.

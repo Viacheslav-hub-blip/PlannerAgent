@@ -93,7 +93,7 @@ description: "Используй источник uko для raw-истории 
 
 ## Дополнительный контекст
 
-- `/skills/uko-event-table/fields.md` - полный список полей `uko`.
-- `/skills/hit-table/joins.md` - маршрут связи `hits` -> `cards` / `uko`.
+- `/deep_agent/skills/uko-event-table/fields.md` - полный список полей `uko`.
+- `/deep_agent/skills/hit-table/joins.md` - маршрут связи `hits` -> `cards` / `uko`.
 
 Читай `fields.md`, если нужны редкие поля устройства, IP, правил raw-события или schema error.

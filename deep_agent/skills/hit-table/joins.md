@@ -21,5 +21,5 @@
 
 ## Когда читать другие файлы
 
-- Для полей `cards` читай `/skills/cards-event-table/fields.md`.
-- Для полей `uko` читай `/skills/uko-event-table/fields.md`.
+- Для полей `cards` читай `/deep_agent/skills/cards-event-table/fields.md`.
+- Для полей `uko` читай `/deep_agent/skills/uko-event-table/fields.md`.

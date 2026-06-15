@@ -72,7 +72,7 @@ READ_TABLE_DESCRIPTION = (
     "  LIMIT <int>\n\n"
     "Допустимые таблицы: hits, cards, uko, history_automarking, demo_client_timeline. "
     "Вместо LOAD можно использовать FROM, но имя источника должно быть коротким alias, а не Spark-путем, "
-    "именем файла, saved_file, virtual_file или pkl.\n\n"
+    "именем файла, workspace_file или pkl.\n\n"
     "Операторы WHERE:\n"
     "- равенство: =, ==, eq, equals -> внутренне нормализуется в eq;\n"
     "- не равно: !=, <>, ne, not_equals -> ne;\n"
@@ -224,7 +224,7 @@ def _resolve_table_name(table_name: str) -> str:
     normalized = table_name.strip()
     if not normalized:
         raise ValueError(f"нужно указать alias таблицы. Доступные таблицы: {_available_table_aliases_text()}.")
-    suspicious_fragments = (".", "saved_file", "virtual_file", "select_columns=", "/", "\\", "=")
+    suspicious_fragments = (".", "workspace_file", "select_columns=", "/", "\\", "=")
     if any(fragment in normalized for fragment in suspicious_fragments) or len(normalized) > 80:
         raise ValueError(
             "table_name должен быть коротким alias таблицы, а не путём к файлу, именем артефакта "

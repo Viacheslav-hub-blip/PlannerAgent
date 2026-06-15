@@ -279,7 +279,7 @@ def _resolve_table_name(table_name: str) -> str:
     normalized = table_name.strip()
     if not normalized:
         raise ValueError(f"нужно указать alias таблицы. Доступные таблицы: {_available_table_aliases_text()}.")
-    suspicious_fragments = (".", "saved_file", "virtual_file", "select_columns=", "/", "\\", "=")
+    suspicious_fragments = (".", "workspace_file", "select_columns=", "/", "\\", "=")
     if any(fragment in normalized for fragment in suspicious_fragments) or len(normalized) > 80:
         raise ValueError(
             "table_name должен быть коротким alias таблицы, а не путём к файлу, именем артефакта "
