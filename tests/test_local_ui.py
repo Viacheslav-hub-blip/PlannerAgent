@@ -23,7 +23,6 @@ from deep_agent.agent import (
 from local_ui.example_query import load_basket_query
 from run_ui import (
     REQUIRED_FRONTEND_SDK_VERSION,
-    _validate_env,
     _validate_frontend,
 )
 
@@ -65,12 +64,12 @@ class LocalUiIntegrationTests(unittest.TestCase):
 
         self.assertIn("DENY оплата обучения после смены устройства", query)
 
-    def test_ui_uses_run_model_initialization(self) -> None:
-        """Проверяет единый объект модели для консольного запуска и локального UI.
+    def test_ui_uses_python_model_instance(self) -> None:
+        """Проверяет единый Python-экземпляр модели для локального UI.
 
         Returns:
-            ``None``. Проверка завершается успешно, если UI импортирует модель,
-            используемую консольным entrypoint.
+            ``None``. Проверка завершается успешно, если UI импортирует модель
+            из отдельного Python-файла конфигурации.
         """
 
         project_root = Path(__file__).parents[1]
@@ -78,7 +77,10 @@ class LocalUiIntegrationTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("from model import model as run_model", ui_source)
+        self.assertIn(
+            "from local_ui.model_instance import model as run_model",
+            ui_source,
+        )
         self.assertIn(
             "build_fake_spark_data_tools(query_parser_model=run_model)",
             ui_source,
@@ -103,32 +105,20 @@ class LocalUiIntegrationTests(unittest.TestCase):
         self.assertIn("subAgent.toolCalls", patch_text)
         self.assertIn("subAgent.messages", patch_text)
 
-    def test_kitai_env_does_not_require_openai_api_key(self) -> None:
-        """Проверяет provider-specific валидацию KitAI-настроек.
+    def test_langgraph_config_does_not_require_env_file(self) -> None:
+        """Проверяет запуск UI с Python-конфигурацией без env-файла.
 
         Returns:
             ``None``.
         """
 
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            env_path = Path(temporary_directory) / ".env"
-            env_path.write_text(
-                "\n".join(
-                    [
-                        "DEEP_AGENT_MODEL_PROVIDER=kitai",
-                        "DEEP_AGENT_MODEL=GigaChat-2-Max",
-                        "KITAI_HOST_SDK=https://kitai.internal",
-                        "KITAI_CERT_FILE_PATH=/certs/client.crt",
-                        "KITAI_CERT_KEY_FILE_PATH=/certs/client.key",
-                    ]
-                ),
-                encoding="utf-8",
+        config = json.loads(
+            (Path(__file__).parents[1] / "local_ui" / "langgraph.json").read_text(
+                encoding="utf-8"
             )
+        )
 
-            values = _validate_env(env_path)
-
-        self.assertEqual(values["DEEP_AGENT_MODEL_PROVIDER"], "kitai")
-        self.assertNotIn("OPENAI_API_KEY", values)
+        self.assertNotIn("env", config)
 
     def test_frontend_dependencies_require_streaming_sdk(self) -> None:
         """Проверяет повторную установку UI при устаревшем frontend SDK.

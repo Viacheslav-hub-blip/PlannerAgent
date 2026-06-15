@@ -8,9 +8,6 @@
 - _resolve_python: выбор Python-интерпретатора;
 - _resolve_argv: разрешение исполняемого файла команды;
 - _popen: безопасный запуск дочернего процесса;
-- _parse_env_value: очистка значения из env-файла;
-- _read_env_file: чтение env-файла;
-- _validate_env: проверка обязательных переменных;
 - _child_env: сборка окружения дочерних процессов;
 - _ensure_tool: проверка системного инструмента;
 - _python_dependencies_ready: проверка LangGraph CLI;
@@ -44,15 +41,6 @@ from datetime import datetime
 from pathlib import Path
 
 ASSISTANT_ID = "analytics-agent"
-COMMON_REQUIRED_ENV_KEYS = ("DEEP_AGENT_MODEL",)
-PROVIDER_REQUIRED_ENV_KEYS = {
-    "openai": ("OPENAI_API_KEY",),
-    "kitai": (
-        "KITAI_HOST_SDK",
-        "KITAI_CERT_FILE_PATH",
-        "KITAI_CERT_KEY_FILE_PATH",
-    ),
-}
 REQUIRED_FRONTEND_SDK_VERSION = "1.9.21"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -61,7 +49,6 @@ RUNTIME_ROOT = LOCAL_UI_ROOT / ".runtime"
 DEFAULT_FRONTEND_ROOT = RUNTIME_ROOT / "deep-agents-ui"
 RUNTIME_LOGS = RUNTIME_ROOT / "logs"
 DEFAULT_LANGGRAPH_CONFIG = LOCAL_UI_ROOT / "langgraph.json"
-DEFAULT_ENV_PATH = LOCAL_UI_ROOT / ".env"
 
 _backend_process: subprocess.Popen[bytes] | None = None
 _frontend_process: subprocess.Popen[bytes] | None = None
@@ -152,97 +139,14 @@ def _popen(
     return subprocess.Popen(argv, cwd=cwd, env=env, **kwargs)  # type: ignore[arg-type]
 
 
-def _parse_env_value(value: str) -> str:
-    """Удаляет пробелы и внешние кавычки из значения env-файла.
-
-    Args:
-        value: Сырое значение после знака ``=``.
-
-    Returns:
-        Очищенная строка.
-    """
-
-    return value.strip().strip('"').strip("'")
-
-
-def _read_env_file(env_path: Path) -> dict[str, str]:
-    """Читает простой env-файл формата ``KEY=VALUE``.
-
-    Args:
-        env_path: Путь к env-файлу.
-
-    Returns:
-        Словарь переменных из файла.
-
-    Raises:
-        RuntimeError: Env-файл отсутствует.
-    """
-
-    if not env_path.exists():
-        raise RuntimeError(
-            f"Не найден env-файл: {env_path}\n"
-            "Создайте local_ui/.env и заполните настройки запуска."
-        )
-
-    values: dict[str, str] = {}
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key:
-            values[key] = _parse_env_value(value)
-    return values
-
-
-def _validate_env(env_path: Path) -> dict[str, str]:
-    """Проверяет обязательные настройки выбранного модельного провайдера.
-
-    Args:
-        env_path: Путь к env-файлу.
-
-    Returns:
-        Словарь прочитанных переменных.
-
-    Raises:
-        RuntimeError: Провайдер неизвестен или обязательные переменные отсутствуют.
-    """
-
-    values = _read_env_file(env_path)
-    provider = values.get("DEEP_AGENT_MODEL_PROVIDER", "openai").strip().lower()
-    provider_keys = PROVIDER_REQUIRED_ENV_KEYS.get(provider)
-    if provider_keys is None:
-        supported = ", ".join(sorted(PROVIDER_REQUIRED_ENV_KEYS))
-        raise RuntimeError(
-            f"Неподдерживаемый DEEP_AGENT_MODEL_PROVIDER={provider!r}. "
-            f"Доступные значения: {supported}."
-        )
-    required_keys = (*COMMON_REQUIRED_ENV_KEYS, *provider_keys)
-    missing = [key for key in required_keys if not values.get(key)]
-    if missing:
-        raise RuntimeError(
-            f"В {env_path} не заданы обязательные переменные: {', '.join(missing)}"
-        )
-    return values
-
-
-def _child_env(env_values: dict[str, str]) -> dict[str, str]:
+def _child_env() -> dict[str, str]:
     """Собирает окружение backend и frontend без установки зависимостей.
 
-    Args:
-        env_values: Переменные из env-файла.
-
     Returns:
-        Копия системного окружения с настройками проекта и ``PYTHONPATH``.
+        Копия системного окружения с добавленным ``PYTHONPATH`` проекта.
     """
 
     env = os.environ.copy()
-    env.update(env_values)
 
     current_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = (
@@ -539,14 +443,12 @@ def _make_log_paths() -> tuple[Path, Path]:
     )
 
 
-def _start_services(args: argparse.Namespace, python: Path, env_values: dict[str, str]) -> int:
+def _start_services(args: argparse.Namespace, python: Path) -> int:
     """Запускает Agent Server и frontend после локальных проверок.
 
     Args:
         args: Аргументы командной строки.
         python: Путь к Python-интерпретатору.
-        env_values: Проверенные переменные из env-файла.
-
     Returns:
         Код завершения frontend-процесса.
 
@@ -561,7 +463,7 @@ def _start_services(args: argparse.Namespace, python: Path, env_values: dict[str
     if not langgraph_config.exists():
         raise RuntimeError(f"Не найден LangGraph config: {langgraph_config}")
 
-    child_env = _child_env(env_values)
+    child_env = _child_env()
     backend_out, backend_err = _make_log_paths()
     langgraph = _langgraph_command(python)
     creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
@@ -686,9 +588,8 @@ def main() -> int:
 
     try:
         _validate_python_runtime(python)
-        env_values = _validate_env(DEFAULT_ENV_PATH.resolve())
         _validate_frontend(args.frontend_dir.resolve(), strict_sdk=args.strict_frontend_sdk)
-        return _start_services(args, python, env_values)
+        return _start_services(args, python)
     except KeyboardInterrupt:
         return 130
     except RuntimeError as error:

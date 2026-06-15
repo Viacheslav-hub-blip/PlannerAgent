@@ -1,6 +1,7 @@
 """Адаптер корпоративной KitAI-модели для сообщений LangChain и DeepAgents.
 
 Содержит:
+- DeepAgentsKitaiChatModel: KitAI-модель с нормализацией сообщений DeepAgents.
 - content_to_text: преобразование content blocks в строку.
 - normalize_kitai_message: создание совместимой копии сообщения LangChain.
 - normalize_kitai_messages: нормализация одного сообщения или списка сообщений.
@@ -14,6 +15,15 @@ import os
 from typing import Any
 
 from langchain_core.messages import BaseMessage
+
+try:
+    from sber_kitai_sdk_langchain.system_chat_model import KitaiSystemChatModel
+    from sber_kitai_sdk_py.generated.api_client import ApiClient
+    from sber_kitai_sdk_py.generated.configuration import Configuration
+except ImportError:
+    KitaiSystemChatModel = None  # type: ignore[assignment]
+    ApiClient = None  # type: ignore[assignment]
+    Configuration = None  # type: ignore[assignment]
 
 
 def content_to_text(content: Any) -> str:
@@ -85,6 +95,126 @@ def normalize_kitai_messages(input_value: Any) -> Any:
     return input_value
 
 
+class DeepAgentsKitaiChatModel(
+    KitaiSystemChatModel if KitaiSystemChatModel is not None else object
+):
+    """KitAI-модель с нормализацией content blocks LangChain.
+
+    Args:
+        model: Имя модели в KitAI.
+        kitai_host_sdk: URL корпоративного KitAI API.
+        cert_file: Абсолютный путь к клиентскому сертификату.
+        key_file: Абсолютный путь к закрытому ключу сертификата.
+        verify_ssl: Проверять TLS-сертификат сервера.
+        system_name: Имя системы KitAI.
+        module_name: Имя модуля KitAI.
+        polling_retries: Максимальное число проверок готовности ответа.
+        polling_delay_in_sec: Интервал между проверками ответа.
+        polling_start_delay_in_sec: Задержка перед первой проверкой ответа.
+        polling_timeout_in_sec: Общий таймаут ожидания ответа.
+        temperature: Температура генерации.
+        profanity_check: Использовать встроенную проверку контента.
+        verbose: Включить подробный режим SDK.
+        **kwargs: Дополнительные параметры ``KitaiSystemChatModel``.
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        kitai_host_sdk: str,
+        cert_file: str,
+        key_file: str,
+        verify_ssl: bool = False,
+        system_name: str = "lab",
+        module_name: str = "lab_antifraud_edge",
+        polling_retries: int = 500,
+        polling_delay_in_sec: int = 2,
+        polling_start_delay_in_sec: int = 2,
+        polling_timeout_in_sec: int = 180,
+        temperature: float = 0.05,
+        profanity_check: bool = False,
+        verbose: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        """Инициализирует KitAI API client и LangChain chat-модель.
+
+        Args:
+            model: Имя модели в KitAI.
+            kitai_host_sdk: URL корпоративного KitAI API.
+            cert_file: Абсолютный путь к клиентскому сертификату.
+            key_file: Абсолютный путь к закрытому ключу сертификата.
+            verify_ssl: Проверять TLS-сертификат сервера.
+            system_name: Имя системы KitAI.
+            module_name: Имя модуля KitAI.
+            polling_retries: Максимальное число проверок готовности ответа.
+            polling_delay_in_sec: Интервал между проверками ответа.
+            polling_start_delay_in_sec: Задержка перед первой проверкой ответа.
+            polling_timeout_in_sec: Общий таймаут ожидания ответа.
+            temperature: Температура генерации.
+            profanity_check: Использовать встроенную проверку контента.
+            verbose: Включить подробный режим SDK.
+            **kwargs: Дополнительные параметры базовой модели.
+
+        Returns:
+            ``None``.
+
+        Raises:
+            RuntimeError: Корпоративные KitAI SDK не установлены.
+        """
+
+        if Configuration is None or ApiClient is None or KitaiSystemChatModel is None:
+            raise RuntimeError(
+                "Установите sber_kitai_sdk_langchain и sber_kitai_sdk_py."
+            )
+
+        configuration = Configuration(host=kitai_host_sdk)
+        configuration.cert_file = cert_file
+        configuration.key_file = key_file
+        configuration.verify_ssl = verify_ssl
+
+        super().__init__(
+            api_client=ApiClient(configuration),
+            system_name=system_name,
+            module_name=module_name,
+            model_name=model,
+            polling_retries=polling_retries,
+            polling_delay_in_sec=polling_delay_in_sec,
+            polling_start_delay_in_sec=polling_start_delay_in_sec,
+            polling_timeout_in_sec=polling_timeout_in_sec,
+            temperature=temperature,
+            profanity_check=profanity_check,
+            verbose=verbose,
+            **kwargs,
+        )
+
+    def _generate(
+        self,
+        messages: Any,
+        stop: Any = None,
+        run_manager: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Выполняет вызов KitAI с нормализованными сообщениями.
+
+        Args:
+            messages: Список сообщений LangChain.
+            stop: Последовательности остановки генерации.
+            run_manager: Менеджер callbacks LangChain.
+            **kwargs: Дополнительные параметры вызова модели.
+
+        Returns:
+            Результат базового ``KitaiSystemChatModel._generate``.
+        """
+
+        return super()._generate(
+            normalize_kitai_messages(messages),
+            stop=stop,
+            run_manager=run_manager,
+            **kwargs,
+        )
+
+
 def build_kitai_model() -> Any:
     """Создаёт KitAI chat-модель с нормализацией сообщений DeepAgents.
 
@@ -96,55 +226,14 @@ def build_kitai_model() -> Any:
         KeyError: Не задана обязательная переменная окружения KitAI.
     """
 
-    try:
-        from sber_kitai_sdk_langchain.system_chat_model import KitaiSystemChatModel
-        from sber_kitai_sdk_py.generated.api_client import ApiClient
-        from sber_kitai_sdk_py.generated.configuration import Configuration
-    except ImportError as error:
-        raise RuntimeError(
-            "Для DEEP_AGENT_MODEL_PROVIDER=kitai установите "
-            "sber_kitai_sdk_langchain и sber_kitai_sdk_py."
-        ) from error
-
-    class NormalizedKitaiSystemChatModel(KitaiSystemChatModel):
-        """KitAI-модель, преобразующая content blocks LangChain в строки."""
-
-        def _generate(
-            self,
-            messages: Any,
-            stop: Any = None,
-            run_manager: Any = None,
-            **kwargs: Any,
-        ) -> Any:
-            """Выполняет синхронный вызов KitAI с нормализованными сообщениями.
-
-            Args:
-                messages: Список сообщений LangChain.
-                stop: Последовательности остановки генерации.
-                run_manager: Менеджер callbacks LangChain.
-                **kwargs: Дополнительные параметры вызова модели.
-
-            Returns:
-                Результат базового ``KitaiSystemChatModel._generate``.
-            """
-
-            return super()._generate(
-                normalize_kitai_messages(messages),
-                stop=stop,
-                run_manager=run_manager,
-                **kwargs,
-            )
-
-    configuration = Configuration(host=os.environ["KITAI_HOST_SDK"])
-    configuration.cert_file = os.environ["KITAI_CERT_FILE_PATH"]
-    configuration.key_file = os.environ["KITAI_CERT_KEY_FILE_PATH"]
-    configuration.verify_ssl = _environment_flag("KITAI_VERIFY_SSL", default=False)
-
-    return NormalizedKitaiSystemChatModel(
-        api_client=ApiClient(configuration),
+    return DeepAgentsKitaiChatModel(
+        model=os.environ.get("DEEP_AGENT_MODEL", "GigaChat-2-Max"),
+        kitai_host_sdk=os.environ["KITAI_HOST_SDK"],
+        cert_file=os.environ["KITAI_CERT_FILE_PATH"],
+        key_file=os.environ["KITAI_CERT_KEY_FILE_PATH"],
+        verify_ssl=_environment_flag("KITAI_VERIFY_SSL", default=False),
         system_name=os.environ.get("KITAI_SYSTEM_NAME", "lab"),
         module_name=os.environ.get("KITAI_MODULE_NAME", "lab_antifraud_edge"),
-        model_name=os.environ.get("DEEP_AGENT_MODEL", "GigaChat-2-Max"),
         polling_retries=int(os.environ.get("KITAI_POLLING_RETRIES", "500")),
         polling_delay_in_sec=int(os.environ.get("KITAI_POLLING_DELAY_SECONDS", "2")),
         polling_start_delay_in_sec=int(
@@ -177,6 +266,7 @@ def _environment_flag(name: str, *, default: bool) -> bool:
 
 
 __all__ = [
+    "DeepAgentsKitaiChatModel",
     "build_kitai_model",
     "content_to_text",
     "normalize_kitai_message",

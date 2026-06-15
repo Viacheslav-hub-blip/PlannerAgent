@@ -56,14 +56,10 @@ python run_ui.py --frontend-dir C:\path\to\deep-agents-ui
 wsl -d Ubuntu -- bash /mnt/c/path/to/deepagent/scripts/build_ui_archive.sh
 ```
 
-`local_ui/.env` является единственным файлом настроек UI. Используются только переменные
-из него; ключи из `model.py` этот entrypoint не импортирует.
-
-```env
-OPENAI_API_KEY=...
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-DEEP_AGENT_MODEL=z-ai/glm-5
-```
+Модель локального UI создаётся Python-кодом в `local_ui/model_instance.py`. В этом файле
+укажите имя модели, URL KitAI, абсолютные Linux-пути к сертификату и ключу, polling и
+остальные параметры. `local_ui/agent.py` импортирует готовый объект `model` и передаёт
+его supervisor, subagents и query parser. Env-файл для модели не требуется.
 
 По умолчанию:
 
@@ -115,16 +111,9 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 
 1. **Стриминг графа LangGraph** — обновления шагов агента (tool calls, план, готовые
    сообщения). Его использует `deep-agents-ui`; без него интерфейс не покажет прогресс.
-2. **Token-streaming модели** — посимвольная печать ответа LLM. Если провайдер его не
-   поддерживает, задайте в `local_ui/.env`:
-
-```env
-DEEP_AGENT_DISABLE_STREAMING=true
-```
-
-Тогда LangChain вызывает модель через обычный `invoke`, а не `astream`. Агент и UI
-продолжают работать: текст ответа появится целиком после завершения шага модели, плюс
-по-прежнему стримятся вызовы инструментов и промежуточные обновления графа.
+2. **Token-streaming модели** — посимвольная печать ответа LLM. Поддержка определяется
+   реализацией модели из `local_ui/model_instance.py`. Граф LangGraph, tool calls и
+   промежуточные обновления UI работают независимо от token-streaming провайдера.
 
 ## Артефакты и ограничения
 
