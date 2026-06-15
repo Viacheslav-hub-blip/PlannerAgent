@@ -45,6 +45,7 @@ from deep_agent.capabilities import (
     SUPERVISOR_SKILL_TOOL_GRANTS,
 )
 from deep_agent.runtime.harness import build_analytics_harness_profile
+from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -635,11 +636,13 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertNotIn("read_file", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
         self.assertNotIn("load_skills", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
         self.assertNotIn("инструмент", SYSTEM_PROMPT.lower())
-        self.assertIn("Не повторяйте делегирование", SYSTEM_PROMPT)
-        self.assertIn("неполный", SYSTEM_PROMPT)
+        self.assertIn("Do not repeat the same delegation", SYSTEM_PROMPT)
+        self.assertIn("report without factual evidence", SYSTEM_PROMPT)
         self.assertIn("для чтения и проверки табличных данных", TASK_TOOL_DESCRIPTION)
-        self.assertIn("наличие результатов", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("Верните результат выполнения задачи", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("material parameters", CODING_AGENT_PROMPT)
+        self.assertIn("observed result", CODING_AGENT_PROMPT)
 
     def test_exact_event_id_lookup_does_not_require_period(self) -> None:
         """Точный event_id должен разрешать первичный lookup без event_dt."""

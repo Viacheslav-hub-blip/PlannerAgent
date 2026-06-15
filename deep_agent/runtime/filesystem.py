@@ -29,6 +29,44 @@ class Utf8SearchMixin:
         Экземпляр backend с UTF-8 fallback-поиском.
     """
 
+    def read(
+        self,
+        file_path: str,
+        offset: int = 0,
+        limit: int = 2000,
+    ):
+        """Читает страницу файла и явно сообщает о наличии продолжения.
+
+        Args:
+            file_path: Абсолютный виртуальный путь к файлу.
+            offset: Смещение первой читаемой строки, начиная с нуля.
+            limit: Максимальное число строк содержимого в одной странице.
+
+        Returns:
+            Результат чтения backend с маркером следующего ``offset``, если
+            файл не закончился на текущей странице.
+        """
+
+        result = super().read(file_path, offset=offset, limit=limit + 1)
+        if result.error or result.file_data is None:
+            return result
+        if result.file_data.get("encoding") != "utf-8":
+            return result
+
+        lines = result.file_data["content"].splitlines(keepends=True)
+        if len(lines) <= limit:
+            return result
+
+        page = "".join(lines[:limit])
+        if page and not page.endswith(("\n", "\r")):
+            page += "\n"
+        next_offset = offset + limit
+        result.file_data["content"] = (
+            page
+            + f"[Файл прочитан не полностью; продолжите чтение с offset={next_offset}.]"
+        )
+        return result
+
     def _python_search(
         self,
         pattern: str,

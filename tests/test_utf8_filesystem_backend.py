@@ -17,6 +17,51 @@ from deep_agent.runtime.filesystem import Utf8FilesystemBackend
 class Utf8FilesystemBackendTests(unittest.TestCase):
     """Проверяет поиск по UTF-8 файлам при недоступном ripgrep."""
 
+    def test_read_marks_incomplete_page_with_next_offset(self) -> None:
+        """Добавляет маркер продолжения, если после страницы остались строки.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "large.txt").write_text(
+                "line 1\nline 2\nline 3\n",
+                encoding="utf-8",
+            )
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.read("/large.txt", offset=0, limit=2)
+
+        self.assertIsNone(result.error)
+        self.assertIsNotNone(result.file_data)
+        content = result.file_data["content"]
+        self.assertIn("line 1\nline 2\n", content)
+        self.assertIn("Файл прочитан не полностью", content)
+        self.assertIn("offset=2", content)
+
+    def test_read_does_not_mark_complete_page(self) -> None:
+        """Не добавляет маркер, если файл заканчивается на границе страницы.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "complete.txt").write_text(
+                "line 1\nline 2\n",
+                encoding="utf-8",
+            )
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.read("/complete.txt", offset=0, limit=2)
+
+        self.assertIsNone(result.error)
+        self.assertIsNotNone(result.file_data)
+        self.assertEqual(result.file_data["content"], "line 1\nline 2\n")
+
     def test_python_fallback_reads_utf8_explicitly(self) -> None:
         """Находит ASCII-поле в UTF-8 файле с русским текстом без использования ripgrep.
 
