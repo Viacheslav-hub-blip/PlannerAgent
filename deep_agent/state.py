@@ -29,6 +29,7 @@ class AnalyticsAgentState(AgentState):
         Annotated[list[str], PrivateStateAttr]
     ]
     materialized_skill_paths: NotRequired[Annotated[list[str], PrivateStateAttr]]
+    postgres_logging_run_id: NotRequired[Annotated[str, PrivateStateAttr]]
 
 
 def extract_state_messages(state: Any) -> list[Any]:

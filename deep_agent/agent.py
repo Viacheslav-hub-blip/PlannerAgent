@@ -17,6 +17,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - build_data_tools: сборка инструментов чтения данных через фабрику из настроек.
 - _load_callable_from_path: импорт callable по строковому пути.
 - _normalize_data_tools: проверка и нормализация списка инструментов.
+- _normalize_extra_tools: проверка и нормализация дополнительных tools.
 - build_analytics_deep_agent: сборка supervisor и subagents.
 - build_skills_backend: сборка workspace backend для coding-agent.
 - build_supervisor_backend: сборка backend без shell для supervisor и data-agent.
@@ -68,9 +69,20 @@ from deep_agent.runtime.filesystem import (
     Utf8LocalShellBackend,
     configure_read_file_default_limit,
 )
-from deep_agent.tools.data_result_wrapper import wrap_data_tools_with_query_code
+from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
+from deep_agent.middleware.tool_visibility import ToolVisibilityMiddleware
+from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
+from deep_agent.logging import build_postgres_logging_middleware
+from deep_agent.capabilities import (
+    BASE_SUPERVISOR_TOOL_NAMES,
+    CODE_WORKSPACE_TOOL_NAMES,
+    DATA_RETRIEVAL_TOOL_NAMES,
+    IMAGE_ANALYSIS_SKILL_PATH,
+    MCP_TOOLS_SKILL_PATH,
+    SUPERVISOR_SKILL_TOOL_GRANTS,
+)
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -140,10 +152,29 @@ def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
     return tools
 
 
+def _normalize_extra_tools(raw_tools: Any) -> list[BaseTool]:
+    """Приводит дополнительные tools к списку ``BaseTool`` с проверкой типов.
+
+    Args:
+        raw_tools: ``None``, один ``BaseTool`` или последовательность ``BaseTool``.
+
+    Returns:
+        Нормализованный список дополнительных tools.
+
+    Raises:
+        TypeError: Передан объект не ``BaseTool``.
+    """
+
+    if raw_tools is None:
+        return []
+    return _normalize_data_tools(raw_tools)
+
+
 def build_analytics_deep_agent(
     model: Any,
     settings: DeepAgentSettings | None = None,
     data_tools: list[BaseTool] | None = None,
+    extra_tools: list[BaseTool] | None = None,
     workspace_root: str | Path | None = None,
     checkpointer: Any = _DEFAULT_CHECKPOINTER,
     state_artifacts_virtual_dir: str | None = None,
@@ -179,6 +210,8 @@ def build_analytics_deep_agent(
         model: Chat model LangChain для supervisor и subagent.
         settings: Готовые настройки; если ``None`` — загружаются из JSON-конфига.
         data_tools: Готовые tools чтения данных; если ``None`` — берутся из фабрики конфига.
+        extra_tools: Дополнительные tools supervisor, например VLM или MCP tools.
+            Они скрыты до загрузки соответствующего skill.
         workspace_root: Рабочая директория coding-agent. Имеет приоритет над settings.
         checkpointer: Checkpointer LangGraph для истории диалога. Если аргумент не передан,
             создаётся штатный ``InMemorySaver``. Явный ``None`` передаёт управление
@@ -227,6 +260,19 @@ def build_analytics_deep_agent(
     if data_tools is None:
         data_tools = build_data_tools(settings)
     data_tools = wrap_data_tools_with_query_code(data_tools)
+    extra_tools = _normalize_extra_tools(extra_tools)
+    extra_tool_names = frozenset(str(tool.name) for tool in extra_tools)
+    supervisor_skill_tool_grants = {
+        **SUPERVISOR_SKILL_TOOL_GRANTS,
+        MCP_TOOLS_SKILL_PATH: frozenset(
+            name
+            for name in extra_tool_names
+            if name not in SUPERVISOR_SKILL_TOOL_GRANTS.get(
+                IMAGE_ANALYSIS_SKILL_PATH,
+                frozenset(),
+            )
+        ),
+    }
 
     # Шаг 3. Единственный project-specific middleware сохраняет табличные результаты
     # в pickle. Skills, retries, limits, filesystem, memory, HITL и subagents собираются
@@ -278,6 +324,13 @@ def build_analytics_deep_agent(
     coding_agent_middleware = _build_native_runtime_middleware(
         settings,
         tool_output_file_middleware,
+        agent_name="coding-agent",
+        visibility_middleware=ToolVisibilityMiddleware(
+            allowed_tools=frozenset(
+                CODE_WORKSPACE_TOOL_NAMES
+                | {"execute_python_code", "load_skills", "write_todos"}
+            )
+        ),
         limit_model_calls=True,
     )
     coding_agent = create_deep_agent(
@@ -296,6 +349,10 @@ def build_analytics_deep_agent(
         *_build_native_runtime_middleware(
             settings,
             tool_output_file_middleware,
+            agent_name="data-retrieval-agent",
+            visibility_middleware=ToolVisibilityMiddleware(
+                allowed_tools=DATA_RETRIEVAL_TOOL_NAMES
+            ),
             limit_model_calls=True,
         ),
     ]
@@ -327,7 +384,7 @@ def build_analytics_deep_agent(
     )
     agent = create_deep_agent(
         model=model,
-        tools=[python_tool],
+        tools=[python_tool, *extra_tools],
         system_prompt=system_prompt,
         subagents=subagents,
         skills=[skills_workspace_dir],
@@ -337,6 +394,11 @@ def build_analytics_deep_agent(
             *_build_native_runtime_middleware(
                 settings,
                 tool_output_file_middleware,
+                agent_name="supervisor",
+                visibility_middleware=ToolVisibilityMiddleware(
+                    allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+                    skill_tool_grants=supervisor_skill_tool_grants,
+                ),
                 limit_model_calls=False,
             ),
         ],
@@ -356,6 +418,8 @@ def _build_native_runtime_middleware(
     settings: DeepAgentSettings,
     tool_output_file_middleware: ToolOutputFileMiddleware,
     *,
+    agent_name: str = "supervisor",
+    visibility_middleware: Any | None = None,
     limit_model_calls: bool,
 ) -> list[Any]:
     """Собирает runtime middleware из публичных реализаций LangChain.
@@ -363,12 +427,17 @@ def _build_native_runtime_middleware(
     Args:
         settings: Настройки лимитов и управления контекстом.
         tool_output_file_middleware: Единственный project-specific middleware.
+        agent_name: Имя агента для служебного логирования.
+        visibility_middleware: Опциональный фильтр доступных tools.
         limit_model_calls: Нужно ли ограничивать число model calls для subagent.
 
     Returns:
         Список middleware для передачи в ``create_deep_agent``.
     """
 
+    postgres_logging_middleware = build_postgres_logging_middleware(
+        agent_name=agent_name
+    )
     middleware: list[Any] = [
         ModelRetryMiddleware(
             max_retries=settings.max_model_retries,
@@ -376,6 +445,7 @@ def _build_native_runtime_middleware(
             on_failure=format_model_error,
         ),
         tool_output_file_middleware,
+        ToolContextNoticeMiddleware(),
         ContextEditingMiddleware(
             edits=[
                 ClearToolUsesEdit(
@@ -389,6 +459,10 @@ def _build_native_runtime_middleware(
             exit_behavior="continue",
         ),
     ]
+    if postgres_logging_middleware is not None:
+        middleware.insert(3, postgres_logging_middleware)
+    if visibility_middleware is not None:
+        middleware.insert(1, visibility_middleware)
     if limit_model_calls:
         middleware.append(
             ModelCallLimitMiddleware(

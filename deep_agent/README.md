@@ -77,6 +77,28 @@
    выполняет повторы model calls. После исчерпания повторов backend возвращает
    очищенное AI-сообщение, которое UI показывает без утечки API-ключей.
 
+11. Постепенное раскрытие tools.
+
+   `ToolVisibilityMiddleware` оставляет supervisor только базовые tools:
+   `task`, `write_todos`, `load_skills` и `execute_python_code`. Filesystem и terminal
+   открываются после skill `code-workspace`, `analyze_image` — после
+   `image-analysis`, внешние MCP tools — после `mcp-tools`.
+
+12. VLM и MCP tools.
+
+   Tool `analyze_image(image_path, query)` анализирует локальное изображение через
+   Qwen VLM. Настройки клиента находятся в `deep_agent/models/instances.py`, клиентская
+   механика — в `deep_agent/models/vlm.py`. MCP tools загружаются через
+   `deep_agent/integrations/mcp.py`; если сервис недоступен, UI entrypoint пишет warning и
+   стартует без них.
+
+13. PostgreSQL logging для статистики.
+
+   `PostgresLoggingMiddleware` логирует user request, tool start/end/error с параметрами
+   и полным текстом результата, а также final answer. Prompt-запросы и рассуждения не
+   логируются. По умолчанию logging выключен в
+   `deep_agent/logging/postgres_config.py`.
+
 ## Структура пакета
 
 ```text
@@ -84,10 +106,14 @@ deep_agent/
   agent.py                 # сборка supervisor graph и middleware
   settings.py              # конфигурация
   state.py                 # LangChain AgentState
+  entrypoints/             # local UI и validation/demo entrypoints
+  models/                  # LLM, embeddings и VLM clients
+  logging/                 # PostgreSQL logging config и middleware
   prompts/                 # отдельные prompts по ролям
   subagents/               # отдельный модуль на каждый subagent
   middleware/              # LangChain middleware
-  tools/                   # Spark, Python execution и skill loader
+  tools/                   # реализации LangChain tools
+  integrations/            # внешние подключения, включая MCP
   data/                    # schema, parser и нормализация запросов
   runtime/                 # filesystem, sandbox, harness и tracing
   config/                  # настройки по умолчанию
@@ -162,6 +188,7 @@ agent = build_analytics_deep_agent(
     model=model,
     settings=settings,
     data_tools=data_tools,
+    extra_tools=None,
     workspace_root="C:/projects/current-project",
 )
 trace_file_path = build_trace_file_path(settings.trace_log_dir)
@@ -229,6 +256,20 @@ deep_agent/config/defaults.json
 - `max_tool_calls_per_run` - общий бюджет tool calls одного запуска.
 - `max_subagent_model_calls` - лимит шагов модели внутри data-retrieval-agent.
 - `trace_log_dir` - папка внутри `workspace_root` для txt-логов с содержимым запросов к LLM.
+
+Модели настраиваются в `deep_agent/models/instances.py`. Для локального UI используйте
+`build_local_ui_model()`, для VLM — `build_qwen_vlm_config()` и
+`build_qwen_vlm_client()`.
+
+PostgreSQL logging настраивается в `deep_agent/logging/postgres_config.py`:
+
+- `POSTGRES_LOGGING_ENABLED` - включает logging middleware;
+- `POSTGRES_DSN` - строка подключения;
+- `POSTGRES_SCHEMA` - схема для таблиц;
+- `POSTGRES_AGENT_RUNS_TABLE` и `POSTGRES_TOOL_EVENTS_TABLE` - имена таблиц.
+
+Функция `initialize_postgres_logging()` создаёт схему и таблицы. Эти логи не
+используются агентом как память или источник восстановления состояния.
 
 Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
 `DEEP_AGENT_CONFIG_PATH`. Значения из этого файла переопределят defaults.

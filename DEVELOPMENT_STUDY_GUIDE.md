@@ -164,7 +164,7 @@ tools описываются только в descriptions инструменто
 
 Файл:
 
-- `deep_agent/tools/data_result_wrapper.py`
+- `deep_agent/data/result_wrapper.py`
 
 Этот модуль оборачивает tools чтения данных и добавляет прозрачность:
 

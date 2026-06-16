@@ -1,4 +1,15 @@
 # Tools
 
-LangChain tools продукта: Spark `load_data`, Python execution и загрузка skills.
-Fake Spark backend намеренно находится в `tests/support`.
+Папка содержит только реализации LangChain tools продукта:
+
+- `load_data` через Spark или совместимую фабрику data tools;
+- `execute_python_code` для расчётов по выгруженным артефактам;
+- `load_skills` для загрузки `SKILL.md`;
+- `analyze_image(image_path, query)` для анализа локальных изображений через Qwen VLM;
+- `skill_loader.py` для materialized-загрузки skills.
+
+Инфраструктура вокруг tools вынесена из этой папки:
+
+- wrapper результатов data-tools находится в `deep_agent/data/result_wrapper.py`;
+- MCP loader находится в `deep_agent/integrations/mcp.py`;
+- fake Spark backend намеренно находится в `tests/support`.

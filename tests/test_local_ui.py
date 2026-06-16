@@ -20,7 +20,7 @@ from deep_agent.agent import (
     _normalize_virtual_directory,
     build_supervisor_backend,
 )
-from local_ui.example_query import load_basket_query
+from deep_agent.entrypoints.validation_query import load_basket_query
 from run_ui import (
     REQUIRED_FRONTEND_SDK_VERSION,
     _validate_frontend,
@@ -64,28 +64,42 @@ class LocalUiIntegrationTests(unittest.TestCase):
 
         self.assertIn("DENY оплата обучения после смены устройства", query)
 
-    def test_ui_uses_python_model_instance(self) -> None:
-        """Проверяет единый Python-экземпляр модели для локального UI.
+    def test_langgraph_config_points_to_deep_agent_entrypoint(self) -> None:
+        """Проверяет, что UI запускает agent entrypoint из слоя ``deep_agent``.
 
         Returns:
-            ``None``. Проверка завершается успешно, если UI импортирует модель
-            из отдельного Python-файла конфигурации.
+            ``None``. Проверка завершается успешно, если ``langgraph.json``
+            указывает на новый Python entrypoint вне ``local_ui``.
         """
 
         project_root = Path(__file__).parents[1]
-        ui_source = (project_root / "local_ui" / "agent.py").read_text(
-            encoding="utf-8"
+        config = json.loads(
+            (project_root / "local_ui" / "langgraph.json").read_text(
+                encoding="utf-8"
+            )
         )
 
-        self.assertIn(
-            "from local_ui.model_instance import model as run_model",
-            ui_source,
+        self.assertEqual(
+            config["graphs"]["analytics-agent"],
+            "./deep_agent/entrypoints/local_ui.py:agent",
         )
-        self.assertIn(
-            "build_fake_spark_data_tools(query_parser_model=run_model)",
-            ui_source,
+
+    def test_local_ui_has_no_project_python_files(self) -> None:
+        """Проверяет, что ``local_ui`` не содержит authored Python-инициализацию.
+
+        Returns:
+            ``None``. Проверка завершается успешно, если Python-слой агента
+            перенесён в ``deep_agent``.
+        """
+
+        project_root = Path(__file__).parents[1]
+        python_files = sorted(
+            path.name
+            for path in (project_root / "local_ui").glob("*.py")
+            if path.is_file()
         )
-        self.assertIn("model=run_model", ui_source)
+
+        self.assertEqual(python_files, [])
 
     def test_frontend_patch_enables_subagent_streaming(self) -> None:
         """Проверяет наличие frontend-контракта для прогресса sub-agents.
@@ -104,6 +118,9 @@ class LocalUiIntegrationTests(unittest.TestCase):
         self.assertIn("streamSubgraphs: true", patch_text)
         self.assertIn("subAgent.toolCalls", patch_text)
         self.assertIn("subAgent.messages", patch_text)
+        self.assertIn("switchThread", patch_text)
+        self.assertIn("stream.interrupts", patch_text)
+        self.assertIn("subAgent.interrupts", patch_text)
 
     def test_langgraph_config_does_not_require_env_file(self) -> None:
         """Проверяет запуск UI с Python-конфигурацией без env-файла.

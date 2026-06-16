@@ -11,7 +11,7 @@ import argparse
 import json
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BASKET_PATH = PROJECT_ROOT / "tests" / "evaluation" / "validation_cases.json"
 
 

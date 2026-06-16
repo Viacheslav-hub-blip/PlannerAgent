@@ -40,6 +40,9 @@ from deep_agent.capabilities import (
     CODE_WORKSPACE_TOOL_NAMES,
     DATA_RETRIEVAL_TOOL_NAMES,
     GENERAL_PURPOSE_BASE_TOOL_NAMES,
+    IMAGE_ANALYSIS_SKILL_PATH,
+    IMAGE_ANALYSIS_TOOL_NAMES,
+    MCP_TOOLS_SKILL_PATH,
     SUPERVISOR_SKILL_TOOL_GRANTS,
 )
 from deep_agent.runtime.harness import build_analytics_harness_profile
@@ -80,6 +83,10 @@ from deep_agent.middleware.tool_visibility import (
     filter_system_message_by_tools,
     filter_tools_by_name,
     resolve_allowed_tools,
+)
+from deep_agent.middleware.tool_context_notice import (
+    ToolContextNoticeMiddleware,
+    build_tool_context_notice,
 )
 from deep_agent.data.query_schema import FilterCondition, ParsedDataQuery
 from deep_agent.tools.skill_loader import LOAD_SKILLS_DESCRIPTION
@@ -495,6 +502,35 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(CODE_WORKSPACE_TOOL_NAMES.issubset(with_skill))
         self.assertTrue(CODE_WORKSPACE_TOOL_NAMES.issubset(materialized))
 
+    def test_image_and_mcp_skills_grant_external_tools(self) -> None:
+        """Skills image-analysis и mcp-tools должны открывать внешние tools."""
+
+        grants = {
+            **SUPERVISOR_SKILL_TOOL_GRANTS,
+            MCP_TOOLS_SKILL_PATH: frozenset({"search_presentations"}),
+        }
+
+        without_skill = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=grants,
+            state={},
+        )
+        with_image_skill = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=grants,
+            state={"preloaded_skill_paths": [IMAGE_ANALYSIS_SKILL_PATH]},
+        )
+        with_mcp_skill = resolve_allowed_tools(
+            base_allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
+            skill_tool_grants=grants,
+            state={"materialized_skill_paths": [MCP_TOOLS_SKILL_PATH]},
+        )
+
+        self.assertTrue(IMAGE_ANALYSIS_TOOL_NAMES.isdisjoint(without_skill))
+        self.assertNotIn("search_presentations", without_skill)
+        self.assertTrue(IMAGE_ANALYSIS_TOOL_NAMES.issubset(with_image_skill))
+        self.assertIn("search_presentations", with_mcp_skill)
+
     def test_workspace_backend_uses_local_shell_and_sanitized_environment(self) -> None:
         """Backend должен выполнять команды из workspace без API-ключей в env."""
 
@@ -586,6 +622,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ModelRetryMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, ToolCallLimitMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, ModelCallLimitMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
 
     def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
         """HITL должен применяться только к write_file и edit_file."""
@@ -706,10 +743,18 @@ class ReliableExecutionTests(unittest.TestCase):
             CODING_AGENT_PROMPT,
         )
         self.assertIn("для чтения и проверки табличных данных", TASK_TOOL_DESCRIPTION)
+        self.assertIn("более чем двух последовательных чтений", TASK_TOOL_DESCRIPTION)
+        self.assertIn("не повторяй один и тот же tool call", TASK_TOOL_DESCRIPTION)
         self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
         self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
         self.assertIn("material parameters", CODING_AGENT_PROMPT)
         self.assertIn("observed result", CODING_AGENT_PROMPT)
+
+    def test_tool_context_notice_text_is_human_readable(self) -> None:
+        """Tool notice должен явно сообщать о переданном контексте."""
+
+        self.assertIn("Файл прочитан", build_tool_context_notice("read_file"))
+        self.assertIn("визуальный контекст", build_tool_context_notice("analyze_image"))
 
     def test_exact_event_id_lookup_does_not_require_period(self) -> None:
         """Точный event_id должен разрешать первичный lookup без event_dt."""

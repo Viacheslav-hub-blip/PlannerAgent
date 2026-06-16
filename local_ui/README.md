@@ -56,10 +56,11 @@ python run_ui.py --frontend-dir C:\path\to\deep-agents-ui
 wsl -d Ubuntu -- bash /mnt/c/path/to/deepagent/scripts/build_ui_archive.sh
 ```
 
-Модель локального UI создаётся Python-кодом в `local_ui/model_instance.py`. В этом файле
-укажите имя модели, URL KitAI, абсолютные Linux-пути к сертификату и ключу, polling и
-остальные параметры. `local_ui/agent.py` импортирует готовый объект `model` и передаёт
-его supervisor, subagents и query parser. Env-файл для модели не требуется.
+Python-инициализация агента не живёт в `local_ui`. LangGraph config указывает на
+`deep_agent/entrypoints/local_ui.py`, а модель локального UI создаётся в
+`deep_agent/models/instances.py` функцией `build_local_ui_model()`. Там же находятся
+настройки Qwen VLM. В `local_ui` остаются только launcher/config/frontend-файлы.
+Env-файл для модели не требуется.
 
 По умолчанию:
 
@@ -84,7 +85,7 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 Получить актуальный текст кейса 1:
 
 ```powershell
-.\.venv\Scripts\python.exe local_ui\example_query.py --case-id 1
+.\.venv\Scripts\python.exe -m deep_agent.entrypoints.validation_query --case-id 1
 ```
 
 После запуска UI отправьте напечатанный запрос:
@@ -121,7 +122,13 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 `/artifacts/`. Большие `.pkl`, изображения и другие бинарные файлы остаются на
 локальном диске, а UI показывает путь к ним в tool result.
 
-Локальный patch обновляет frontend SDK и связывает `task` с
-`stream.getSubagentsByMessage(message.id)`. Поэтому карточка subagent обновляется
-во время выполнения и показывает задачу, lifecycle-статус, сообщения, вложенные
-tool calls и итоговый результат.
+Локальный patch обновляет frontend SDK, синхронизирует переключение threads через
+`switchThread`, включает `fetchStateHistory`, связывает `task` с
+`stream.getSubagentsByMessage(message.id)` и строит approval UI по `stream.interrupts`.
+Поэтому карточка subagent обновляется во время выполнения, показывает задачу,
+lifecycle-статус, сообщения, вложенные tool calls, итоговый результат и approval для
+`write_file`/`edit_file` внутри subagent.
+
+В этом минимальном проходе большой архив
+`deep-agents-ui-node20-linux-x86_64.tar.gz.part*` не пересобирался. Для offline transfer
+после frontend-правок нужно отдельно пересобрать архив и обновить `SHA256SUMS`.

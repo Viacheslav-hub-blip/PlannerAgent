@@ -1,34 +1,5 @@
-diff --git a/src/lib/config.ts b/src/lib/config.ts
-index d6b6271..4834fc4 100644
---- a/src/lib/config.ts
-+++ b/src/lib/config.ts
-@@ -9,13 +9,22 @@ const CONFIG_KEY = "deep-agent-config";
- export function getConfig(): StandaloneConfig | null {
-   if (typeof window === "undefined") return null;
- 
-+  const environmentConfig =
-+    process.env.NEXT_PUBLIC_DEPLOYMENT_URL &&
-+    process.env.NEXT_PUBLIC_ASSISTANT_ID
-+      ? {
-+          deploymentUrl: process.env.NEXT_PUBLIC_DEPLOYMENT_URL,
-+          assistantId: process.env.NEXT_PUBLIC_ASSISTANT_ID,
-+        }
-+      : null;
-+
-   const stored = localStorage.getItem(CONFIG_KEY);
--  if (!stored) return null;
-+  if (!stored) return environmentConfig;
- 
-   try {
-     return JSON.parse(stored);
-   } catch {
--    return null;
-+    return environmentConfig;
-   }
- }
- 
-diff --git a/next.config.ts b/next.config.ts
-index 0000000..1111111 100644
+﻿diff --git a/next.config.ts b/next.config.ts
+index e9ffa30..0349f73 100644
 --- a/next.config.ts
 +++ b/next.config.ts
 @@ -1,7 +1,7 @@
@@ -40,9 +11,8 @@ index 0000000..1111111 100644
  };
  
  export default nextConfig;
-
 diff --git a/package.json b/package.json
-index 3dcdee2..277f963 100644
+index 3dcdee2..df4e8d1 100644
 --- a/package.json
 +++ b/package.json
 @@ -13,9 +13,9 @@
@@ -58,10 +28,51 @@ index 3dcdee2..277f963 100644
      "@radix-ui/react-dialog": "^1.1.15",
      "@radix-ui/react-label": "^2.1.8",
 diff --git a/src/app/components/ChatInterface.tsx b/src/app/components/ChatInterface.tsx
-index c3691a9..27ff6e8 100644
+index c3691a9..c12b9ad 100644
 --- a/src/app/components/ChatInterface.tsx
 +++ b/src/app/components/ChatInterface.tsx
-@@ -267,6 +267,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -71,6 +71,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+ 
+   const {
+     stream,
++    streamError,
+     messages,
+     todos,
+     files,
+@@ -79,12 +80,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+     isLoading,
+     isThreadLoading,
+     interrupt,
++    interrupts = [],
+     sendMessage,
+     stopStream,
+     resumeInterrupt,
+   } = useChatContext();
+ 
+   const submitDisabled = isLoading || !assistant;
++  const hasInterrupt = Boolean(interrupt || interrupts.length > 0);
+ 
+   const handleSubmit = useCallback(
+     (e?: FormEvent) => {
+@@ -171,7 +174,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+               id: toolCall.id || `tool-${Math.random()}`,
+               name,
+               args,
+-              status: interrupt ? "interrupted" : ("pending" as const),
++              status: hasInterrupt ? "interrupted" : ("pending" as const),
+             } as ToolCall;
+           }
+         );
+@@ -213,7 +216,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+         showAvatar: data.message.type !== prevMessage?.type,
+       };
+     });
+-  }, [messages, interrupt]);
++  }, [messages, hasInterrupt]);
+ 
+   const groupedTodos = {
+     in_progress: todos.filter((t) => t.status === "in_progress"),
+@@ -267,6 +270,11 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                      key={data.message.id}
                      message={data.message}
                      toolCalls={data.toolCalls}
@@ -73,14 +84,45 @@ index c3691a9..27ff6e8 100644
                      isLoading={isLoading}
                      actionRequestsMap={
                        isLastMessage ? actionRequestsMap : undefined
+@@ -274,6 +282,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+                     reviewConfigsMap={
+                       isLastMessage ? reviewConfigsMap : undefined
+                     }
++                    interrupts={interrupts}
+                     ui={messageUi}
+                     stream={stream}
+                     onResumeInterrupt={resumeInterrupt}
+@@ -490,7 +499,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+                           files={files}
+                           setFiles={setFiles}
+                           editDisabled={
+-                            isLoading === true || interrupt !== undefined
++                            isLoading === true || hasInterrupt
+                           }
+                         />
+                       </div>
+@@ -504,6 +513,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+             onSubmit={handleSubmit}
+             className="flex flex-col"
+           >
++            {streamError && (
++              <div
++                role="alert"
++                className="mx-3 mb-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300"
++              >
++                {streamError}
++              </div>
++            )}
+             <textarea
+               ref={textareaRef}
+               value={input}
 diff --git a/src/app/components/ChatMessage.tsx b/src/app/components/ChatMessage.tsx
-index 48eadde..875efc7 100644
+index 48eadde..4546443 100644
 --- a/src/app/components/ChatMessage.tsx
 +++ b/src/app/components/ChatMessage.tsx
 @@ -1,16 +1,15 @@
  "use client";
--
-+
+ 
 -import React, { useMemo, useState, useCallback } from "react";
 +import React, { useState, useCallback } from "react";
  import { SubAgentIndicator } from "@/app/components/SubAgentIndicator";
@@ -101,7 +143,7 @@ index 48eadde..875efc7 100644
  import {
    extractSubAgentContent,
    extractStringFromMessageContent,
-@@ -20,6 +19,7 @@ import { cn } from "@/lib/utils";
+@@ -20,22 +19,145 @@ import { cn } from "@/lib/utils";
  interface ChatMessageProps {
    message: Message;
    toolCalls: ToolCall[];
@@ -109,10 +151,25 @@ index 48eadde..875efc7 100644
    isLoading?: boolean;
    actionRequestsMap?: Map<string, ActionRequest>;
    reviewConfigsMap?: Map<string, ReviewConfig>;
-@@ -29,10 +29,35 @@ interface ChatMessageProps {
++  interrupts?: InterruptLike[];
+   ui?: any[];
+   stream?: any;
+-  onResumeInterrupt?: (value: any) => void;
++  onResumeInterrupt?: (value: any, interrupt?: InterruptLike) => void;
    graphId?: string;
  }
--
+ 
++type InterruptLike = {
++  id?: string;
++  ns?: string[];
++  value?: unknown;
++};
++
++type ApprovalMatch = {
++  actionRequest?: ActionRequest;
++  reviewConfig?: ReviewConfig;
++  interrupt?: InterruptLike;
++};
 +
 +/**
 + * Преобразует streamed tool call sub-agent в формат карточки UI.
@@ -138,6 +195,89 @@ index 48eadde..875efc7 100644
 +  };
 +}
 +
++/**
++ * Находит approval request для конкретного tool call.
++ *
++ * @param toolCall Вызов инструмента, отображаемый в UI.
++ * @param interrupts Список активных interrupts текущего stream или subagent.
++ * @param actionRequestsMap Fallback-карта старого root interrupt.
++ * @param reviewConfigsMap Fallback-карта review config старого root interrupt.
++ * @returns Найденный approval request, review config и исходный interrupt.
++ */
++function findApprovalForToolCall(
++  toolCall: ToolCall,
++  interrupts?: InterruptLike[],
++  actionRequestsMap?: Map<string, ActionRequest>,
++  reviewConfigsMap?: Map<string, ReviewConfig>
++): ApprovalMatch | undefined {
++  let fallback: ApprovalMatch | undefined;
++  for (const interrupt of interrupts ?? []) {
++    const value = interrupt.value as
++      | { action_requests?: ActionRequest[]; review_configs?: ReviewConfig[] }
++      | undefined;
++    const actionRequests = Array.isArray(value?.action_requests)
++      ? value?.action_requests
++      : [];
++    const reviewConfigs = Array.isArray(value?.review_configs)
++      ? value?.review_configs
++      : [];
++    for (const actionRequest of actionRequests) {
++      if (actionRequest.name !== toolCall.name) {
++        continue;
++      }
++      const reviewConfig = reviewConfigs.find(
++        (config) => config.actionName === actionRequest.name
++      );
++      const match = { actionRequest, reviewConfig, interrupt };
++      if (stableStringify(actionRequest.args) === stableStringify(toolCall.args)) {
++        return match;
++      }
++      fallback ??= match;
++    }
++  }
++  if (fallback) {
++    return fallback;
++  }
++  const actionRequest = actionRequestsMap?.get(toolCall.name);
++  if (!actionRequest) {
++    return undefined;
++  }
++  return {
++    actionRequest,
++    reviewConfig: reviewConfigsMap?.get(toolCall.name),
++  };
++}
++
++/**
++ * Стабильно сериализует args для сравнения tool call и action request.
++ *
++ * @param value Произвольные аргументы tool.
++ * @returns JSON-строка со стабильным порядком ключей.
++ */
++function stableStringify(value: unknown): string {
++  return JSON.stringify(sortValue(value)) ?? "";
++}
++
++/**
++ * Рекурсивно сортирует ключи объекта для стабильного сравнения.
++ *
++ * @param value Произвольное значение.
++ * @returns Значение с отсортированными ключами объектов.
++ */
++function sortValue(value: unknown): unknown {
++  if (Array.isArray(value)) {
++    return value.map(sortValue);
++  }
++  if (value && typeof value === "object") {
++    return Object.fromEntries(
++      Object.entries(value as Record<string, unknown>)
++        .sort(([left], [right]) => left.localeCompare(right))
++        .map(([key, item]) => [key, sortValue(item)])
++    );
++  }
++  return value;
++}
++
  export const ChatMessage = React.memo<ChatMessageProps>(
    ({
      message,
@@ -146,7 +286,11 @@ index 48eadde..875efc7 100644
      isLoading,
      actionRequestsMap,
      reviewConfigsMap,
-@@ -45,31 +70,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
++    interrupts,
+     ui,
+     stream,
+     onResumeInterrupt,
+@@ -45,31 +167,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
      const messageContent = extractStringFromMessageContent(message);
      const hasContent = messageContent && messageContent.trim() !== "";
      const hasToolCalls = toolCalls.length > 0;
@@ -178,7 +322,40 @@ index 48eadde..875efc7 100644
      const [expandedSubAgents, setExpandedSubAgents] = useState<
        Record<string, boolean>
      >({});
-@@ -157,7 +157,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -131,16 +228,28 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+                 );
+                 const actionRequest = actionRequestsMap?.get(toolCall.name);
+                 const reviewConfig = reviewConfigsMap?.get(toolCall.name);
++                const approvalMatch =
++                  findApprovalForToolCall(
++                    toolCall,
++                    interrupts,
++                    actionRequestsMap,
++                    reviewConfigsMap
++                  ) ?? { actionRequest, reviewConfig };
++                const renderedToolCall = approvalMatch.actionRequest
++                  ? { ...toolCall, status: "interrupted" as const }
++                  : toolCall;
+                 return (
+                   <ToolCallBox
+                     key={toolCall.id}
+-                    toolCall={toolCall}
++                    toolCall={renderedToolCall}
+                     uiComponent={toolCallGenUiComponent}
+                     stream={stream}
+                     graphId={graphId}
+-                    actionRequest={actionRequest}
+-                    reviewConfig={reviewConfig}
+-                    onResume={onResumeInterrupt}
++                    actionRequest={approvalMatch.actionRequest}
++                    reviewConfig={approvalMatch.reviewConfig}
++                    onResume={(value) =>
++                      onResumeInterrupt?.(value, approvalMatch.interrupt)
++                    }
+                     isLoading={isLoading}
+                   />
+                 );
+@@ -157,7 +266,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                    <div className="flex items-end gap-2">
                      <div className="w-[calc(100%-100px)]">
                        <SubAgentIndicator
@@ -190,7 +367,7 @@ index 48eadde..875efc7 100644
                          onClick={() => toggleSubAgent(subAgent.id)}
                          isExpanded={isSubAgentExpanded(subAgent.id)}
                        />
-@@ -167,21 +170,54 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -167,21 +279,77 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                      <div className="w-full max-w-full">
                        <div className="bg-surface border-border-light rounded-md border p-4">
                          <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
@@ -212,13 +389,36 @@ index 48eadde..875efc7 100644
 +                              Инструменты
 +                            </h4>
 +                            <div className="flex flex-col gap-1">
-+                              {subAgent.toolCalls.map((toolCall) => (
-+                                <ToolCallBox
-+                                  key={toolCall.id}
-+                                  toolCall={normalizeSubagentToolCall(toolCall)}
-+                                  isLoading={subAgent.status === "running"}
-+                                />
-+                              ))}
++                              {subAgent.toolCalls.map((toolCall) => {
++                                const normalizedToolCall =
++                                  normalizeSubagentToolCall(toolCall);
++                                const approvalMatch = findApprovalForToolCall(
++                                  normalizedToolCall,
++                                  subAgent.interrupts
++                                );
++                                return (
++                                  <ToolCallBox
++                                    key={toolCall.id}
++                                    toolCall={
++                                      approvalMatch?.actionRequest
++                                        ? {
++                                            ...normalizedToolCall,
++                                            status: "interrupted" as const,
++                                          }
++                                        : normalizedToolCall
++                                    }
++                                    actionRequest={approvalMatch?.actionRequest}
++                                    reviewConfig={approvalMatch?.reviewConfig}
++                                    onResume={(value) =>
++                                      onResumeInterrupt?.(
++                                        value,
++                                        approvalMatch?.interrupt
++                                      )
++                                    }
++                                    isLoading={subAgent.status === "running"}
++                                  />
++                                );
++                              })}
 +                            </div>
 +                          </div>
 +                        )}
@@ -257,8 +457,7 @@ index 67b1aef..ae16849 100644
 --- a/src/app/components/SubAgentIndicator.tsx
 +++ b/src/app/components/SubAgentIndicator.tsx
 @@ -2,17 +2,65 @@
--
-+
+ 
  import React from "react";
  import { Button } from "@/components/ui/button";
 -import { ChevronDown, ChevronUp } from "lucide-react";
@@ -271,8 +470,7 @@ index 67b1aef..ae16849 100644
 +  Clock,
 +  Loader2,
 +} from "lucide-react";
--
-+
+ 
  interface SubAgentIndicatorProps {
 -  subAgent: SubAgent;
 +  name: string;
@@ -280,8 +478,7 @@ index 67b1aef..ae16849 100644
    onClick: () => void;
    isExpanded?: boolean;
  }
--
-+
+ 
 +/**
 + * Возвращает индикатор lifecycle-статуса sub-agent.
 + *
@@ -343,14 +540,14 @@ index 67b1aef..ae16849 100644
              {isExpanded ? (
                <ChevronUp
 diff --git a/src/app/hooks/useChat.ts b/src/app/hooks/useChat.ts
-index 139b78e..1071771 100644
+index 139b78e..6af083c 100644
 --- a/src/app/hooks/useChat.ts
 +++ b/src/app/hooks/useChat.ts
 @@ -1,6 +1,6 @@
  "use client";
  
 -import { useCallback } from "react";
-+import { useCallback, useState } from "react";
++import { useCallback, useEffect, useRef, useState } from "react";
  import { useStream } from "@langchain/langgraph-sdk/react";
  import {
    type Message,
@@ -370,12 +567,13 @@ index 139b78e..1071771 100644
  
  export type StateType = {
    messages: Message[];
-@@ -25,6 +29,33 @@ export type StateType = {
+@@ -25,6 +29,34 @@ export type StateType = {
    ui?: any;
  };
  
 +type DeepAgentStream = ReturnType<typeof useStream<StateType>> & {
 +  getSubagentsByMessage: (messageId: string) => SubagentStreamInterface[];
++  switchThread: (threadId: string | null) => void;
 +};
 +
 +/**
@@ -404,15 +602,23 @@ index 139b78e..1071771 100644
  export function useChat({
    activeAssistant,
    onHistoryRevalidate,
-@@ -35,6 +66,7 @@ export function useChat({
+@@ -35,6 +67,8 @@ export function useChat({
    thread?: UseStreamThread<StateType>;
  }) {
    const [threadId, setThreadId] = useQueryState("threadId");
 +  const [streamError, setStreamError] = useState<string | null>(null);
++  const lastThreadIdRef = useRef<string | null>(threadId ?? null);
    const client = useClient();
  
    const stream = useStream<StateType>({
-@@ -48,17 +80,23 @@ export function useChat({
+@@ -42,23 +76,40 @@ export function useChat({
+     client: client ?? undefined,
+     reconnectOnMount: true,
+     threadId: threadId ?? null,
++    thread,
+     onThreadId: setThreadId,
+     defaultHeaders: { "x-auth-scheme": "langsmith" },
+     // Enable fetching state history when switching to existing threads
      fetchStateHistory: true,
      // Revalidate thread list when stream finishes, errors, or creates new thread
      onFinish: onHistoryRevalidate,
@@ -427,6 +633,16 @@ index 139b78e..1071771 100644
 -    experimental_thread: thread,
 -  });
 +  }) as DeepAgentStream;
++
++  useEffect(() => {
++    const nextThreadId = threadId ?? null;
++    if (lastThreadIdRef.current === nextThreadId) {
++      return;
++    }
++    lastThreadIdRef.current = nextThreadId;
++    setStreamError(null);
++    stream.switchThread(nextThreadId);
++  }, [stream, threadId]);
  
    const sendMessage = useCallback(
      (content: string) => {
@@ -439,7 +655,7 @@ index 139b78e..1071771 100644
            optimisticValues: (prev) => ({
              messages: [...(prev.messages ?? []), newMessage],
            }),
-@@ -85,6 +123,7 @@ export function useChat({
+@@ -85,6 +136,7 @@ export function useChat({
              : {}),
            config: activeAssistant?.config,
            checkpoint: checkpoint,
@@ -447,7 +663,7 @@ index 139b78e..1071771 100644
            ...(isRerunningSubagent
              ? { interruptAfter: ["tools"] }
              : { interruptBefore: ["tools"] }),
-@@ -92,7 +131,11 @@ export function useChat({
+@@ -92,7 +144,11 @@ export function useChat({
        } else {
          stream.submit(
            { messages },
@@ -460,7 +676,7 @@ index 139b78e..1071771 100644
          );
        }
      },
-@@ -111,7 +154,9 @@ export function useChat({
+@@ -111,7 +167,9 @@ export function useChat({
  
    const continueStream = useCallback(
      (hasTaskToolCall?: boolean) => {
@@ -470,7 +686,7 @@ index 139b78e..1071771 100644
          config: {
            ...(activeAssistant?.config || {}),
            recursion_limit: 100,
-@@ -127,14 +172,21 @@ export function useChat({
+@@ -127,14 +185,22 @@ export function useChat({
    );
  
    const markCurrentThreadAsResolved = useCallback(() => {
@@ -484,17 +700,19 @@ index 139b78e..1071771 100644
    }, [stream, onHistoryRevalidate]);
  
    const resumeInterrupt = useCallback(
-     (value: any) => {
+-    (value: any) => {
 -      stream.submit(null, { command: { resume: value } });
++    (value: any, interrupt?: { id?: string; ns?: string[] }) => {
 +      setStreamError(null);
++      const resumeValue = interrupt?.id ? { [interrupt.id]: value } : value;
 +      stream.submit(null, {
-+        command: { resume: value },
++        command: { resume: resumeValue },
 +        streamSubgraphs: true,
 +      });
        // Update thread list when resuming from interrupt
        onHistoryRevalidate?.();
      },
-@@ -153,6 +205,7 @@ export function useChat({
+@@ -153,9 +219,11 @@ export function useChat({
      ui: stream.values.ui,
      setFiles,
      messages: stream.messages,
@@ -502,3 +720,327 @@ index 139b78e..1071771 100644
      isLoading: stream.isLoading,
      isThreadLoading: stream.isThreadLoading,
      interrupt: stream.interrupt,
++    interrupts: stream.interrupts,
+     getMessagesMetadata: stream.getMessagesMetadata,
+     sendMessage,
+     runSingleStep,
+diff --git a/src/lib/config.ts b/src/lib/config.ts
+index ae15fb6..b273ff2 100644
+--- a/src/lib/config.ts
++++ b/src/lib/config.ts
+@@ -9,13 +9,22 @@ const CONFIG_KEY = "deep-agent-config";
+ export function getConfig(): StandaloneConfig | null {
+   if (typeof window === "undefined") return null;
+ 
++  const environmentConfig =
++    process.env.NEXT_PUBLIC_DEPLOYMENT_URL &&
++    process.env.NEXT_PUBLIC_ASSISTANT_ID
++      ? {
++          deploymentUrl: process.env.NEXT_PUBLIC_DEPLOYMENT_URL,
++          assistantId: process.env.NEXT_PUBLIC_ASSISTANT_ID,
++        }
++      : null;
++
+   const stored = localStorage.getItem(CONFIG_KEY);
+-  if (!stored) return null;
++  if (!stored) return environmentConfig;
+ 
+   try {
+     return JSON.parse(stored);
+   } catch {
+-    return null;
++    return environmentConfig;
+   }
+ }
+ 
+diff --git a/tsconfig.json b/tsconfig.json
+index c133409..b575f7d 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -1,7 +1,11 @@
+ {
+   "compilerOptions": {
+     "target": "ES2017",
+-    "lib": ["dom", "dom.iterable", "esnext"],
++    "lib": [
++      "dom",
++      "dom.iterable",
++      "esnext"
++    ],
+     "allowJs": true,
+     "skipLibCheck": true,
+     "strict": true,
+@@ -11,7 +15,7 @@
+     "moduleResolution": "bundler",
+     "resolveJsonModule": true,
+     "isolatedModules": true,
+-    "jsx": "preserve",
++    "jsx": "react-jsx",
+     "incremental": true,
+     "plugins": [
+       {
+@@ -19,9 +23,19 @@
+       }
+     ],
+     "paths": {
+-      "@/*": ["./src/*"]
++      "@/*": [
++        "./src/*"
++      ]
+     }
+   },
+-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+-  "exclude": ["node_modules"]
++  "include": [
++    "next-env.d.ts",
++    "**/*.ts",
++    "**/*.tsx",
++    ".next/types/**/*.ts",
++    ".next/dev/types/**/*.ts"
++  ],
++  "exclude": [
++    "node_modules"
++  ]
+ }
+diff --git a/yarn.lock b/yarn.lock
+index c1ba2f6..c561f13 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -494,20 +494,17 @@
+     "@jridgewell/resolve-uri" "^3.1.0"
+     "@jridgewell/sourcemap-codec" "^1.4.14"
+ 
+-"@langchain/core@^1.1.19":
+-  version "1.1.19"
+-  resolved "https://registry.yarnpkg.com/@langchain/core/-/core-1.1.19.tgz#2fc469feba031c9b6a6f2554512259fdc9b0ed69"
+-  integrity sha512-hmNAcgeLLqNLnu8UK+HVTfB8170eCmAfsy4gFLBYeE+kdsnyO0Hd/Kd42pZi8Cgfux4OMX3yxl+g+/a1ktGe0A==
++"@langchain/core@^1.1.48":
++  version "1.1.48"
++  resolved "https://registry.yarnpkg.com/@langchain/core/-/core-1.1.48.tgz#dfe7f6a64b0e3e79e5357ed4b402c021ee315a7f"
++  integrity sha512-fQU6Guyb1pwc2fEplmA8FPbKfOMAofjnyJzExevro0FxEiuGHE18Ov/ZHmT9trWCDTZRI9eW1VIc6aChxV8pAQ==
+   dependencies:
+     "@cfworker/json-schema" "^4.0.2"
+-    ansi-styles "^5.0.0"
+-    camelcase "6"
+-    decamelize "1.2.0"
++    "@standard-schema/spec" "^1.1.0"
+     js-tiktoken "^1.0.12"
+-    langsmith ">=0.4.0 <1.0.0"
++    langsmith ">=0.5.0 <1.0.0"
+     mustache "^4.2.0"
+     p-queue "^6.6.2"
+-    uuid "^10.0.0"
+     zod "^3.25.76 || ^4"
+ 
+ "@langchain/langgraph-checkpoint@^1.0.0":
+@@ -517,7 +514,18 @@
+   dependencies:
+     uuid "^10.0.0"
+ 
+-"@langchain/langgraph-sdk@^1.0.3", "@langchain/langgraph-sdk@~1.0.0":
++"@langchain/langgraph-sdk@^1.9.21":
++  version "1.9.21"
++  resolved "https://registry.yarnpkg.com/@langchain/langgraph-sdk/-/langgraph-sdk-1.9.21.tgz#dacde7ea5b710789f4ff18c92f022f3e9a3a1f7e"
++  integrity sha512-XE4DL12BkVTjTRUWi9CJN8s/hZ/mn4k2VcIsC5mWVHIepWZLmuW7T1NhVmRRZ7Kv4HpZ4O1plZkVtLpl6YLsoQ==
++  dependencies:
++    "@langchain/protocol" "^0.0.16"
++    "@types/json-schema" "^7.0.15"
++    p-queue "^9.0.1"
++    p-retry "^7.1.1"
++    uuid "^14.0.0"
++
++"@langchain/langgraph-sdk@~1.0.0":
+   version "1.0.3"
+   resolved "https://registry.yarnpkg.com/@langchain/langgraph-sdk/-/langgraph-sdk-1.0.3.tgz#917600e3a4d5281dc8234113268c30b305ea7e35"
+   integrity sha512-6M4i0XsVO5Eb2vv/3OtIPHW3UqO4zYyXl6AOfS0Jf6d7JiWiSXqzLN8UoS0hpu1ItkcW1j575CRiP/6jn6XXFg==
+@@ -535,6 +543,11 @@
+     "@langchain/langgraph-sdk" "~1.0.0"
+     uuid "^10.0.0"
+ 
++"@langchain/protocol@^0.0.16":
++  version "0.0.16"
++  resolved "https://registry.yarnpkg.com/@langchain/protocol/-/protocol-0.0.16.tgz#68b63d58feaf4f0acf77405cb8fb16f9c3f09b60"
++  integrity sha512-ws+J7MaHyhO5dG7f0vdyHQiUn9hoCnki0f3crJPa4MCTGzcRC39jYSCghyrGtBPYQnZbUQiGyRVpW3z3M8IpJg==
++
+ "@napi-rs/wasm-runtime@^0.2.11":
+   version "0.2.12"
+   resolved "https://registry.yarnpkg.com/@napi-rs/wasm-runtime/-/wasm-runtime-0.2.12.tgz#3e78a8b96e6c33a6c517e1894efbd5385a7cb6f2"
+@@ -1052,6 +1065,11 @@
+   resolved "https://registry.yarnpkg.com/@standard-schema/spec/-/spec-1.0.0.tgz#f193b73dc316c4170f2e82a881da0f550d551b9c"
+   integrity sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==
+ 
++"@standard-schema/spec@^1.1.0":
++  version "1.1.0"
++  resolved "https://registry.yarnpkg.com/@standard-schema/spec/-/spec-1.1.0.tgz#a79b55dbaf8604812f52d140b2c9ab41bc150bb8"
++  integrity sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==
++
+ "@swc/helpers@0.5.15":
+   version "0.5.15"
+   resolved "https://registry.yarnpkg.com/@swc/helpers/-/helpers-0.5.15.tgz#79efab344c5819ecf83a43f3f9f811fc84b516d7"
+@@ -1421,11 +1439,6 @@ ansi-styles@^4.1.0:
+   dependencies:
+     color-convert "^2.0.1"
+ 
+-ansi-styles@^5.0.0:
+-  version "5.2.0"
+-  resolved "https://registry.yarnpkg.com/ansi-styles/-/ansi-styles-5.2.0.tgz#07449690ad45777d1924ac2abb2fc8895dba836b"
+-  integrity sha512-Cxwpt2SfTzTtXcfOlzGEee8O+c+MmUgGrNiBcXnuWxuFJHe6a5Hz7qwhwe5OgaSYI0IJvkLqWX1ASG+cJOkEiA==
+-
+ any-promise@^1.0.0:
+   version "1.3.0"
+   resolved "https://registry.yarnpkg.com/any-promise/-/any-promise-1.3.0.tgz#abc6afeedcea52e809cdc0376aed3ce39635d17f"
+@@ -1600,6 +1613,11 @@ balanced-match@^1.0.0:
+   resolved "https://registry.yarnpkg.com/balanced-match/-/balanced-match-1.0.2.tgz#e83e3a7e3f300b34cb9d87f615fa0cbf357690ee"
+   integrity sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==
+ 
++balanced-match@^4.0.2:
++  version "4.0.4"
++  resolved "https://registry.yarnpkg.com/balanced-match/-/balanced-match-4.0.4.tgz#bfb10662feed8196a2c62e7c68e17720c274179a"
++  integrity sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==
++
+ base64-js@^1.5.1:
+   version "1.5.1"
+   resolved "https://registry.yarnpkg.com/base64-js/-/base64-js-1.5.1.tgz#1b1b440160a5bf7ad40b650f095963481903930a"
+@@ -1623,12 +1641,12 @@ brace-expansion@^1.1.7:
+     balanced-match "^1.0.0"
+     concat-map "0.0.1"
+ 
+-brace-expansion@^2.0.1:
+-  version "2.0.2"
+-  resolved "https://registry.yarnpkg.com/brace-expansion/-/brace-expansion-2.0.2.tgz#54fc53237a613d854c7bd37463aad17df87214e7"
+-  integrity sha512-Jt0vHyM+jmUBqojB7E1NIYadt0vI0Qxjxd2TErW94wDz+E2LAm5vKMXXwg6ZZBTHPuUlDgQHKXvjGBdfcF1ZDQ==
++brace-expansion@^5.0.2:
++  version "5.0.6"
++  resolved "https://registry.yarnpkg.com/brace-expansion/-/brace-expansion-5.0.6.tgz#ec68fe0a641a29d8711579caf641d05bae1f2285"
++  integrity sha512-kLpxurY4Z4r9sgMsyG0Z9uzsBlgiU/EFKhj/h91/8yHu0edo7XuixOIH3VcJ8kkxs6/jPzoI6U9Vj3WqbMQ94g==
+   dependencies:
+-    balanced-match "^1.0.0"
++    balanced-match "^4.0.2"
+ 
+ braces@^3.0.3, braces@~3.0.2:
+   version "3.0.3"
+@@ -1684,11 +1702,6 @@ camelcase-css@^2.0.1:
+   resolved "https://registry.yarnpkg.com/camelcase-css/-/camelcase-css-2.0.1.tgz#ee978f6947914cc30c6b44741b6ed1df7f043fd5"
+   integrity sha512-QOSvevhslijgYwRx6Rv7zKdMF8lbRmx+uQGx2+vDc+KI/eBnsy9kit5aj23AgGu3pa4t9AgwbnXWqS+iOY+2aA==
+ 
+-camelcase@6:
+-  version "6.3.0"
+-  resolved "https://registry.yarnpkg.com/camelcase/-/camelcase-6.3.0.tgz#5685b95eb209ac9c0c177467778c9c84df58ba9a"
+-  integrity sha512-Gmy6FhYlCY7uOElZUSbxo2UCDH8owEk996gkbrpsgGtrJLM3J7jGxl9Ic7Qwwj4ivOE5AWZWRMecDdF7hqGjFA==
+-
+ caniuse-lite@^1.0.30001579, caniuse-lite@^1.0.30001759, caniuse-lite@^1.0.30001766:
+   version "1.0.30001769"
+   resolved "https://registry.yarnpkg.com/caniuse-lite/-/caniuse-lite-1.0.30001769.tgz#1ad91594fad7dc233777c2781879ab5409f7d9c2"
+@@ -1893,11 +1906,6 @@ debug@^4.0.0, debug@^4.1.0, debug@^4.3.1, debug@^4.3.2, debug@^4.4.0, debug@^4.4
+   dependencies:
+     ms "^2.1.3"
+ 
+-decamelize@1.2.0:
+-  version "1.2.0"
+-  resolved "https://registry.yarnpkg.com/decamelize/-/decamelize-1.2.0.tgz#f6534d15148269b20352e7bee26f501f9a191290"
+-  integrity sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==
+-
+ decode-named-character-reference@^1.0.0:
+   version "1.2.0"
+   resolved "https://registry.yarnpkg.com/decode-named-character-reference/-/decode-named-character-reference-1.2.0.tgz#25c32ae6dd5e21889549d40f676030e9514cc0ed"
+@@ -2372,6 +2380,11 @@ eventemitter3@^4.0.4:
+   resolved "https://registry.yarnpkg.com/eventemitter3/-/eventemitter3-4.0.7.tgz#2de9b68f6528d5644ef5c59526a1b4a07306169f"
+   integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
+ 
++eventemitter3@^5.0.4:
++  version "5.0.4"
++  resolved "https://registry.yarnpkg.com/eventemitter3/-/eventemitter3-5.0.4.tgz#a86d66170433712dde814707ac52b5271ceb1feb"
++  integrity sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==
++
+ extend@^3.0.0:
+   version "3.0.2"
+   resolved "https://registry.yarnpkg.com/extend/-/extend-3.0.2.tgz#f8b1136b4071fbd8eb140aff858b1019ec2915fa"
+@@ -2924,6 +2937,11 @@ is-negative-zero@^2.0.3:
+   resolved "https://registry.yarnpkg.com/is-negative-zero/-/is-negative-zero-2.0.3.tgz#ced903a027aca6381b777a5743069d7376a49747"
+   integrity sha512-5KoIu2Ngpyek75jXodFvnafB6DJgr3u8uuK0LEZJjrU19DrMD3EVERaR8sjz8CCGgpZvxPl9SuE1GMVPFHx1mw==
+ 
++is-network-error@^1.1.0:
++  version "1.3.2"
++  resolved "https://registry.yarnpkg.com/is-network-error/-/is-network-error-1.3.2.tgz#9460bc30f8419a4bca77114f4de88a3ee5e0c519"
++  integrity sha512-PhBY86zaxNZUuWP6h13Vu5oFe0XY6/UlKzQnYFELzGVHygP3MxmvTfYSG7GN3aIab/iWudSMgjSnG9Dq+nHrgA==
++
+ is-number-object@^1.1.1:
+   version "1.1.1"
+   resolved "https://registry.yarnpkg.com/is-number-object/-/is-number-object-1.1.1.tgz#144b21e95a1bc148205dcc2814a9134ec41b2541"
+@@ -3103,13 +3121,12 @@ keyv@^4.5.4:
+   dependencies:
+     json-buffer "3.0.1"
+ 
+-"langsmith@>=0.4.0 <1.0.0":
+-  version "0.5.21"
+-  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.5.21.tgz#2f4cd30dafc22922e423cf0f151ead5f636e76b0"
+-  integrity sha512-l140hzgqo91T/QKDXLEfRnnxahuwVEVohr9zqpy3BaGDeBdrPiJuNJ2TBhPZxNXNCl68IkVcn555FD3jp5peyw==
++"langsmith@>=0.5.0 <1.0.0":
++  version "0.7.6"
++  resolved "https://registry.yarnpkg.com/langsmith/-/langsmith-0.7.6.tgz#e564376a4b4fc5e4556cc8dd2b622aba03055ab9"
++  integrity sha512-6IRm+sAxHT2n5GAZbqEnUzkhOu3Q8vqQtMiOpYfGiI+pxUe/fYQSzV0Pr7q5x9JD8bnZ8xK2/P9dhPHs4zO/Nw==
+   dependencies:
+     p-queue "6.6.2"
+-    uuid "10.0.0"
+ 
+ language-subtag-registry@^0.3.20:
+   version "0.3.23"
+@@ -3887,6 +3904,14 @@ p-queue@6.6.2, p-queue@^6.6.2:
+     eventemitter3 "^4.0.4"
+     p-timeout "^3.2.0"
+ 
++p-queue@^9.0.1:
++  version "9.3.0"
++  resolved "https://registry.yarnpkg.com/p-queue/-/p-queue-9.3.0.tgz#f2bbe6b38f1fa38dd4c8cedaa444b6249cf258e2"
++  integrity sha512-7NED7xhQ74Ngp4JP/2e0VZHp7vSWfJfqeiR92jPgxsz6m0Se4P03YoTKa9dDXyZ3r6P616gUXttrB6nnHYKang==
++  dependencies:
++    eventemitter3 "^5.0.4"
++    p-timeout "^7.0.0"
++
+ p-retry@4:
+   version "4.6.2"
+   resolved "https://registry.yarnpkg.com/p-retry/-/p-retry-4.6.2.tgz#9baae7184057edd4e17231cee04264106e092a16"
+@@ -3895,6 +3920,13 @@ p-retry@4:
+     "@types/retry" "0.12.0"
+     retry "^0.13.1"
+ 
++p-retry@^7.1.1:
++  version "7.1.1"
++  resolved "https://registry.yarnpkg.com/p-retry/-/p-retry-7.1.1.tgz#7470fdecb1152ba50f1334e48378c9e401330e24"
++  integrity sha512-J5ApzjyRkkf601HpEeykoiCvzHQjWxPAHhyjFcEUP2SWq0+35NKh8TLhpLw+Dkq5TZBFvUM6UigdE9hIVYTl5w==
++  dependencies:
++    is-network-error "^1.1.0"
++
+ p-timeout@^3.2.0:
+   version "3.2.0"
+   resolved "https://registry.yarnpkg.com/p-timeout/-/p-timeout-3.2.0.tgz#c7e17abc971d2a7962ef83626b35d635acf23dfe"
+@@ -3902,6 +3934,11 @@ p-timeout@^3.2.0:
+   dependencies:
+     p-finally "^1.0.0"
+ 
++p-timeout@^7.0.0:
++  version "7.0.1"
++  resolved "https://registry.yarnpkg.com/p-timeout/-/p-timeout-7.0.1.tgz#95680a6aa693c530f14ac337b8bd32d4ec6ae4f0"
++  integrity sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg==
++
+ parent-module@^1.0.0:
+   version "1.0.1"
+   resolved "https://registry.yarnpkg.com/parent-module/-/parent-module-1.0.1.tgz#691d2709e78c79fae3a156622452d00762caaaa2"
+@@ -4974,11 +5011,16 @@ util-deprecate@^1.0.2:
+   resolved "https://registry.yarnpkg.com/util-deprecate/-/util-deprecate-1.0.2.tgz#450d4dc9fa70de732762fbd2d4a28981419a0ccf"
+   integrity sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==
+ 
+-uuid@10.0.0, uuid@^10.0.0:
++uuid@^10.0.0:
+   version "10.0.0"
+   resolved "https://registry.yarnpkg.com/uuid/-/uuid-10.0.0.tgz#5a95aa454e6e002725c79055fd42aaba30ca6294"
+   integrity sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==
+ 
++uuid@^14.0.0:
++  version "14.0.0"
++  resolved "https://registry.yarnpkg.com/uuid/-/uuid-14.0.0.tgz#0af883220163d264ffe0c084f6b8a89b9666966d"
++  integrity sha512-Qo+uWgilfSmAhXCMav1uYFynlQO7fMFiMVZsQqZRMIXp0O7rR7qjkj+cPvBHLgBqi960QCoo/PH2/6ZtVqKvrg==
++
+ uuid@^9.0.0, uuid@^9.0.1:
+   version "9.0.1"
+   resolved "https://registry.yarnpkg.com/uuid/-/uuid-9.0.1.tgz#e188d4c8853cc722220392c424cd637f32293f30"
