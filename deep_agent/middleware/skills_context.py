@@ -16,6 +16,7 @@
 - discover_skill_context_files: поиск файлов SKILL.md для предзагрузки.
 - build_skills_index: построение компактного index skills.
 - _read_context_file: чтение одного context-файла с ограничением размера.
+- rewrite_workspace_skill_references: подстановка полного workspace-префикса в ссылках skills.
 - _latest_user_query: получение последнего пользовательского запроса из state.
 - _parse_skill_index_entry: извлечение имени и описания skill.
 - _workspace_skill_path: построение workspace-пути skills для найденного файла.
@@ -304,6 +305,7 @@ def build_preloaded_skills_context(
         content = _read_context_file(skill_path, max_chars_per_file)
         if content is None:
             continue
+        content = rewrite_workspace_skill_references(content, skills_workspace_dir)
         loaded_paths.append(workspace_path)
         blocks.append(f"### {workspace_path}\n\n{content}")
     return PreloadedSkillsSelection(
@@ -435,10 +437,10 @@ def _invoke_skill_selector(
         [
             SystemMessage(
                 content=(
-                    "Выбери достаточный набор domain skills для запроса пользователя. "
+                    "Выбери набор skills для запроса пользователя. "
                     "Можно выбрать от нуля до любого необходимого числа skills. "
                     "Используй только точные пути из переданного index, без дублей. "
-                    "Если domain skills не нужны, верни пустой paths и объясни причину. "
+                    "Если skills не нужны, верни пустой paths и объясни причину. "
                     f"{correction}"
                 )
             ),
@@ -573,6 +575,27 @@ def _read_context_file(path: Path, max_chars: int) -> str | None:
     return _truncate_text(content, max_chars)
 
 
+def rewrite_workspace_skill_references(content: str, skills_workspace_dir: str) -> str:
+    """Подставляет полный workspace-префикс в старые ссылки на папку skills.
+
+    Args:
+        content: Текст ``SKILL.md`` или связанного markdown-файла.
+        skills_workspace_dir: Фактическая папка skills в формате filesystem tools.
+
+    Returns:
+        Текст с заменой ``/deep_agent/skills`` на путь текущего workspace.
+    """
+
+    normalized_dir = _normalize_workspace_dir(skills_workspace_dir)
+    if normalized_dir == "/deep_agent/skills/":
+        return content
+    marker = "\u0000DEEP_AGENT_SKILLS\u0000"
+    return content.replace("/deep_agent/skills", marker).replace(
+        marker,
+        normalized_dir.rstrip("/"),
+    )
+
+
 def _latest_user_query(state: AnalyticsAgentState) -> str:
     """Извлекает последний пользовательский запрос из state.
 
@@ -676,5 +699,6 @@ __all__ = [
     "build_preloaded_skills_context",
     "build_skills_index",
     "discover_skill_context_files",
+    "rewrite_workspace_skill_references",
     "select_relevant_skill_paths_with_llm",
 ]

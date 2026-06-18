@@ -7,10 +7,8 @@
 - build_execute_python_code_tool: фабрика инструмента ``execute_python_code``.
 - _normalize_code_text: нормализация текста Python-кода.
 - _normalize_target_variable: проверка имени целевой переменной результата.
-- _execute_python_code: проверка, компиляция и выполнение Python-кода.
-- _validate_code_policy: статическая проверка политики безопасности кода.
-- _call_name: извлечение имени прямого вызова функции из AST.
-- _attribute_call_name: извлечение пары ``(owner, attr)`` из AST-вызова.
+- _execute_python_code: компиляция и выполнение Python-кода.
+- _validate_code_policy: базовая проверка непустого Python-кода.
 - _working_directory_context: временная смена рабочей директории процесса.
 - _get_cwd_execution_lock: получение общего lock для смены cwd.
 - _combined_stdio: объединение stdout и stderr.
@@ -50,34 +48,12 @@ from pydantic import BaseModel, Field, PrivateAttr
 from deep_agent.runtime.python_sandbox import DeepAgentPythonSandbox, SANDBOX_HELPER_NAMES
 
 EXECUTE_PYTHON_CODE_TOOL_NAME = "execute_python_code"
-MAX_CODE_CHARS = 50_000
 MAX_TEXT_PREVIEW_CHARS = 4_000
 MAX_STDIO_CHARS = 8_000
 MAX_DATAFRAME_PREVIEW_ROWS = 10
 CWD_EXECUTION_LOCK_ATTR = "_deep_agent_sandbox_cwd_lock"
-
-DENIED_CALL_NAMES: frozenset[str] = frozenset(
-    {
-        "__import__",
-        "compile",
-        "eval",
-        "exec",
-        "input",
-    }
-)
-DENIED_ATTRIBUTE_CALLS: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("os", "popen"),
-        ("os", "remove"),
-        ("os", "removedirs"),
-        ("os", "rmdir"),
-        ("os", "system"),
-        ("shutil", "rmtree"),
-        ("subprocess", "call"),
-        ("subprocess", "check_call"),
-        ("subprocess", "check_output"),
-        ("subprocess", "run"),
-    }
+ERROR_RETRY_HINT = (
+    "Попробуйте вызвать инструмент с другими параметрами или использовать другой инструмент."
 )
 
 @dataclass
@@ -140,7 +116,7 @@ EXECUTE_PYTHON_CODE_DESCRIPTION = """
 execute_python_code
 ---
 Назначение:
-Генерирует и выполняет Python-код в persistent sandbox. Используй инструмент активно,
+Генерирует и выполняет Python-код в persistent runtime. Используй инструмент активно,
 когда код дает более точный, воспроизводимый и проверяемый результат, чем ручное
 рассуждение модели.
 
@@ -153,24 +129,15 @@ execute_python_code
 - для обработки полного `.pkl`, сохраненного middleware после `load_data`, вместо выводов
   по ограниченному preview;
 - для построения таблиц, графиков, отчётов и других воспроизводимых артефактов;
-- для генерации текстового содержимого файла в переменную, если файл будет создан отдельным filesystem tool;
+- для чтения, записи, удаления и преобразования файлов внутри configured workspace;
+- для запуска shell/subprocess-команд через Python, когда это проще выразить кодом;
+- для генерации текстового содержимого файла или готового артефакта;
 - когда несколько последовательных преобразований проще надежно выразить кодом.
-
-Не используй:
-- для прямого чтения таблиц из источника: вызывай `load_data` внутри
-  `data-retrieval-agent`;
-- для поиска и чтения обычных текстовых файлов, если доступны `grep` и `read_file`;
-- для изменения исходного кода проекта: при активной coding capability используй
-  `write_file` или `edit_file`; не изменяй исходники через этот sandbox;
-- для shell-команд, запуска тестов и системных утилит: при активной coding capability
-  используй generic `execute`; если он недоступен, не имитируй терминал через Python;
-- для простого ответа, который не требует вычисления или проверки;
-- как замену финальному synthesis supervisor-а.
 
 Правило выбора:
 - если результат зависит от точного вычисления, структуры данных, поведения алгоритма,
   преобразования формата или проверки условия, сначала выполни код;
-- не оценивай такие результаты приблизительно и не вычисляй их вручную;
+- вычисляй такие результаты кодом, когда это повышает точность;
 - один содержательный вызов с несколькими связанными операциями лучше серии мелких
   вызовов, если промежуточный результат не нужен для принятия следующего решения.
 
@@ -181,8 +148,9 @@ execute_python_code
 - `description`: краткая цель вычисления на русском языке для трассировки.
 
 Доступные helpers:
-- `PROJECT_ROOT`: корень проекта;
-- `TOOL_OUTPUTS_DIR`: каталог текущей сессии для `.pkl` и созданных артефактов;
+- `PROJECT_ROOT`: корень текущего workspace;
+- `WORKSPACE_ROOT`: корень текущего workspace из настроек `workspace_root`;
+- `TOOL_OUTPUTS_DIR`: каталог текущей сессии из настроек `tool_outputs_dir` для `.pkl` и созданных артефактов;
 - `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
 - `describe_pickle_file(path)`: тип, число строк, колонки и preview;
 - `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
@@ -210,22 +178,15 @@ result_path = str(output_path)
 ```
 Вызов должен передать `target_variable="result_path"`.
 
-Плохие решения:
-- вручную вычислять результат, который можно однозначно проверить кодом;
-- делать вывод по первым preview-строкам, когда доступен полный `.pkl`;
-- повторно вызывать `load_data`, если нужный полный результат уже сохранен;
-- изменять исходники проекта через Python вместо approval-gated filesystem tools;
-- запускать `subprocess`, `os.system` или удалять файлы из Python;
-- передавать `target_variable="result"`, не создав переменную `result`;
-- использовать устаревший alias `/tool_outputs`; бери точный `workspace_file` из результата tool.
+Работа с путями:
+- для workspace-файлов используй полный путь из configured root или `Path(WORKSPACE_ROOT)`;
+- для временных артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
+- при работе с pickle бери точный `workspace_file` из результата tool.
 
-Ограничения и обработка ошибок:
+Обработка ошибок:
 - для stdout используй `print()` и не передавай `target_variable`;
-- для файлов строй путь через `Path(TOOL_OUTPUTS_DIR)`;
-- не удаляй файлы или директории;
-- shell-вызовы запрещены статической политикой;
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
-- не повторяй без изменений тот же неуспешный код.
+- если Python не подходит для следующего шага, используй другой доступный tool.
 """.strip()
 
 
@@ -254,12 +215,12 @@ class ExecutePythonCodeInput(BaseModel):
 
 
 class ExecutePythonCodeTool(BaseTool):
-    """LangChain tool выполнения Python-кода в persistent sandbox DeepAgent.
+    """LangChain tool выполнения Python-кода в persistent runtime DeepAgent.
 
-    Перед выполнением код проходит статическую проверку политики (`_validate_code_policy`):
-    разрешён только белый список импортов и запрещены опасные вызовы (eval/exec/os.system,
-    удаление файлов и т.п.). Само выполнение и формирование информативного результата
-    делегируются локальной переиспользуемой функции ``_execute_python_code``.
+    Перед выполнением код нормализуется и проверяется только на непустое значение.
+    Импорты, файловые операции, удаление файлов и subprocess доступны внутри настроенного
+    workspace. Само выполнение и формирование информативного результата делегируются
+    локальной переиспользуемой функции ``_execute_python_code``.
 
     Успешный результат возвращается строкой JSON. При ошибке возвращается только строка
     ``ТипИсключения: сообщение`` без traceback и служебных метаданных.
@@ -288,7 +249,7 @@ class ExecutePythonCodeTool(BaseTool):
         description: str = "",
         **_: Any,
     ) -> str:
-        """Синхронно проверяет политику, выполняет код и сериализует результат.
+        """Синхронно проверяет входные аргументы, выполняет код и сериализует результат.
 
         Args:
             code: Python-код для выполнения.
@@ -512,71 +473,16 @@ def _execute_python_code(
 
 
 def _validate_code_policy(code: str) -> None:
-    """Статически проверяет код перед выполнением.
-
-    Разбирает AST и запрещает: пустой/слишком длинный код, вызовы из
-    ``DENIED_CALL_NAMES`` и ``DENIED_ATTRIBUTE_CALLS``, а также удаление файлов
-    через ``Path.unlink/rmdir``. Импорты не ограничиваются allowlist.
+    """Проверяет, что Python-код передан для выполнения.
 
     Args:
         code: Python-код, который нужно проверить.
 
     Raises:
-        ValueError: Код пустой, слишком длинный или содержит запрещённый вызов.
-        SyntaxError: Код не разбирается ``ast.parse``.
+        ValueError: Код пустой.
     """
     if not str(code or "").strip():
         raise ValueError("code is required")
-    if len(code) > MAX_CODE_CHARS:
-        raise ValueError(f"code is too long: {len(code)} chars, limit is {MAX_CODE_CHARS}")
-
-    tree = ast.parse(code, mode="exec")
-    module_aliases: dict[str, str] = {}
-    imported_call_aliases: dict[str, tuple[str, str]] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                local_name = alias.asname or alias.name.split(".", maxsplit=1)[0]
-                module_aliases[local_name] = alias.name.split(".", maxsplit=1)[0]
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            module_root = node.module.split(".", maxsplit=1)[0]
-            for alias in node.names:
-                imported_call_aliases[alias.asname or alias.name] = (
-                    module_root,
-                    alias.name,
-                )
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            call_name = _call_name(node.func)
-            if call_name in DENIED_CALL_NAMES:
-                raise ValueError(f"Call '{call_name}' is not allowed in execute_python_code")
-            imported_call = imported_call_aliases.get(call_name)
-            if imported_call in DENIED_ATTRIBUTE_CALLS:
-                owner, attr = imported_call
-                raise ValueError(f"Call '{owner}.{attr}' is not allowed in execute_python_code")
-            owner, attr = _attribute_call_name(node.func)
-            owner = module_aliases.get(owner, owner)
-            if owner == "Path" and attr in {"unlink", "rmdir"}:
-                raise ValueError(f"Call 'Path.{attr}' is not allowed in execute_python_code")
-            if (owner, attr) in DENIED_ATTRIBUTE_CALLS:
-                raise ValueError(f"Call '{owner}.{attr}' is not allowed in execute_python_code")
-
-
-def _call_name(func: ast.AST) -> str:
-    """Возвращает имя прямого вызова функции или пустую строку."""
-
-    if isinstance(func, ast.Name):
-        return func.id
-    return ""
-
-
-def _attribute_call_name(func: ast.AST) -> tuple[str, str]:
-    """Возвращает пару ``(owner, attr)`` для вызова метода атрибута."""
-
-    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-        return func.value.id, func.attr
-    return "", ""
 
 
 @contextlib.contextmanager
@@ -717,7 +623,7 @@ def _python_error_possible_causes(exc: Exception) -> list[str]:
     if isinstance(exc, KeyError):
         return ["В DataFrame/dict отсутствует запрошенная колонка или ключ."]
     if isinstance(exc, ImportError):
-        return ["Импортируемая библиотека недоступна или запрещена политикой инструмента."]
+        return ["Импортируемая библиотека недоступна в текущем Python runtime."]
     if isinstance(exc, ValueError):
         return ["Аргумент, имя переменной или операция имеют недопустимое значение."]
     return ["Код столкнулся с ошибкой выполнения; точная причина указана в traceback."]
@@ -746,7 +652,7 @@ def _python_error_solution_options(exc: Exception) -> list[str]:
     if isinstance(exc, KeyError):
         options.insert(0, "Проверь реальные названия колонок через preview/schema перед обращением к ним.")
     if isinstance(exc, ImportError):
-        options.insert(0, "Используй доступную библиотеку или стандартные pandas/numpy helpers.")
+        options.insert(0, "Используй доступную библиотеку, установи зависимость другим tool или примени pandas/numpy helpers.")
     return options
 
 
@@ -878,7 +784,10 @@ def _compact_error_message(error: str) -> str:
         Строка ``Тип: сообщение`` без traceback, JSON и служебных метаданных.
     """
 
-    return str(error or "UnknownError").strip()
+    message = str(error or "UnknownError").strip()
+    if ERROR_RETRY_HINT in message:
+        return message
+    return f"{message}\n{ERROR_RETRY_HINT}"
 
 
 def _result_to_json(result: PythonExecutionResult, *, sandbox: DeepAgentPythonSandbox) -> str:

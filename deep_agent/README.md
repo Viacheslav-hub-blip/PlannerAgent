@@ -15,9 +15,9 @@
 
 1. Workspace и coding capability.
 
-   При инициализации задаётся `workspace_root`. Skill `code-workspace` открывает
-   supervisor инструменты `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`
-   и `execute`. Без этого skill они скрыты и блокируются middleware.
+   При инициализации задаётся `workspace_root`. Supervisor и специализированные
+   subagents работают с полными путями от настроенного workspace root и видят
+   filesystem/terminal tools без дополнительного tool-gating.
 
 2. Project memory и память диалога.
 
@@ -25,10 +25,11 @@
    планы и state сохраняются через LangGraph `InMemorySaver`; повторный вызов с тем же
    `thread_id` продолжает текущий диалог в пределах процесса.
 
-3. Approval файловых изменений.
+3. HITL файловых изменений.
 
-   `write_file` и `edit_file` приостанавливаются через `HumanInTheLoopMiddleware` и
-   поддерживают `approve`, `edit`, `reject`. Чтение файлов и terminal approval не требуют.
+   При `enable_interrupts=true` `write_file` и `edit_file` приостанавливаются через
+   `HumanInTheLoopMiddleware` и поддерживают `approve`, `edit`, `reject`.
+   При `enable_interrupts=false` файловые изменения выполняются без HITL.
 
 4. Нативные skills.
 
@@ -64,11 +65,12 @@
    pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
    путь к файлу и preview. Полный файл можно читать через `execute_python_code`.
 
-9. Безопасный Python sandbox.
+9. Полный Python runtime.
 
    Tool `execute_python_code` нужен для расчетов по выгруженным данным, чтения pickle,
-   join, фильтрации и подготовки итоговых таблиц. Перед выполнением код проходит
-   простую проверку: запрещены `eval`, `exec`, shell-вызовы и удаление файлов.
+   join, фильтрации, подготовки итоговых таблиц, файловых операций и subprocess-задач
+   внутри настроенного workspace. Tool сохраняет переменные между вызовами и маппит
+   полные workspace-пути на фактический корень текущего запуска.
 
 10. Встроенные ограничения выполнения.
 
@@ -77,12 +79,12 @@
    выполняет повторы model calls. После исчерпания повторов backend возвращает
    очищенное AI-сообщение, которое UI показывает без утечки API-ключей.
 
-11. Постепенное раскрытие tools.
+11. Внутренняя структура агента по запросу.
 
-   `ToolVisibilityMiddleware` оставляет supervisor только базовые tools:
-   `task`, `write_todos`, `load_skills` и `execute_python_code`. Filesystem и terminal
-   открываются после skill `code-workspace`, `analyze_image` — после
-   `image-analysis`, внешние MCP tools — после `mcp-tools`.
+   `AGENTS.md` содержит только ручные project instructions. Краткую карту внутренних
+   файлов агента и путь к папке skills агент получает через
+   `get_project_structure(max_entries)`, поэтому системный контекст не раздувается
+   корневыми документами, tests, scripts и содержимым отдельных skills.
 
 12. VLM и MCP tools.
 
@@ -115,7 +117,7 @@ deep_agent/
   tools/                   # реализации LangChain tools
   integrations/            # внешние подключения, включая MCP
   data/                    # schema, parser и нормализация запросов
-  runtime/                 # filesystem, sandbox, harness и tracing
+  runtime/                 # filesystem, Python runtime, harness и tracing
   config/                  # настройки по умолчанию
   skills/                  # domain skills и справочники
 ```
@@ -244,8 +246,9 @@ deep_agent/config/defaults.json
 - terminal всегда получает только allowlist системных переменных; API-ключи и другие
   переменные пользовательского environment в subprocess не передаются.
 - `skills_root` - папка со skills внутри `workspace_root`.
-- filesystem tools используют единый путь от `workspace_root`: например,
-  `/deep_agent/skills/x/SKILL.md` соответствует `workspace_root/deep_agent/skills/x/SKILL.md`.
+- filesystem tools используют полный путь с префиксом `workspace_root`: например,
+  `/home/user_123456/deep_agent/skills/x/SKILL.md` соответствует
+  `workspace_root/deep_agent/skills/x/SKILL.md`.
 - aliases `/skills`, `/tool_outputs` и `/project_memory` не используются.
 - `harness_profile_key` - provider или `provider:model` для регистрации HarnessProfile.
 - `tool_outputs_dir` - папка внутри `workspace_root` для pickle-файлов с большими результатами.
@@ -274,10 +277,9 @@ PostgreSQL logging настраивается в `deep_agent/logging/postgres_co
 Если нужен отдельный конфиг для другого проекта, укажите путь в переменной окружения
 `DEEP_AGENT_CONFIG_PATH`. Значения из этого файла переопределят defaults.
 
-Локальный `LocalShellBackend` не является sandbox: команда технически может обратиться
-к абсолютному пути вне workspace. В закрытом контуре граница workspace поддерживается
-policy-as-prompt и рабочей директорией процесса, но не изоляцией ОС. Terminal нельзя
-использовать для обхода approval файловых изменений.
+Локальный `LocalShellBackend` выполняет команды из workspace и не передаёт API-ключи
+из пользовательского окружения. Агент может использовать terminal для диагностики,
+проверок, сборки и локальных операций внутри configured workspace.
 
 ## Trace-лог
 

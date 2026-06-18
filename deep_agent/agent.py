@@ -71,18 +71,11 @@ from deep_agent.runtime.filesystem import (
 )
 from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.python_execution import build_execute_python_code_tool
+from deep_agent.tools.project_structure import build_get_project_structure_tool
+from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
-from deep_agent.middleware.tool_visibility import ToolVisibilityMiddleware
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
-from deep_agent.capabilities import (
-    BASE_SUPERVISOR_TOOL_NAMES,
-    CODE_WORKSPACE_TOOL_NAMES,
-    DATA_RETRIEVAL_TOOL_NAMES,
-    IMAGE_ANALYSIS_SKILL_PATH,
-    MCP_TOOLS_SKILL_PATH,
-    SUPERVISOR_SKILL_TOOL_GRANTS,
-)
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -253,6 +246,10 @@ def build_analytics_deep_agent(
         resolved_workspace_root,
         directory=True,
     )
+    agents_memory_path = _agents_memory_path(
+        settings.agents_file_name,
+        resolved_workspace_root,
+    )
 
     # Шаг 2. Инструменты чтения данных. Аргумент имеет приоритет над фабрикой из конфига.
     # Оборачиваем их в слой прозрачности: агент получает сгенерированный код запроса и
@@ -261,19 +258,6 @@ def build_analytics_deep_agent(
         data_tools = build_data_tools(settings)
     data_tools = wrap_data_tools_with_query_code(data_tools)
     extra_tools = _normalize_extra_tools(extra_tools)
-    extra_tool_names = frozenset(str(tool.name) for tool in extra_tools)
-    supervisor_skill_tool_grants = {
-        **SUPERVISOR_SKILL_TOOL_GRANTS,
-        MCP_TOOLS_SKILL_PATH: frozenset(
-            name
-            for name in extra_tool_names
-            if name not in SUPERVISOR_SKILL_TOOL_GRANTS.get(
-                IMAGE_ANALYSIS_SKILL_PATH,
-                frozenset(),
-            )
-        ),
-    }
-
     # Шаг 3. Единственный project-specific middleware сохраняет табличные результаты
     # в pickle. Skills, retries, limits, filesystem, memory, HITL и subagents собираются
     # штатными middleware LangChain/Deep Agents.
@@ -302,6 +286,14 @@ def build_analytics_deep_agent(
         workspace_root=resolved_workspace_root,
     )
     python_tool = build_execute_python_code_tool(python_sandbox)
+    load_skills_tool = build_load_skills_tool(
+        settings,
+        skills_root=resolved_skills_root,
+        workspace_root=resolved_workspace_root,
+    )
+    project_structure_tool = build_get_project_structure_tool(
+        workspace_root=resolved_workspace_root,
+    )
     file_edit_interrupts = _build_file_edit_interrupts(settings)
     shared_skills_selection: dict[str, Any] = {}
     supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
@@ -325,23 +317,17 @@ def build_analytics_deep_agent(
         settings,
         tool_output_file_middleware,
         agent_name="coding-agent",
-        visibility_middleware=ToolVisibilityMiddleware(
-            allowed_tools=frozenset(
-                CODE_WORKSPACE_TOOL_NAMES
-                | {"execute_python_code", "load_skills", "write_todos"}
-            )
-        ),
         limit_model_calls=True,
     )
     coding_agent = create_deep_agent(
         **build_coding_subagent_spec(
             model=model,
-            tools=[python_tool],
+            tools=[load_skills_tool, python_tool, project_structure_tool],
             common_middleware=coding_agent_middleware,
             skill_sources=[skills_workspace_dir],
         ),
         backend=workspace_backend,
-        memory=[_agents_memory_path(settings.agents_file_name)],
+        memory=[agents_memory_path],
         interrupt_on=file_edit_interrupts,
     )
     data_retrieval_agent_middleware = [
@@ -350,21 +336,23 @@ def build_analytics_deep_agent(
             settings,
             tool_output_file_middleware,
             agent_name="data-retrieval-agent",
-            visibility_middleware=ToolVisibilityMiddleware(
-                allowed_tools=DATA_RETRIEVAL_TOOL_NAMES
-            ),
             limit_model_calls=True,
         ),
     ]
     data_retrieval_agent = create_deep_agent(
         **build_data_retrieval_subagent_spec(
             model=model,
-            data_tools=[*data_tools, python_tool],
+            data_tools=[
+                *data_tools,
+                load_skills_tool,
+                python_tool,
+                project_structure_tool,
+            ],
             common_middleware=data_retrieval_agent_middleware,
             skill_sources=[skills_workspace_dir],
         ),
         backend=supervisor_backend,
-        memory=[_agents_memory_path(settings.agents_file_name)],
+        memory=[agents_memory_path],
     )
 
     # Шаг 4. Сборка изолированных compiled subagents.
@@ -384,7 +372,7 @@ def build_analytics_deep_agent(
     )
     agent = create_deep_agent(
         model=model,
-        tools=[python_tool, *extra_tools],
+        tools=[load_skills_tool, python_tool, project_structure_tool, *extra_tools],
         system_prompt=system_prompt,
         subagents=subagents,
         skills=[skills_workspace_dir],
@@ -395,14 +383,10 @@ def build_analytics_deep_agent(
                 settings,
                 tool_output_file_middleware,
                 agent_name="supervisor",
-                visibility_middleware=ToolVisibilityMiddleware(
-                    allowed_tools=BASE_SUPERVISOR_TOOL_NAMES,
-                    skill_tool_grants=supervisor_skill_tool_grants,
-                ),
                 limit_model_calls=False,
             ),
         ],
-        memory=[_agents_memory_path(settings.agents_file_name)],
+        memory=[agents_memory_path],
         interrupt_on=file_edit_interrupts,
         checkpointer=(
             build_conversation_checkpointer()
@@ -419,7 +403,6 @@ def _build_native_runtime_middleware(
     tool_output_file_middleware: ToolOutputFileMiddleware,
     *,
     agent_name: str = "supervisor",
-    visibility_middleware: Any | None = None,
     limit_model_calls: bool,
 ) -> list[Any]:
     """Собирает runtime middleware из публичных реализаций LangChain.
@@ -428,7 +411,6 @@ def _build_native_runtime_middleware(
         settings: Настройки лимитов и управления контекстом.
         tool_output_file_middleware: Единственный project-specific middleware.
         agent_name: Имя агента для служебного логирования.
-        visibility_middleware: Опциональный фильтр доступных tools.
         limit_model_calls: Нужно ли ограничивать число model calls для subagent.
 
     Returns:
@@ -461,8 +443,6 @@ def _build_native_runtime_middleware(
     ]
     if postgres_logging_middleware is not None:
         middleware.insert(3, postgres_logging_middleware)
-    if visibility_middleware is not None:
-        middleware.insert(1, visibility_middleware)
     if limit_model_calls:
         middleware.append(
             ModelCallLimitMiddleware(
@@ -723,11 +703,12 @@ def _build_file_edit_interrupts(
     }
 
 
-def _agents_memory_path(file_name: str) -> str:
+def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:
     """Преобразует имя project memory в абсолютный виртуальный путь.
 
     Args:
         file_name: Имя или относительный путь ``AGENTS.md`` в workspace.
+        workspace_root: Корень workspace для построения полного tool-пути.
 
     Returns:
         POSIX-путь, подходящий для ``create_deep_agent(memory=...)``.
@@ -740,7 +721,8 @@ def _agents_memory_path(file_name: str) -> str:
     normalized = normalized or "AGENTS.md"
     if ".." in PurePosixPath(normalized).parts:
         raise ValueError("Путь AGENTS.md не должен выходить за пределы workspace.")
-    return f"/{normalized}"
+    root = Path(workspace_root).resolve()
+    return workspace_tool_path(root.joinpath(*PurePosixPath(normalized).parts), root)
 
 
 def create_session_tool_outputs_dir(base_dir: Path) -> Path:

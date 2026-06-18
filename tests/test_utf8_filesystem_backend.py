@@ -17,6 +17,7 @@ from deep_agent.runtime.filesystem import (
     Utf8FilesystemBackend,
     configure_read_file_default_limit,
 )
+from deep_agent.settings import workspace_tool_path
 
 
 class Utf8FilesystemBackendTests(unittest.TestCase):
@@ -129,7 +130,7 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
             result.matches,
             [
                 {
-                    "path": "/hit-table/fields.md",
+                    "path": workspace_tool_path(fields_path, root),
                     "line": 3,
                     "text": "- `age_category` - возрастная категория.",
                 }

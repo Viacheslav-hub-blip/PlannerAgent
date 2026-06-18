@@ -1,24 +1,27 @@
-"""Persistent Python sandbox для DeepAgent с helpers чтения pickle и файлов.
+"""Persistent Python runtime для DeepAgent с helpers чтения pickle и файлов.
 
 Содержит:
-- DeepAgentPythonSandbox: persistent sandbox для выполнения аналитического Python-кода.
-- build_python_sandbox: фабрика sandbox с разрешенными директориями.
-- _is_relative_to: проверка вложенности пути.
+- DeepAgentPythonSandbox: persistent runtime для выполнения Python-кода.
+- build_python_sandbox: фабрика runtime с рабочей директорией workspace.
+- _starts_with_workspace_tool_root: проверка полного workspace-префикса tools.
 """
 
 from __future__ import annotations
 
 import builtins
+import os
+import pathlib
 import pickle
 import types
 from pathlib import Path
 from typing import Any
 
-from deep_agent.settings import DeepAgentSettings
+from deep_agent.settings import DeepAgentSettings, workspace_tool_path
 
 SANDBOX_HELPER_NAMES = frozenset(
     {
         "PROJECT_ROOT",
+        "WORKSPACE_ROOT",
         "TOOL_OUTPUTS_DIR",
         "read_pickle_file",
         "describe_pickle_file",
@@ -28,7 +31,7 @@ SANDBOX_HELPER_NAMES = frozenset(
 
 
 class DeepAgentPythonSandbox:
-    """In-memory sandbox с общими переменными между вызовами ``execute_python_code``."""
+    """In-memory runtime с общими переменными между вызовами ``execute_python_code``."""
 
     def __init__(
         self,
@@ -41,7 +44,7 @@ class DeepAgentPythonSandbox:
 
         Args:
             working_directory: Рабочая директория для относительных путей в коде.
-            readable_roots: Директории, из которых helpers разрешают чтение файлов.
+            readable_roots: Информационные корни workspace и tool outputs для ответа tool.
             tool_outputs_dir: Папка spill-файлов (`.pkl`) после offload middleware.
         """
 
@@ -56,33 +59,43 @@ class DeepAgentPythonSandbox:
     def _seed_helpers(self) -> None:
         """Заполняет ``globals`` helpers чтения pickle и библиотеками pandas/numpy.
 
-        Добавляет ``PROJECT_ROOT``, ``TOOL_OUTPUTS_DIR``, ``read_pickle_file``,
+        Добавляет ``PROJECT_ROOT``, ``WORKSPACE_ROOT``, ``TOOL_OUTPUTS_DIR``, ``read_pickle_file``,
         ``describe_pickle_file``, ``rows_to_dataframe`` и (если доступны) ``pd``/``np``.
-        Чтение файлов ограничено разрешёнными директориями ``readable_roots``.
+        Полные workspace-пути преобразуются в реальные пути текущего запуска.
         """
 
-        readable_roots = self.readable_roots
         tool_outputs_dir = self.tool_outputs_dir
         project_root = self.working_directory
+        workspace_root_path = workspace_tool_path(project_root, project_root)
 
-        def _assert_readable_path(path: Path) -> Path:
-            """Проверяет, что путь существует и лежит в разрешённых для чтения корнях."""
+        def _resolve_workspace_path(path: Path) -> Path:
+            """Преобразует путь относительно настроенного workspace в реальный путь.
+
+            Args:
+                path: Исходный путь из пользовательского Python-кода.
+
+            Returns:
+                Абсолютный путь внутри текущего workspace или исходный абсолютный путь.
+            """
 
             raw_path = str(path)
-            if raw_path.startswith(("/", "\\")) and not path.drive:
-                path = project_root / raw_path.lstrip("/\\")
+            normalized_raw_path = raw_path.replace("\\", "/")
+            if _starts_with_workspace_tool_root(normalized_raw_path, workspace_root_path):
+                suffix = normalized_raw_path[len(workspace_root_path.rstrip("/")) :].lstrip("/")
+                path = project_root / suffix if suffix else project_root
+            elif raw_path.startswith(("/", "\\")) and not path.drive:
+                relative_path = raw_path.lstrip("/\\")
+                path = project_root / relative_path
             elif not path.is_absolute():
                 path = project_root / path
+            return path.expanduser().resolve()
 
-            resolved = path.expanduser().resolve()
+        def _assert_readable_path(path: Path) -> Path:
+            """Разрешает путь и проверяет, что файл существует."""
+
+            resolved = _resolve_workspace_path(path)
             if not resolved.exists():
                 raise FileNotFoundError(f"Файл не найден: {resolved}")
-            if not any(_is_relative_to(resolved, root) for root in readable_roots):
-                allowed = ", ".join(str(root) for root in readable_roots)
-                raise PermissionError(
-                    f"Чтение файла запрещено вне разрешенных директорий. "
-                    f"Путь: {resolved}. Разрешено: {allowed}"
-                )
             return resolved
 
         def read_pickle_file(file_path: str) -> Any:
@@ -118,9 +131,62 @@ class DeepAgentPythonSandbox:
             frame = pd.DataFrame(rows, columns=columns)
             return frame
 
+        default_open = builtins.open
+
+        def sandbox_open(
+            file: Any,
+            mode: str = "r",
+            buffering: int = -1,
+            encoding: str | None = None,
+            errors: str | None = None,
+            newline: str | None = None,
+            closefd: bool = True,
+            opener: Any | None = None,
+        ) -> Any:
+            """Открывает файл с преобразованием workspace-путей sandbox.
+
+            Args:
+                file: Путь к файлу или файловый дескриптор.
+                mode: Режим открытия файла.
+                buffering: Настройка буферизации стандартной функции ``open``.
+                encoding: Кодировка текстового файла.
+                errors: Политика обработки ошибок кодировки.
+                newline: Политика обработки переносов строк.
+                closefd: Нужно ли закрывать файловый дескриптор при закрытии файла.
+                opener: Пользовательский opener для стандартной функции ``open``.
+
+            Returns:
+                Файловый объект, открытый стандартной функцией ``open``.
+            """
+
+            if isinstance(file, int):
+                return default_open(
+                    file,
+                    mode,
+                    buffering,
+                    encoding,
+                    errors,
+                    newline,
+                    closefd,
+                    opener,
+                )
+
+            resolved = _resolve_workspace_path(Path(os.fsdecode(file)))
+            return default_open(
+                resolved,
+                mode,
+                buffering,
+                encoding,
+                errors,
+                newline,
+                closefd,
+                opener,
+            )
+
         self.globals.update(
             {
                 "PROJECT_ROOT": str(project_root),
+                "WORKSPACE_ROOT": str(project_root),
                 "TOOL_OUTPUTS_DIR": str(tool_outputs_dir),
                 "read_pickle_file": read_pickle_file,
                 "describe_pickle_file": describe_pickle_file,
@@ -130,6 +196,19 @@ class DeepAgentPythonSandbox:
         helper_module = types.ModuleType("functions")
         for helper_name in SANDBOX_HELPER_NAMES:
             setattr(helper_module, helper_name, self.globals[helper_name])
+        pathlib_module = types.ModuleType("pathlib")
+        pathlib_module.__dict__.update(vars(pathlib))
+
+        def runtime_path(*args: Any, **kwargs: Any) -> Path:
+            """Создаёт ``Path`` с преобразованием workspace tool-путей."""
+
+            if not args:
+                return pathlib.Path(**kwargs)
+            first, *rest = args
+            resolved = _resolve_workspace_path(pathlib.Path(os.fsdecode(first)))
+            return resolved.joinpath(*rest)
+
+        pathlib_module.Path = runtime_path
 
         default_import = builtins.__import__
 
@@ -155,10 +234,13 @@ class DeepAgentPythonSandbox:
 
             if name == "functions" and level == 0:
                 return helper_module
+            if name == "pathlib" and level == 0:
+                return pathlib_module
             return default_import(name, globals_, locals_, fromlist, level)
 
         sandbox_builtins = dict(vars(builtins))
         sandbox_builtins["__import__"] = sandbox_import
+        sandbox_builtins["open"] = sandbox_open
         self.globals["__builtins__"] = sandbox_builtins
 
         try:
@@ -176,10 +258,10 @@ def build_python_sandbox(
     tool_outputs_dir: Path | None = None,
     workspace_root: Path | None = None,
 ) -> DeepAgentPythonSandbox:
-    """Собирает persistent sandbox для ``execute_python_code``.
+    """Собирает persistent runtime для ``execute_python_code``.
 
-    Рабочая директория и разрешённые для чтения корни — это workspace и папка
-    spill-файлов из настроек.
+    Рабочая директория — это workspace из настроек. ``readable_roots`` сохраняются
+    как диагностическая информация в ответе инструмента.
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
@@ -207,15 +289,23 @@ def build_python_sandbox(
     )
 
 
-def _is_relative_to(path: Path, parent: Path) -> bool:
-    """Возвращает True, если ``path`` находится внутри ``parent`` (совместимо с <3.9)."""
+def _starts_with_workspace_tool_root(value: str, workspace_root: str) -> bool:
+    """Проверяет, начинается ли путь с полного tool-префикса workspace.
 
-    try:
-        path.relative_to(parent)
-    except ValueError:
-        return False
-    return True
+    Args:
+        value: Нормализованная строка пути из пользовательского Python-кода.
+        workspace_root: Полный workspace-префикс из ``workspace_tool_path``.
 
+    Returns:
+        ``True``, если путь совпадает с workspace root или находится внутри него.
+    """
+
+    normalized_root = workspace_root.rstrip("/")
+    return bool(
+        normalized_root
+        and normalized_root != "/"
+        and (value == normalized_root or value.startswith(f"{normalized_root}/"))
+    )
 
 __all__ = [
     "DeepAgentPythonSandbox",

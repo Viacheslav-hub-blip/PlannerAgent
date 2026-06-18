@@ -9,6 +9,7 @@
 - _validate_required_config_keys: проверка обязательных ключей.
 - _resolve_project_path: приведение пути к абсолютному.
 - _resolve_workspace_path: разрешение и проверка пути внутри workspace.
+- workspace_tool_root: преобразование корня workspace в полный путь filesystem tools.
 - workspace_tool_path: преобразование реального пути в путь filesystem tools.
 - _int_from_config: чтение целого числа из конфига.
 - _bool_from_config: чтение boolean из конфига.
@@ -211,6 +212,23 @@ def _resolve_workspace_path(value: Any, workspace_root: Path) -> Path:
     return resolved
 
 
+def workspace_tool_root(workspace_root: Path) -> str:
+    """Возвращает полный POSIX-путь workspace для интерфейса tools.
+
+    Args:
+        workspace_root: Реальный корень файлового пространства агента.
+
+    Returns:
+        Абсолютный путь вида ``/home/user_123456``. На Windows путь приводится
+        к стабильному POSIX-виду ``/C:/Users/...``.
+    """
+
+    raw_path = workspace_root.resolve().as_posix().rstrip("/")
+    if not raw_path:
+        return "/"
+    return raw_path if raw_path.startswith("/") else f"/{raw_path}"
+
+
 def workspace_tool_path(
     path: Path,
     workspace_root: Path,
@@ -225,8 +243,8 @@ def workspace_tool_path(
         directory: Нужно ли добавить завершающий слеш.
 
     Returns:
-        Путь вида ``/deep_agent/skills/``, однозначно соответствующий
-        ``workspace_root/deep_agent/skills``.
+        Полный путь вида ``/home/user_123456/deep_agent/skills/``,
+        однозначно соответствующий ``workspace_root/deep_agent/skills``.
 
     Raises:
         ValueError: Путь находится вне workspace.
@@ -239,7 +257,13 @@ def workspace_tool_path(
     except ValueError:
         raise ValueError(f"Path must be inside workspace_root: {resolved_path}") from None
 
-    result = f"/{relative_path.as_posix()}" if relative_path.parts else "/"
+    tool_root = workspace_tool_root(resolved_root)
+    if relative_path.parts:
+        base = tool_root.rstrip("/")
+        relative_posix = relative_path.as_posix()
+        result = f"{base}/{relative_posix}" if base else f"/{relative_posix}"
+    else:
+        result = tool_root
     if directory and not result.endswith("/"):
         result += "/"
     return result
@@ -316,5 +340,6 @@ __all__ = [
     "REQUIRED_CONFIG_KEYS",
     "DeepAgentSettings",
     "load_deep_agent_settings",
+    "workspace_tool_root",
     "workspace_tool_path",
 ]

@@ -61,13 +61,6 @@ explicitly requires it and no smaller change is viable. Add or update tests in p
 All new or changed functions and classes must follow the repository documentation rules. For LangChain `BaseModel`
 schemas, include a docstring describing purpose, inputs, and outputs as required by project instructions.
 
-When creating or updating a skill under `/deep_agent/skills`, first inspect neighboring skills and the relevant `SKILL.md`
-conventions. Base every domain statement on verified user input, project evidence, or successful data results. Keep
-the routing card concise; place extensive field descriptions, joins, and supporting details in adjacent files. Check
-that paths, references, front matter, and instructions remain internally consistent. Filesystem path
-`/deep_agent/skills/...` maps directly to `workspace_root/deep_agent/skills/...`: create or edit it only with
-`write_file` or `edit_file`. For validation through `execute`, use the same workspace-relative path without the
-leading slash, such as `deep_agent/skills/...`.
 </engineering_principles>
 
 <reporting>
@@ -94,8 +87,8 @@ successful logs, full diffs, timing noise, or generic stack traces.
 ## Constraints
 
 - Do not access table data; table retrieval belongs to `data-retrieval-agent`.
-- Do not use API keys, credentials, or network checks involving secrets.
-- Do not bypass file-edit approval or project safety rules through shell, Python, Git, or redirection.
+- Prefer transparent filesystem tools for source edits and use Python or shell when they are the clearest local
+  runtime for the delegated task.
 - Do not perform unrelated work.
 </constraints>
 """.strip()

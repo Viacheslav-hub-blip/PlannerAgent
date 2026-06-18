@@ -3,7 +3,11 @@
 Содержит:
 - ToolContextNoticeMiddleware: middleware с текстовым notice о передаче контекста.
 - build_tool_context_notice: формирование notice для конкретного инструмента.
+- build_tool_error_recovery_hint: формирование подсказки для неуспешного tool call.
+- is_tool_error_content: эвристика определения текстовой ошибки tool.
 - _tool_name_from_request: извлечение имени tool из запроса.
+- _tool_call_id_from_request: извлечение id tool call из запроса.
+- _tool_exception_message: преобразование exception в ToolMessage.
 - _copy_tool_message_with_content: копирование ToolMessage с новым content.
 """
 
@@ -18,10 +22,14 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+TOOL_ERROR_RECOVERY_HINT = (
+    "Попробуйте вызвать инструмент с другими параметрами или использовать другой инструмент."
+)
+
 
 @dataclass(frozen=True)
 class ToolContextNoticeMiddleware(AgentMiddleware):
-    """Добавляет к успешному текстовому результату tool короткое уведомление.
+    """Добавляет уведомления к успешным и неуспешным результатам tool.
 
     Args:
         enabled: Включено ли добавление notice к результатам инструментов.
@@ -44,7 +52,10 @@ class ToolContextNoticeMiddleware(AgentMiddleware):
             Исходный результат или ToolMessage с добавленным notice.
         """
 
-        result = handler(request)
+        try:
+            result = handler(request)
+        except Exception as exc:  # noqa: BLE001
+            return _tool_exception_message(request, exc)
         if not self.enabled or not isinstance(result, ToolMessage):
             return result
         return self._with_notice(result, _tool_name_from_request(request))
@@ -64,24 +75,32 @@ class ToolContextNoticeMiddleware(AgentMiddleware):
             Исходный результат или ToolMessage с добавленным notice.
         """
 
-        result = await handler(request)
+        try:
+            result = await handler(request)
+        except Exception as exc:  # noqa: BLE001
+            return _tool_exception_message(request, exc)
         if not self.enabled or not isinstance(result, ToolMessage):
             return result
         return self._with_notice(result, _tool_name_from_request(request))
 
     def _with_notice(self, result: ToolMessage, tool_name: str) -> ToolMessage:
-        """Возвращает ToolMessage с notice, если результат успешный и текстовый.
+        """Возвращает ToolMessage с notice или подсказкой для ошибки.
 
         Args:
             result: Результат tool call.
             tool_name: Имя вызванного инструмента.
 
         Returns:
-            ToolMessage с исходным content или content с notice.
+            ToolMessage с исходным content, notice или подсказкой восстановления.
         """
 
-        if result.status == "error" or not isinstance(result.content, str):
+        if not isinstance(result.content, str):
             return result
+        if result.status == "error" or is_tool_error_content(result.content):
+            return _copy_tool_message_with_content(
+                result,
+                _append_error_recovery_hint(result.content),
+            )
         notice = build_tool_context_notice(tool_name)
         if not notice or result.content.startswith(notice):
             return result
@@ -114,6 +133,60 @@ def build_tool_context_notice(tool_name: str) -> str:
     )
 
 
+def build_tool_error_recovery_hint() -> str:
+    """Возвращает подсказку для восстановления после ошибки tool.
+
+    Returns:
+        Русский текст рекомендации для агента после неуспешного вызова инструмента.
+    """
+
+    return TOOL_ERROR_RECOVERY_HINT
+
+
+def is_tool_error_content(content: str) -> bool:
+    """Определяет, похож ли текстовый результат tool на ошибку.
+
+    Args:
+        content: Текстовый content из ``ToolMessage``.
+
+    Returns:
+        ``True``, если content начинается с известного error-префикса.
+    """
+
+    stripped = str(content or "").lstrip()
+    error_prefixes = (
+        "Error:",
+        "Exception:",
+        "ToolUnavailableError:",
+        "ImageAnalysisError:",
+        "ValueError:",
+        "TypeError:",
+        "FileNotFoundError:",
+        "PermissionError:",
+        "RuntimeError:",
+        "SyntaxError:",
+        "ImportError:",
+        "ModuleNotFoundError:",
+    )
+    return stripped.startswith(error_prefixes)
+
+
+def _append_error_recovery_hint(content: str) -> str:
+    """Добавляет подсказку восстановления к тексту ошибки, если её ещё нет.
+
+    Args:
+        content: Исходный текст ошибки.
+
+    Returns:
+        Текст ошибки с рекомендацией повторного вызова или смены инструмента.
+    """
+
+    hint = build_tool_error_recovery_hint()
+    if hint in content:
+        return content
+    return f"{content.rstrip()}\n\n{hint}"
+
+
 def _tool_name_from_request(request: ToolCallRequest) -> str:
     """Извлекает имя tool из запроса LangChain.
 
@@ -126,6 +199,41 @@ def _tool_name_from_request(request: ToolCallRequest) -> str:
 
     tool_call = request.tool_call or {}
     return str(tool_call.get("name") or "tool")
+
+
+def _tool_call_id_from_request(request: ToolCallRequest) -> str:
+    """Извлекает id tool call из запроса LangChain.
+
+    Args:
+        request: Запрос tool call.
+
+    Returns:
+        Идентификатор tool call или пустую строку.
+    """
+
+    tool_call = request.tool_call or {}
+    return str(tool_call.get("id") or "")
+
+
+def _tool_exception_message(request: ToolCallRequest, error: Exception) -> ToolMessage:
+    """Преобразует исключение tool handler в ToolMessage для возврата агенту.
+
+    Args:
+        request: Запрос tool call.
+        error: Исключение, выброшенное инструментом или backend.
+
+    Returns:
+        ``ToolMessage`` со статусом ``error`` и подсказкой восстановления.
+    """
+
+    message = str(error).strip()
+    content = f"{type(error).__name__}: {message}" if message else type(error).__name__
+    return ToolMessage(
+        content=_append_error_recovery_hint(content),
+        tool_call_id=_tool_call_id_from_request(request),
+        name=_tool_name_from_request(request),
+        status="error",
+    )
 
 
 def _copy_tool_message_with_content(
@@ -154,4 +262,9 @@ def _copy_tool_message_with_content(
     )
 
 
-__all__ = ["ToolContextNoticeMiddleware", "build_tool_context_notice"]
+__all__ = [
+    "ToolContextNoticeMiddleware",
+    "build_tool_context_notice",
+    "build_tool_error_recovery_hint",
+    "is_tool_error_content",
+]

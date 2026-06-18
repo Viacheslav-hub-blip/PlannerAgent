@@ -17,7 +17,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
 from deep_agent.models.vlm import QwenVLMClient
-from deep_agent.settings import PROJECT_ROOT
+from deep_agent.settings import load_deep_agent_settings, workspace_tool_path
 
 ANALYZE_IMAGE_TOOL_NAME = "analyze_image"
 ANALYZE_IMAGE_SYSTEM_PROMPT = (
@@ -38,7 +38,8 @@ class AnalyzeImageInput(BaseModel):
     image_path: str = Field(
         description=(
             "Путь к изображению. Можно передать абсолютный путь ОС или workspace-путь "
-            "вида `/reports/slide.png`, который будет разрешён относительно workspace_root."
+            "вида `/home/user_123456/reports/slide.png`, который будет разрешён "
+            "относительно настроенного workspace_root."
         ),
     )
     query: str = Field(
@@ -86,13 +87,14 @@ Result:
     def __init__(
         self,
         *,
-        workspace_root: str | Path = PROJECT_ROOT,
+        workspace_root: str | Path | None = None,
         client_factory: Callable[[], QwenVLMClient] | None = None,
     ) -> None:
         """Создаёт tool анализа изображений.
 
         Args:
-            workspace_root: Корень workspace для виртуальных путей.
+            workspace_root: Корень workspace для виртуальных путей. Если ``None``,
+                используется ``workspace_root`` из настроек.
             client_factory: Фабрика клиента VLM.
 
         Returns:
@@ -100,7 +102,8 @@ Result:
         """
 
         super().__init__()
-        self._workspace_root = Path(workspace_root).expanduser().resolve()
+        resolved_workspace_root = workspace_root or load_deep_agent_settings().workspace_root
+        self._workspace_root = Path(resolved_workspace_root).expanduser().resolve()
         self._client_factory = client_factory or _build_default_qwen_vlm_client
 
     def _get_client(self) -> QwenVLMClient:
@@ -163,13 +166,14 @@ Result:
 
 def build_analyze_image_tool(
     *,
-    workspace_root: str | Path = PROJECT_ROOT,
+    workspace_root: str | Path | None = None,
     client_factory: Callable[[], QwenVLMClient] | None = None,
 ) -> AnalyzeImageTool:
     """Создаёт tool ``analyze_image``.
 
     Args:
-        workspace_root: Корень workspace для виртуальных путей.
+        workspace_root: Корень workspace для виртуальных путей. Если ``None``,
+            используется ``workspace_root`` из настроек.
         client_factory: Фабрика клиента VLM.
 
     Returns:
@@ -206,6 +210,20 @@ def _resolve_image_path(image_path: str, workspace_root: Path) -> Path:
     """
 
     raw_path = str(image_path or "").strip()
+    normalized_raw_path = raw_path.replace("\\", "/")
+    workspace_root_path = workspace_tool_path(workspace_root, workspace_root)
+    normalized_root = workspace_root_path.rstrip("/")
+    if (
+        normalized_root
+        and normalized_root != "/"
+        and (
+            normalized_raw_path == normalized_root
+            or normalized_raw_path.startswith(f"{normalized_root}/")
+        )
+    ):
+        suffix = normalized_raw_path[len(normalized_root) :].lstrip("/")
+        return (workspace_root / suffix).resolve() if suffix else workspace_root.resolve()
+
     path = Path(raw_path)
     if path.is_absolute() and not raw_path.startswith("/"):
         return path.expanduser().resolve()

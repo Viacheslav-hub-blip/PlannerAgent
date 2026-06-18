@@ -15,7 +15,7 @@ pyspark>=3.5.0
 pandas>=2.0.0
 numpy>=1.26.0
 
-# Optional libraries allowed inside execute_python_code sandbox
+# Optional libraries available inside execute_python_code runtime
 matplotlib>=3.8.0
 plotly>=5.20.0
 scipy>=1.11.0

@@ -29,6 +29,7 @@ from deep_agent.middleware.skills_context import (
     _read_context_file,
     _workspace_skill_path,
     discover_skill_context_files,
+    rewrite_workspace_skill_references,
 )
 
 LOAD_SKILLS_TOOL_NAME = "load_skills"
@@ -53,11 +54,13 @@ What it does:
 
 Arguments:
 - `skill_names`: comma-separated known skill names or workspace paths in one string, for example
-  `skill-a, skill-b` or `/deep_agent/skills/skill-a/SKILL.md, /deep_agent/skills/skill-b/SKILL.md`;
+  `skill-a, skill-b` or
+  `/home/user_123456/deep_agent/skills/skill-a/SKILL.md, /home/user_123456/deep_agent/skills/skill-b/SKILL.md`;
 - `already_loaded`: comma-separated skills that should not be loaded again. This can be empty.
 
 Use `load_skills` only for batch loading verified skills into the supervisor context. Do not guess names and do not
-request every available skill. Do not pass paths like `/deep_agent/skills/name/fields.md`; they are not skills.
+request every available skill. Do not pass paths like `/home/user_123456/deep_agent/skills/name/fields.md`; they are
+not skills.
 """.strip()
 
 
@@ -69,22 +72,37 @@ def _split_tokens(raw: str) -> list[str]:
     return [token.strip() for token in str(raw).split(",") if token.strip()]
 
 
-def _build_skill_lookup(settings: DeepAgentSettings) -> dict[str, dict[str, str]]:
+def _build_skill_lookup(
+    settings: DeepAgentSettings,
+    *,
+    skills_root: Path | None = None,
+    workspace_root: Path | None = None,
+) -> dict[str, dict[str, str]]:
     """Строит индекс соответствий токен (lower) -> запись skill.
 
     Один skill доступен по нескольким токенам: workspace-путь, относительный путь,
     имя папки и ``name`` из front matter.
+
+    Args:
+        settings: Настройки агента.
+        skills_root: Фактическая папка skills текущего запуска.
+        workspace_root: Фактический корень workspace текущего запуска.
+
+    Returns:
+        Словарь поиска skill по имени, папке, относительному и workspace-пути.
     """
 
+    resolved_skills_root = (skills_root or settings.skills_root).resolve()
+    resolved_workspace_root = (workspace_root or settings.workspace_root).resolve()
     lookup: dict[str, dict[str, str]] = {}
     skills_workspace_dir = workspace_tool_path(
-        settings.skills_root,
-        settings.workspace_root,
+        resolved_skills_root,
+        resolved_workspace_root,
         directory=True,
     )
-    for local_path in discover_skill_context_files(settings.skills_root):
+    for local_path in discover_skill_context_files(resolved_skills_root):
         workspace_path = _workspace_skill_path(
-            settings.skills_root,
+            resolved_skills_root,
             local_path,
             skills_workspace_dir,
         )
@@ -92,7 +110,7 @@ def _build_skill_lookup(settings: DeepAgentSettings) -> dict[str, dict[str, str]
         parsed = _parse_skill_index_entry(header)
         name = parsed.get("name") or local_path.parent.name
         try:
-            relative_path = local_path.relative_to(settings.skills_root).as_posix()
+            relative_path = local_path.relative_to(resolved_skills_root).as_posix()
         except ValueError:
             relative_path = local_path.name
         entry = {
@@ -144,11 +162,36 @@ def _build_report(
     return "\n\n".join(sections)
 
 
-def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
-    """Собирает общий tool ``load_skills`` для агента с замыканием на settings."""
+def build_load_skills_tool(
+    settings: DeepAgentSettings,
+    *,
+    skills_root: Path | None = None,
+    workspace_root: Path | None = None,
+) -> Any:
+    """Собирает общий tool ``load_skills`` для агента с замыканием на settings.
 
-    lookup = _build_skill_lookup(settings)
+    Args:
+        settings: Настройки агента.
+        skills_root: Фактическая папка skills текущего запуска.
+        workspace_root: Фактический корень workspace текущего запуска.
+
+    Returns:
+        LangChain tool ``load_skills``.
+    """
+
+    lookup = _build_skill_lookup(
+        settings,
+        skills_root=skills_root,
+        workspace_root=workspace_root,
+    )
     max_chars = LOAD_SKILLS_MAX_CHARS
+    resolved_skills_root = (skills_root or settings.skills_root).resolve()
+    resolved_workspace_root = (workspace_root or settings.workspace_root).resolve()
+    skills_workspace_dir = workspace_tool_path(
+        resolved_skills_root,
+        resolved_workspace_root,
+        directory=True,
+    )
 
     @tool(LOAD_SKILLS_TOOL_NAME, description=LOAD_SKILLS_DESCRIPTION)
     def load_skills(
@@ -191,6 +234,7 @@ def build_load_skills_tool(settings: DeepAgentSettings) -> Any:
             if content is None:
                 unknown.append(token)
                 continue
+            content = rewrite_workspace_skill_references(content, skills_workspace_dir)
             already_seen.add(workspace_path)
             newly_loaded.append(workspace_path)
             blocks.append(f"### {entry['name']} ({workspace_path})\n\n{content}")

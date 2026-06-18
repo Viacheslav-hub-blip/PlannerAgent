@@ -186,9 +186,9 @@ class ModelErrorHandlingTests(unittest.TestCase):
             ``None``.
         """
 
-        model_source = (Path(__file__).parents[1] / "model.py").read_text(
-            encoding="utf-8"
-        )
+        model_source = (
+            Path(__file__).parents[1] / "deep_agent" / "models" / "instances.py"
+        ).read_text(encoding="utf-8")
 
         self.assertIn('os.environ.get("OPENAI_API_KEY")', model_source)
         self.assertNotRegex(model_source, r"sk-[A-Za-z0-9_-]{12,}")

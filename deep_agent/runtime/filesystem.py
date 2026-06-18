@@ -2,6 +2,7 @@
 
 Содержит:
 - configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
+- WorkspacePathPrefixMixin: единое отображение полного workspace-префикса в tools.
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
@@ -15,6 +16,8 @@ from pathlib import Path
 
 import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
+
+from deep_agent.settings import workspace_tool_root
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,83 @@ def configure_read_file_default_limit(limit: int) -> None:
     filesystem_middleware.ReadFileSchema.model_rebuild(force=True)
 
 
-class Utf8SearchMixin:
+class WorkspacePathPrefixMixin:
+    """Добавляет backend полные workspace-пути в формате tools.
+
+    Args:
+        *args: Позиционные аргументы базового backend.
+        **kwargs: Именованные аргументы базового backend.
+
+    Returns:
+        Backend, который принимает пути ``/home/user/project/file`` и возвращает
+        такие же полные пути в результатах ``ls``, ``glob`` и ``grep``.
+    """
+
+    tool_path_root: str
+
+    def __init__(self, *args, **kwargs) -> None:
+        """Инициализирует базовый backend и сохраняет полный tool-префикс workspace.
+
+        Args:
+            *args: Позиционные аргументы базового backend.
+            **kwargs: Именованные аргументы базового backend.
+
+        Returns:
+            ``None``.
+        """
+
+        super().__init__(*args, **kwargs)
+        self.tool_path_root = workspace_tool_root(self.cwd)
+
+    def _resolve_path(self, key: str) -> Path:
+        """Преобразует полный workspace-путь в путь виртуального backend.
+
+        Args:
+            key: Путь из filesystem tool.
+
+        Returns:
+            Реальный локальный путь, разрешённый базовым backend.
+        """
+
+        return super()._resolve_path(self._strip_workspace_prefix(key))
+
+    def _to_virtual_path(self, path: Path) -> str:
+        """Преобразует реальный путь в полный workspace-путь tools.
+
+        Args:
+            path: Реальный локальный путь внутри workspace.
+
+        Returns:
+            Полный POSIX-путь с префиксом настроенного workspace.
+        """
+
+        relative_path = path.resolve().relative_to(self.cwd).as_posix()
+        if not relative_path:
+            return self.tool_path_root
+        base = self.tool_path_root.rstrip("/")
+        return f"{base}/{relative_path}" if base else f"/{relative_path}"
+
+    def _strip_workspace_prefix(self, key: str) -> str:
+        """Удаляет полный workspace-префикс перед передачей пути в virtual backend.
+
+        Args:
+            key: Путь из filesystem tool.
+
+        Returns:
+            Путь относительно виртуального корня backend.
+        """
+
+        normalized = str(key or "").replace("\\", "/")
+        prefix = self.tool_path_root.rstrip("/")
+        if prefix and prefix != "/" and normalized == prefix:
+            return "/"
+        if prefix and prefix != "/" and normalized.startswith(f"{prefix}/"):
+            suffix = normalized[len(prefix) :].lstrip("/")
+            return f"/{suffix}" if suffix else "/"
+        return key
+
+
+class Utf8SearchMixin(WorkspacePathPrefixMixin):
     """Добавляет backend явное чтение UTF-8 в Python fallback grep.
 
     Args:
@@ -174,5 +253,6 @@ __all__ = [
     "Utf8FilesystemBackend",
     "Utf8LocalShellBackend",
     "Utf8SearchMixin",
+    "WorkspacePathPrefixMixin",
     "configure_read_file_default_limit",
 ]

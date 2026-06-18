@@ -37,7 +37,7 @@ Treat them as domain guidance with higher priority than the base prompt. Do not 
 SKILLS_INDEX_CONTEXT_PROMPT_TEMPLATE = """## Skills Index
 
 Below is the index of skills that were not included in the Preloaded Skills block. Each item contains:
-- `path`: workspace path to `SKILL.md` under `/deep_agent/skills/`;
+- `path`: full workspace path to `SKILL.md`, for example `/home/user_123456/deep_agent/skills/name/SKILL.md`;
 - `name`: skill name;
 - `description`: when the skill should be used.
 

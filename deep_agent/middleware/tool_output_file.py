@@ -30,6 +30,8 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from deep_agent.settings import workspace_tool_path
+
 
 @dataclass(frozen=True)
 class ToolOutputFileMiddleware(AgentMiddleware):
@@ -201,19 +203,13 @@ def _workspace_tool_output_path(*, file_path: Path, workspace_root: Path) -> str
         workspace_root: Корень файлового пространства агента.
 
     Returns:
-        Путь вида ``/runs/deep_agent_tool_outputs/session_x/data.pkl``.
+        Полный путь вида ``/home/user_123456/runs/deep_agent_tool_outputs/session_x/data.pkl``.
 
     Raises:
         ValueError: Файл находится вне workspace.
     """
 
-    try:
-        relative_path = file_path.resolve().relative_to(workspace_root.resolve()).as_posix()
-    except ValueError:
-        raise ValueError(
-            f"Tool output must be inside workspace_root: {file_path.resolve()}"
-        ) from None
-    return f"/{relative_path}"
+    return workspace_tool_path(file_path.resolve(), workspace_root.resolve())
 
 
 def _build_file_summary(

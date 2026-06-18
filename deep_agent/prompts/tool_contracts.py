@@ -109,7 +109,7 @@ Parameters:
 - `limit`: maximum number of lines to read; defaults to 500.
 
 Correct call example:
-`{"file_path": "/deep_agent/skills/hit-table/fields.md", "offset": 0, "limit": 500}`
+`{"file_path": "/home/user_123456/deep_agent/skills/hit-table/fields.md", "offset": 0, "limit": 500}`
 
 Use when:
 - нужно изучить исходный код, тесты, конфигурацию, инструкции или документацию;
@@ -125,7 +125,8 @@ Do not use:
 - ограниченная страница не доказывает окончание файла: продолжай со следующим `offset`;
 - перед изменением исходника прочитай достаточный связный контекст, а не только строку из `grep`;
 - для `.pkl` используй `execute_python_code`;
-- путь `/src/app.py` всегда означает реальный файл `workspace_root/src/app.py`;
+- путь `/home/user_123456/src/app.py` всегда означает реальный файл внутри настроенного `workspace_root`;
+- не обрезай префикс `workspace_root` из путей, которые вернули `ls`, `glob`, `grep` или `workspace_file`;
 - не используй отдельные aliases вроде `/skills` или `/tool_outputs`.
 """.strip(),
     "write_file": """
@@ -149,7 +150,8 @@ Policy:
 - сначала изучи соседние файлы, соглашения и тестовые паттерны;
 - генерируй завершённый, согласованный с проектом контент;
 - сохраняй UTF-8 и пользовательские изменения;
-- вызов требует подтверждения пользователя.
+- если в runtime включён `enable_interrupts=true`, вызов может запросить HITL-подтверждение;
+  при `enable_interrupts=false` выполняется без дополнительного approval.
 """.strip(),
     "edit_file": """
 edit_file
@@ -172,7 +174,8 @@ Policy:
 - предпочитай минимальное связное изменение;
 - сохраняй стиль файла, совместимость и несвязанные правки;
 - после изменения выполни релевантную проверку;
-- вызов требует подтверждения пользователя.
+- если в runtime включён `enable_interrupts=true`, вызов может запросить HITL-подтверждение;
+  при `enable_interrupts=false` выполняется без дополнительного approval.
 """.strip(),
     "glob": """
 glob
@@ -207,10 +210,10 @@ Parameters:
 - `output_mode`: `files_with_matches`, `content`, or `count`.
 
 Correct call example:
-`{"pattern": "build_client", "path": "/src", "glob": "*.py", "output_mode": "content"}`
+`{"pattern": "build_client", "path": "/home/user_123456/src", "glob": "*.py", "output_mode": "content"}`
 
 Single-file search example:
-`{"pattern": "timeout", "path": "/config", "glob": "settings.yaml", "output_mode": "content"}`
+`{"pattern": "timeout", "path": "/home/user_123456/config", "glob": "settings.yaml", "output_mode": "content"}`
 
 Use when:
 - нужно найти символ, вызов, конфигурационный ключ, текст, skill или упоминание артефакта;
@@ -232,11 +235,12 @@ Description:
 Выполняет неинтерактивную команду в терминале с активным workspace как рабочей директорией.
 
 Path model:
-- filesystem path `/deep_agent/skills/...` означает `workspace_root/deep_agent/skills/...`;
+- filesystem path `/home/user_123456/deep_agent/skills/...` означает реальный файл внутри настроенного
+  `workspace_root`;
 - aliases `/skills`, `/tool_outputs` и `/project_memory` не используются;
-- в `execute` рабочая директория уже равна `workspace_root`, поэтому используй тот же путь без ведущего `/`,
-  например `deep_agent/skills/...`;
-- создание и изменение файлов выполняй через `write_file` или `edit_file`, не через shell.
+- в `execute` рабочая директория уже равна `workspace_root`, но полные пути с префиксом workspace тоже допустимы;
+- для точечных исходников предпочитай `write_file` или `edit_file`; для диагностики,
+  генерации и локальных операций можно использовать terminal или Python runtime.
 
 Use when:
 - нужно запустить тесты, линтер, formatter, type checker, сборку или генератор;
@@ -244,19 +248,16 @@ Use when:
 - стандартная команда проекта даёт воспроизводимую проверку реализации;
 - вывод shell необходим для диагностики.
 
-Do not use:
-- для изменения исходников через redirection, Python, PowerShell, Git или другой процесс: используй `write_file` или
-  `edit_file`;
-- для изменения файлов через shell, даже если путь находится внутри workspace;
-- для вычислений и преобразований, предназначенных для `execute_python_code`;
-- для интерактивных команд, credential prompts, API-ключей и сетевых проверок с секретами;
-- для доступа за пределы активного workspace.
+Use another tool when:
+- точечное редактирование исходника проще и прозрачнее сделать через `edit_file`;
+- вычисление или преобразование надежнее выразить через `execute_python_code`;
+- команда требует интерактивного ввода, credential prompt, API-ключей или сетевой проверки с секретами.
 
 Policy:
 - предпочитай детерминированные неинтерактивные команды;
 - используй минимально достаточную область тестирования и расширяй её по риску изменений;
 - задавай ограниченный timeout;
 - при ошибке возвращай полезный фрагмент, а не полный шумный log;
-- не обходи через terminal подтверждение, требуемое для изменения файлов.
+- при ошибке скорректируй команду, параметры или выбери другой tool.
 """.strip(),
 }
