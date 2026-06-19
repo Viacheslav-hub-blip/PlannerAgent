@@ -56,6 +56,10 @@ class ExecutePythonCodeTests(unittest.TestCase):
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
+            "`target_variable` можно не передавать",
+            EXECUTE_PYTHON_CODE_DESCRIPTION,
+        )
+        self.assertIn(
             "для временных артефактов используй `Path(TOOL_OUTPUTS_DIR)`",
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
@@ -140,7 +144,42 @@ class ExecutePythonCodeTests(unittest.TestCase):
             notebook_path = outputs_dir / "my_notebook.ipynb"
             self.assertTrue(payload["success"])
             self.assertTrue(notebook_path.exists())
-            self.assertIn("configured_outputs", payload["variable_preview"])
+        self.assertIn("configured_outputs", payload["variable_preview"])
+
+    def test_target_variable_can_be_omitted_for_file_side_effect(self) -> None:
+        """Проверяет выполнение кода без переменной результата для файлового side effect.
+
+        Returns:
+            ``None``; тест подтверждает, что ``target_variable`` не обязателен.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sandbox = DeepAgentPythonSandbox(
+                working_directory=root,
+                readable_roots=(root,),
+                tool_outputs_dir=root,
+            )
+            tool = build_execute_python_code_tool(sandbox)
+
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": (
+                            "from pathlib import Path\n"
+                            "Path('side_effect.txt').write_text('ok', encoding='utf-8')"
+                        ),
+                    }
+                )
+            )
+
+            side_effect_path = root / "side_effect.txt"
+            side_effect_exists = side_effect_path.exists()
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["target_variable"], "")
+        self.assertEqual(payload["variable_preview"], "")
+        self.assertTrue(side_effect_exists)
 
     """Проверяет импорт sandbox helpers и компактный формат ошибок инструмента."""
 

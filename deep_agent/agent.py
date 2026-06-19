@@ -70,12 +70,15 @@ from deep_agent.runtime.filesystem import (
     configure_read_file_default_limit,
 )
 from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
+from deep_agent.tools.jupyter_notebook import build_convert_jupyter_notebook_tool
 from deep_agent.tools.python_execution import build_execute_python_code_tool
 from deep_agent.tools.project_structure import build_get_project_structure_tool
 from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
+from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
+from deep_agent.prompts.tool_contracts import TOOL_DESCRIPTION_OVERRIDES
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -294,6 +297,9 @@ def build_analytics_deep_agent(
     project_structure_tool = build_get_project_structure_tool(
         workspace_root=resolved_workspace_root,
     )
+    jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
+        workspace_root=resolved_workspace_root,
+    )
     file_edit_interrupts = _build_file_edit_interrupts(settings)
     shared_skills_selection: dict[str, Any] = {}
     supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
@@ -322,7 +328,12 @@ def build_analytics_deep_agent(
     coding_agent = create_deep_agent(
         **build_coding_subagent_spec(
             model=model,
-            tools=[load_skills_tool, python_tool, project_structure_tool],
+            tools=[
+                load_skills_tool,
+                python_tool,
+                project_structure_tool,
+                jupyter_notebook_tool,
+            ],
             common_middleware=coding_agent_middleware,
             skill_sources=[skills_workspace_dir],
         ),
@@ -421,6 +432,7 @@ def _build_native_runtime_middleware(
         agent_name=agent_name
     )
     middleware: list[Any] = [
+        PromptToolDescriptionsMiddleware(TOOL_DESCRIPTION_OVERRIDES),
         ModelRetryMiddleware(
             max_retries=settings.max_model_retries,
             retry_on=is_retryable_model_error,

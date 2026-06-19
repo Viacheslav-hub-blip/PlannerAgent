@@ -71,6 +71,7 @@ from deep_agent.middleware.tool_context_notice import (
     ToolContextNoticeMiddleware,
     build_tool_context_notice,
 )
+from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
 from deep_agent.data.query_schema import FilterCondition, ParsedDataQuery
 from deep_agent.tools.skill_loader import LOAD_SKILLS_DESCRIPTION, build_load_skills_tool
 from deep_agent.tools.image_analysis import build_analyze_image_tool
@@ -587,6 +588,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ToolCallLimitMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, ModelCallLimitMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
 
     def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
         """HITL должен применяться только к write_file и edit_file."""
@@ -652,29 +654,21 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertIn("<agent_memory>", prompt_text)
         self.assertIn(memory_path, prompt_text)
-        self.assertIn("# AGENTS.md", prompt_text)
-        self.assertIn("task(data-retrieval-agent)", prompt_text)
+        self.assertIn("## Role", prompt_text)
+        self.assertIn("data-retrieval-agent", prompt_text)
 
-    def test_filesystem_tool_descriptions_define_correct_arguments_and_paging(self) -> None:
-        """Описания filesystem tools должны предотвращать ошибочные аргументы и неполное чтение."""
+    def test_filesystem_tool_descriptions_define_public_call_contract(self) -> None:
+        """Описания filesystem tools должны фиксировать публичный контракт вызова."""
 
         read_file_description = TOOL_DESCRIPTION_OVERRIDES["read_file"]
         grep_description = TOOL_DESCRIPTION_OVERRIDES["grep"]
 
-        self.assertIn("путь через `file_path`, не через `path`", read_file_description)
-        self.assertIn("продолжай со следующим `offset`", read_file_description)
-        self.assertIn("через `pattern`, не через `query`", grep_description)
-        self.assertIn("`path` должен быть директорией", grep_description)
-        self.assertIn('"glob": "settings.yaml"', grep_description)
-        self.assertIn('"pattern": "build_client"', grep_description)
-        self.assertIn(
-            "aliases `/skills`, `/tool_outputs` и `/project_memory` не используются",
-            TOOL_DESCRIPTION_OVERRIDES["execute"],
-        )
-        self.assertIn(
-            "полные пути с префиксом workspace тоже допустимы",
-            TOOL_DESCRIPTION_OVERRIDES["execute"],
-        )
+        self.assertIn("pass the path through `file_path`", read_file_description)
+        self.assertIn("request the next fragment with a new `offset`", read_file_description)
+        self.assertIn("pass the search text through `pattern`", grep_description)
+        self.assertIn("`path` points to a directory", grep_description)
+        self.assertIn("single file name can be passed through `glob`", grep_description)
+        self.assertIn("exit code, stdout, and stderr", TOOL_DESCRIPTION_OVERRIDES["execute"])
 
     def test_load_skills_description_rejects_auxiliary_files(self) -> None:
         """Описание load_skills должно запрещать загрузку fields.md как skill."""
@@ -685,12 +679,17 @@ class ReliableExecutionTests(unittest.TestCase):
             LOAD_SKILLS_DESCRIPTION,
         )
 
-    def test_tool_rules_are_kept_in_descriptions_not_system_prompts(self) -> None:
-        """Правила tools должны находиться в descriptions, а не в system prompts."""
+    def test_tool_descriptions_are_separate_from_agent_workflow_rules(self) -> None:
+        """Описания tools не должны содержать внутренние workflow-правила агента."""
 
-        self.assertIn("генерации тестов", TASK_TOOL_DESCRIPTION)
-        self.assertIn("для coding-задачи", TASK_TOOL_DESCRIPTION)
-        self.assertIn("пустой отчёт", TASK_TOOL_DESCRIPTION)
+        self.assertIn("Runs one subagent", TASK_TOOL_DESCRIPTION)
+        self.assertIn("`subagent_type`", TASK_TOOL_DESCRIPTION)
+        self.assertIn("`description`", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("coding-agent", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("data-retrieval-agent", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("supervisor", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("не повторяй один и тот же tool call", TASK_TOOL_DESCRIPTION)
+        self.assertNotIn("пустой отчёт", TASK_TOOL_DESCRIPTION)
         self.assertNotIn("load_data", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
         self.assertNotIn("load_skills", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
         self.assertNotIn("read_file", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
@@ -706,17 +705,8 @@ class ReliableExecutionTests(unittest.TestCase):
         )
         self.assertIn("Never expose private chain-of-thought", SYSTEM_PROMPT)
         self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
-        self.assertIn(
-            "When creating or updating a skill under the configured full workspace path",
-            CODING_AGENT_PROMPT,
-        )
-        self.assertIn(
-            "maps directly to the same real file inside `workspace_root`",
-            CODING_AGENT_PROMPT,
-        )
-        self.assertIn("для чтения и проверки табличных данных", TASK_TOOL_DESCRIPTION)
-        self.assertIn("более чем двух последовательных чтений", TASK_TOOL_DESCRIPTION)
-        self.assertIn("не повторяй один и тот же tool call", TASK_TOOL_DESCRIPTION)
+        self.assertIn("bounded code and workspace tasks", CODING_AGENT_PROMPT)
+        self.assertIn("Do not access table data", CODING_AGENT_PROMPT)
         self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
         self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
         self.assertIn("material parameters", CODING_AGENT_PROMPT)

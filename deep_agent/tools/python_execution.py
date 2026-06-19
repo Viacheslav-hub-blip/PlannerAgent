@@ -143,8 +143,8 @@ execute_python_code
 
 Аргументы:
 - `code`: исполняемый Python-код;
-- `target_variable`: имя переменной с главным результатом; код обязан присвоить
-  переменную с точно таким именем;
+- `target_variable`: необязательное имя переменной с главным результатом. Передавай
+  только когда результат удобно сохранить в переменную и нужен preview значения;
 - `description`: краткая цель вычисления на русском языке для трассировки.
 
 Доступные helpers:
@@ -167,16 +167,17 @@ def chunked(items, size):
 assert chunked([1, 2, 3], 2) == [[1, 2], [3]]
 result = chunked([1, 2, 3, 4], 3)
 ```
-Вызов должен передать `target_variable="result"`.
+Если нужен preview значения, передай `target_variable="result"`.
 
 Хорошее решение: сохранить запрошенный артефакт в каталог текущей сессии.
 ```python
 from pathlib import Path
 output_path = Path(TOOL_OUTPUTS_DIR) / "generated_report.json"
 output_path.write_text('{"status": "ok"}', encoding="utf-8")
-result_path = str(output_path)
+print(output_path)
 ```
-Вызов должен передать `target_variable="result_path"`.
+Для задач, где главным результатом является созданный файл, `target_variable` можно не передавать:
+достаточно stdout или факта успешного выполнения.
 
 Работа с путями:
 - для workspace-файлов используй полный путь из configured root или `Path(WORKSPACE_ROOT)`;
@@ -184,14 +185,15 @@ result_path = str(output_path)
 - при работе с pickle бери точный `workspace_file` из результата tool.
 
 Обработка ошибок:
-- для stdout используй `print()` и не передавай `target_variable`;
+- для stdout, файловых операций, side effects и действий без единственного Python-значения
+  не передавай `target_variable`;
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
 - если Python не подходит для следующего шага, используй другой доступный tool.
 """.strip()
 
 
 class ExecutePythonCodeInput(BaseModel):
-    """Аргументы tool ``execute_python_code``: код, имя переменной результата, описание."""
+    """Аргументы tool ``execute_python_code``: код, опциональная переменная результата, описание."""
 
     code: str = Field(
         description=(
@@ -203,9 +205,9 @@ class ExecutePythonCodeInput(BaseModel):
     target_variable: str | None = Field(
         default=None,
         description=(
-            "Имя переменной, в которую нужно сохранить главный результат. "
-            "Код обязан присвоить переменную с точно таким именем. Если именованный "
-            "результат не нужен, опусти аргумент, используй print() и читай stdout."
+            "Необязательное имя переменной, в которую нужно сохранить главный результат. "
+            "Передавай только если нужен preview значения этой переменной. Если результатом "
+            "является stdout, созданный файл или другой side effect, опусти аргумент."
         ),
     )
     description: str = Field(
@@ -253,7 +255,7 @@ class ExecutePythonCodeTool(BaseTool):
 
         Args:
             code: Python-код для выполнения.
-            target_variable: Имя переменной результата или ``None`` для print-вывода.
+            target_variable: Необязательное имя переменной результата или ``None``.
             description: Краткая цель кода для трассировки.
             **_: Служебные аргументы LangChain, не используются.
 

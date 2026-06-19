@@ -1,6 +1,9 @@
-"""Описания и контракт использования инструментов DeepAgent.
+"""Описания публичных контрактов инструментов DeepAgent.
 
-Содержит описания встроенных LangChain tools и таблицу переопределений.
+Содержит:
+- WRITE_TODOS_TOOL_DESCRIPTION: описание инструмента ведения списка задач.
+- TASK_TOOL_DESCRIPTION: описание инструмента запуска subagent.
+- TOOL_DESCRIPTION_OVERRIDES: таблица переопределений описаний встроенных tools.
 """
 
 from __future__ import annotations
@@ -9,69 +12,38 @@ WRITE_TODOS_TOOL_DESCRIPTION = """
 write_todos
 ---
 Description:
-Ведёт исполнимый план текущей задачи.
+Keeps the current task checklist up to date.
+
+Input:
+- a list of tasks with a short title, status, and optional expected result.
+
+Output:
+- the updated plan available to the agent during later execution steps.
 
 Use when:
-- задача требует нескольких действий;
-- нужно зафиксировать порядок исследования, реализации и проверки;
-- новый результат изменил дальнейшие шаги.
-
-How to use:
-- вызывай не чаще одного раза за ход модели;
-- формулируй пункт как конкретное действие с исполнителем, входами, ожидаемым результатом и проверкой;
-- отмечай пункт выполненным только после подтверждающего результата;
-- одновременно выполняй только действительно независимые пункты.
-
-Do not use:
-- для простого одношагового ответа;
-- вместо выполнения или финального ответа;
-- для повторения прежнего плана без новых фактов.
+- the task should be split into several verifiable steps;
+- the status of already planned steps has changed.
 """.strip()
 
 TASK_TOOL_DESCRIPTION = """
 task
 ---
 Description:
-Запускает subagent для одной ограниченной задачи и возвращает supervisor-у итоговый отчёт.
+Runs one subagent and returns its final report.
 
 Available subagents:
 {available_agents}
 
-Parameters:
-- `subagent_type`: точное имя subagent из списка выше.
-- `description`: цель, известные входы и ограничения, релевантный контекст или skills, ожидаемый результат, способ
-  проверки и явное условие остановки.
+Input:
+- `subagent_type`: the subagent name from the list of available subagents.
+- `description`: the subagent task with inputs, constraints, expected result, and stopping condition.
+
+Output:
+- a text report from the subagent covering completed work, facts found, artifacts created, checks, and limitations.
 
 Use when:
-- для чтения и проверки табличных данных через `data-retrieval-agent`;
-- для исследования кодовой базы, реализации, рефакторинга, генерации тестов, документации или артефактов через
-  `coding-agent` после загрузки `code-workspace`;
-- для цепочки из более чем двух последовательных чтений, поисков или проверок по одному набору workspace-документов
-  через `coding-agent`, чтобы не переносить подробный рабочий контекст в supervisor;
-- для независимого общего исследования или многошаговой задачи без специализированного маршрута через
-  `general-purpose`;
-- когда задача имеет чёткие границы и может быть завершена за один запуск subagent;
-- когда компактный отчёт полезнее переноса всего рабочего контекста в supervisor.
-
-Constraints:
-- передавай ограниченную задачу исследования, реализации, получения данных или проверки, а не широкое «реши всё»;
-- используй `data-retrieval-agent` для источников данных, `coding-agent` для кода и файлов,
-  `general-purpose` для остальных независимых многошаговых задач;
-- оставляй финальный synthesis и решения, затрагивающие другие части задачи, supervisor-у;
-- не подменяй цель заранее придуманной реализацией, запросом, фильтрами или архитектурой, если они не заданы
-  пользователем и не подтверждены контекстом;
-- если workflow задан skill, передай ссылку на skill вместо копирования его алгоритма;
-- для coding-задачи укажи область изменений, требования совместимости, допустимые файлы, ожидаемое поведение и команду
-  или критерий проверки, если они известны;
-- не запускай одинаковые или конкурирующие `task` для одной цели;
-- после успешного отчёта не делегируй тот же вопрос повторно;
-- не повторяй один и тот же tool call с теми же аргументами без нового входного контекста, изменившегося файла,
-  исправления ошибки или явной проверки результата;
-- требуй компактные доказательства: изученные источники или файлы, сделанные изменения, результаты проверок,
-  ограничения и незакрытые вопросы;
-- заявленный файл или артефакт считается созданным только при подтверждённом пути;
-- пустой отчёт или отчёт без фактических результатов не считается успешным;
-- примеры из стандартного description не являются инструкциями для текущей задачи.
+- an isolated task should be executed in a separate context;
+- the subagent result should be returned as a compact report.
 """.strip()
 
 TOOL_DESCRIPTION_OVERRIDES = {
@@ -81,183 +53,145 @@ TOOL_DESCRIPTION_OVERRIDES = {
 ls
 ---
 Description:
-Показывает содержимое одной директории workspace или virtual backend.
+Lists the contents of one directory.
 
-Parameters:
-- `path`: absolute virtual path starting with `/`.
+Input:
+- `path`: an absolute directory path in the tools file namespace.
+
+Output:
+- a list of files and subdirectories, or an error message for inaccessible or missing paths.
 
 Use when:
-- нужно быстро увидеть содержимое известной директории;
-- нужно проверить существование каталога перед чтением или созданием файла.
-
-Do not use:
-- для рекурсивного поиска, который можно выразить через `glob`;
-- для поиска текста внутри файлов;
-- для обработки табличных или бинарных данных;
-- вместо `read_file`, если путь к текстовому файлу уже известен.
+- the contents of a known directory should be inspected;
+- a directory existence check is needed.
 """.strip(),
     "read_file": """
 read_file
 ---
 Description:
-Читает текстовый файл внутри настроенного `workspace_root`.
-Успешный результат означает: файл прочитан, текстовый контекст получен и передан агенту.
+Reads a text file.
 
-Parameters:
-- `file_path`: absolute workspace path to the file;
-- `offset`: first line to read when paging is needed;
-- `limit`: maximum number of lines to read; defaults to 500.
+Input:
+- `file_path`: an absolute file path in the tools file namespace.
+- `offset`: the first line to read when paginating.
+- `limit`: the maximum number of lines to read.
 
-Correct call example:
-`{"file_path": "/home/user_123456/deep_agent/skills/hit-table/fields.md", "offset": 0, "limit": 500}`
+Output:
+- the requested text fragment and metadata about the range that was read.
+
+Call format:
+- pass the path through `file_path`;
+- if the file was not read completely, request the next fragment with a new `offset`.
 
 Use when:
-- нужно изучить исходный код, тесты, конфигурацию, инструкции или документацию;
-- нужен текстовый артефакт;
-- большой файл нужно читать частями.
+- source code, configuration, documentation, or another text artifact is needed.
 
-Do not use:
-- не используй для бинарных файлов и полной обработки `.pkl`;
-- не перечитывай неизменившийся текст, уже находящийся в контексте;
-- если нужно прочитать больше двух связанных файлов или страниц одного документа подряд, передай эту цепочку
-  `coding-agent`;
-- передавай путь через `file_path`, не через `path`;
-- ограниченная страница не доказывает окончание файла: продолжай со следующим `offset`;
-- перед изменением исходника прочитай достаточный связный контекст, а не только строку из `grep`;
-- для `.pkl` используй `execute_python_code`;
-- путь `/home/user_123456/src/app.py` всегда означает реальный файл внутри настроенного `workspace_root`;
-- не обрезай префикс `workspace_root` из путей, которые вернули `ls`, `glob`, `grep` или `workspace_file`;
-- не используй отдельные aliases вроде `/skills` или `/tool_outputs`.
+Limitations:
+- the tool is not intended for binary files.
 """.strip(),
     "write_file": """
 write_file
 ---
 Description:
-Создаёт новый текстовый файл или полностью заменяет существующий, когда это явно оправдано задачей.
+Creates a text file or fully replaces the contents of an existing file.
+
+Input:
+- the target file path;
+- the complete new text content for the file.
+
+Output:
+- the write result or an error message.
 
 Use when:
-- требуется новый исходник, тест, конфигурация, документация или другой текстовый артефакт;
-- результат естественно генерируется как целый файл;
-- полная замена небольшого файла необходима и одобрена пользователем.
+- the result should be saved as a new file;
+- an existing file should be replaced as a whole.
 
-Do not use:
-- для небольшого изменения существующего файла: используй `edit_file`;
-- для переписывания крупного исходника, если возможна точечная правка;
-- для временного вывода команды;
-- за пределами активного workspace.
-
-Policy:
-- сначала изучи соседние файлы, соглашения и тестовые паттерны;
-- генерируй завершённый, согласованный с проектом контент;
-- сохраняй UTF-8 и пользовательские изменения;
-- если в runtime включён `enable_interrupts=true`, вызов может запросить HITL-подтверждение;
-  при `enable_interrupts=false` выполняется без дополнительного approval.
+Limitations:
+- the tool works with text files;
+- partial changes to an existing file are usually handled through `edit_file`.
 """.strip(),
     "edit_file": """
 edit_file
 ---
 Description:
-Точечно изменяет существующий текстовый файл через точную замену.
+Edits an existing text file by replacing an exact text fragment.
+
+Input:
+- the target file path;
+- the original text fragment;
+- the replacement text fragment.
+
+Output:
+- the replacement result or an error message.
 
 Use when:
-- файл уже прочитан и текущий текст подтверждён;
-- изменение локально и заменяемый фрагмент однозначен;
-- нужно сохранить остальное содержимое и пользовательские изменения.
+- an existing text file needs a local change.
 
-Do not use:
-- до чтения актуального файла;
-- при неоднозначном или непреднамеренно множественном совпадении;
-- для generated-файла, который должен обновляться генератором;
-- за пределами активного workspace.
-
-Policy:
-- предпочитай минимальное связное изменение;
-- сохраняй стиль файла, совместимость и несвязанные правки;
-- после изменения выполни релевантную проверку;
-- если в runtime включён `enable_interrupts=true`, вызов может запросить HITL-подтверждение;
-  при `enable_interrupts=false` выполняется без дополнительного approval.
+Limitations:
+- the fragment to replace must be found unambiguously in the file;
+- the tool is not intended for binary files or generated files that should be updated by a generator.
 """.strip(),
     "glob": """
 glob
 ---
 Description:
-Находит файлы по glob-шаблону внутри настроенного `workspace_root`.
+Finds files by a glob pattern.
 
-Parameters:
-- `pattern`: glob pattern, for example `**/*.md`;
-- `path`: base directory, `/` by default.
+Input:
+- `pattern`: a glob pattern, for example `**/*.md`;
+- `path`: the base search directory.
+
+Output:
+- a list of paths matching the pattern.
 
 Use when:
-- нужен рекурсивный поиск по имени, расширению или структуре каталогов;
-- нужно найти исходники, тесты, конфигурацию или generated-артефакты до чтения.
-
-Do not use:
-- если точный путь уже известен;
-- для поиска текста внутри файлов: используй `grep`;
-- с широким `**/*`, если известен более узкий шаблон.
+- files should be found by name, extension, or directory structure.
 """.strip(),
     "grep": """
 grep
 ---
 Description:
-Ищет текст в файлах внутри настроенного `workspace_root`.
-Успешный результат означает: поиск выполнен, найденный контекст передан агенту.
+Searches for text in files.
 
-Parameters:
-- `pattern`: literal text to search for;
-- `path`: search directory, not a file path;
-- `glob`: file filter;
-- `output_mode`: `files_with_matches`, `content`, or `count`.
+Input:
+- `pattern`: the text to search for;
+- `path`: the search directory;
+- `glob`: the file filter;
+- `output_mode`: the output mode, such as `files_with_matches`, `content`, or `count`.
 
-Correct call example:
-`{"pattern": "build_client", "path": "/home/user_123456/src", "glob": "*.py", "output_mode": "content"}`
+Output:
+- matching content, files with matches, or match counts depending on `output_mode`.
 
-Single-file search example:
-`{"pattern": "timeout", "path": "/home/user_123456/config", "glob": "settings.yaml", "output_mode": "content"}`
+Call format:
+- pass the search text through `pattern`;
+- `path` points to a directory;
+- a single file name can be passed through `glob`.
 
 Use when:
-- нужно найти символ, вызов, конфигурационный ключ, текст, skill или упоминание артефакта;
-- нужно определить связанные файлы перед чтением и изменением кода.
+- a symbol, call, configuration key, text, or artifact mention should be found.
 
-Do not use:
-- не считай одно совпадение доказательством полного поведения: прочитай окружающий код;
-- не используй широкий корень, если известна более узкая директория;
-- если нужен повторяющийся поиск по нескольким связанным файлам, делегируй цепочку `coding-agent`;
-- искомый текст передавай через `pattern`, не через `query`;
-- `path` должен быть директорией, имя отдельного файла передавай через `glob`;
-- `pattern` трактуется как обычный текст, не как регулярное выражение;
-- для обработки табличных данных используй `load_data` или `execute_python_code`.
+Limitations:
+- `pattern` is treated as plain text unless the tool implementation declares another search mode.
 """.strip(),
     "execute": """
 execute
 ---
 Description:
-Выполняет неинтерактивную команду в терминале с активным workspace как рабочей директорией.
+Runs a non-interactive shell command in the tool working directory.
 
-Path model:
-- filesystem path `/home/user_123456/deep_agent/skills/...` означает реальный файл внутри настроенного
-  `workspace_root`;
-- aliases `/skills`, `/tool_outputs` и `/project_memory` не используются;
-- в `execute` рабочая директория уже равна `workspace_root`, но полные пути с префиксом workspace тоже допустимы;
-- для точечных исходников предпочитай `write_file` или `edit_file`; для диагностики,
-  генерации и локальных операций можно использовать terminal или Python runtime.
+Input:
+- the command to run;
+- when supported by the runtime: timeout, working directory, and additional execution parameters.
+
+Output:
+- the command exit code, stdout, and stderr.
 
 Use when:
-- нужно запустить тесты, линтер, formatter, type checker, сборку или генератор;
-- нужно исследовать зависимости, runtime, git state или поведение программы;
-- стандартная команда проекта даёт воспроизводимую проверку реализации;
-- вывод shell необходим для диагностики.
+- tests, a linter, formatter, type checker, build, generator, or diagnostic command should be run;
+- command output is needed as a verifiable observation.
 
-Use another tool when:
-- точечное редактирование исходника проще и прозрачнее сделать через `edit_file`;
-- вычисление или преобразование надежнее выразить через `execute_python_code`;
-- команда требует интерактивного ввода, credential prompt, API-ключей или сетевой проверки с секретами.
-
-Policy:
-- предпочитай детерминированные неинтерактивные команды;
-- используй минимально достаточную область тестирования и расширяй её по риску изменений;
-- задавай ограниченный timeout;
-- при ошибке возвращай полезный фрагмент, а не полный шумный log;
-- при ошибке скорректируй команду, параметры или выбери другой tool.
+Limitations:
+- the command must not require interactive input;
+- the tool must not be used for commands that require secrets or API keys.
 """.strip(),
 }
