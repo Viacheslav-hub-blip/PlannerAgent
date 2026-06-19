@@ -203,7 +203,7 @@ def _workspace_tool_output_path(*, file_path: Path, workspace_root: Path) -> str
         workspace_root: Корень файлового пространства агента.
 
     Returns:
-        Полный путь вида ``/home/user_123456/runs/deep_agent_tool_outputs/session_x/data.pkl``.
+        Виртуальный путь вида ``/runs/deep_agent_tool_outputs/session_x/data.pkl``.
 
     Raises:
         ValueError: Файл находится вне workspace.

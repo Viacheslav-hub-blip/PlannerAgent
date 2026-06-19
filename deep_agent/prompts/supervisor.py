@@ -132,6 +132,19 @@ If several interpretations are plausible, present the ambiguity and supported fa
 conclusion.
 </data_principles>
 
+<filesystem_principles>
+## Filesystem Principles
+
+Treat `/` in filesystem tools as the configured user workspace root. Save user-facing artifacts at the workspace root
+or in task-appropriate workspace folders such as `/reports`, `/runs`, `/notebooks`, or a path explicitly requested by
+the user.
+
+Treat `/deep_agent/` as the agent implementation directory. Read it when code, skills, prompts, or agent internals are
+relevant, but do not create, overwrite, or edit files under `/deep_agent/` unless the user explicitly asks to change
+the agent itself or the delegated coding task requires a targeted change there. Do not use `/deep_agent/` as a default
+location for analysis outputs, notebooks, temporary files, generated reports, or user data.
+</filesystem_principles>
+
 <reporting>
 ## Reporting
 

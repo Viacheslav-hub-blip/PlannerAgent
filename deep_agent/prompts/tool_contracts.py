@@ -108,6 +108,9 @@ Use when:
 
 Limitations:
 - the tool works with text files;
+- `/` is the configured user workspace root and is the default place for user artifacts;
+- `/deep_agent/` is the agent implementation directory, not an output folder;
+- do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
 - partial changes to an existing file are usually handled through `edit_file`.
 """.strip(),
     "edit_file": """
@@ -129,6 +132,8 @@ Use when:
 
 Limitations:
 - the fragment to replace must be found unambiguously in the file;
+- `/deep_agent/` is the agent implementation directory and should be edited only for explicit agent code, prompt,
+  test, or skill changes;
 - the tool is not intended for binary files or generated files that should be updated by a generator.
 """.strip(),
     "glob": """

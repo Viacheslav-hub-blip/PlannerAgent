@@ -42,7 +42,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
             self.assertIn(fragment, EXECUTE_PYTHON_CODE_DESCRIPTION)
 
     def test_description_shows_session_artifact_path_example(self) -> None:
-        """Проверяет наличие корректного примера сохранения артефакта в session-каталог.
+        """Проверяет примеры сохранения пользовательских и временных артефактов.
 
         Args:
             Отсутствуют.
@@ -52,7 +52,11 @@ class ExecutePythonCodeTests(unittest.TestCase):
         """
 
         self.assertIn(
-            'output_path = Path(TOOL_OUTPUTS_DIR) / "generated_report.json"',
+            'output_path = Path(WORKSPACE_ROOT) / "generated_report.json"',
+            EXECUTE_PYTHON_CODE_DESCRIPTION,
+        )
+        self.assertIn(
+            'output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"',
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
@@ -60,7 +64,11 @@ class ExecutePythonCodeTests(unittest.TestCase):
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(
-            "для временных артефактов используй `Path(TOOL_OUTPUTS_DIR)`",
+            "для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`",
+            EXECUTE_PYTHON_CODE_DESCRIPTION,
+        )
+        self.assertIn(
+            "для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`",
             EXECUTE_PYTHON_CODE_DESCRIPTION,
         )
         self.assertIn(

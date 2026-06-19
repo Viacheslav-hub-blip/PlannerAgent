@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -46,7 +47,12 @@ from deep_agent.prompts.tool_contracts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
-from deep_agent.settings import load_deep_agent_settings, workspace_tool_path
+from deep_agent.settings import (
+    DEFAULT_CONFIG_PATH,
+    DeepAgentSettings,
+    load_deep_agent_settings,
+    workspace_tool_path,
+)
 from deep_agent.runtime.filesystem import Utf8FilesystemBackend, Utf8LocalShellBackend
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
 from deep_agent.subagents.coding import (
@@ -399,6 +405,65 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertEqual(backend.default.cwd, workspace.resolve())
         self.assertNotIn("OPENAI_API_KEY", backend.default._env)
 
+    def test_settings_derive_paths_from_workspace_root(self) -> None:
+        """Проверяет, что path-настройки выводятся из ``workspace_root``.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            payload = {
+                "harness_profile_key": "openai",
+                "thread_id": "test-thread",
+                "workspace_root": str(workspace),
+                "enable_interrupts": False,
+                "terminal_timeout": 120,
+                "terminal_max_output_bytes": 100000,
+                "data_tools_factory": None,
+                "data_tools_factory_kwargs": {},
+                "tool_output_min_rows_to_save": 30,
+                "tool_output_min_content_chars_to_save": 60000,
+                "tool_output_preview_rows": 30,
+                "tool_output_inline_original_chars": 10000,
+                "context_edit_trigger_tokens": 100000,
+                "context_edit_keep_tool_results": 3,
+                "read_file_default_limit": 500,
+                "max_model_retries": 5,
+                "max_tool_calls_per_run": 40,
+                "max_subagent_model_calls": 19,
+                "graph_recursion_limit": 100,
+            }
+
+            settings = DeepAgentSettings.from_mapping(payload)
+
+        self.assertEqual(settings.agents_file_name, "AGENTS.md")
+        self.assertEqual(settings.skills_root, workspace / "deep_agent" / "skills")
+        self.assertEqual(
+            settings.tool_outputs_dir,
+            workspace / "runs" / "deep_agent_tool_outputs",
+        )
+        self.assertEqual(
+            settings.trace_log_dir,
+            workspace / "runs" / "deep_agent_traces",
+        )
+
+    def test_default_config_keeps_only_workspace_root_as_path_setting(self) -> None:
+        """Проверяет, что базовый config не хранит производные path-настройки.
+
+        Returns:
+            ``None``.
+        """
+
+        payload = json.loads(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+
+        self.assertIn("workspace_root", payload)
+        self.assertNotIn("agents_file_name", payload)
+        self.assertNotIn("skills_root", payload)
+        self.assertNotIn("tool_outputs_dir", payload)
+        self.assertNotIn("trace_log_dir", payload)
+
     def test_backends_use_one_workspace_namespace_and_access_all_directories(self) -> None:
         """Проверяет единый корень и доступ к произвольным папкам workspace.
 
@@ -662,6 +727,8 @@ class ReliableExecutionTests(unittest.TestCase):
 
         read_file_description = TOOL_DESCRIPTION_OVERRIDES["read_file"]
         grep_description = TOOL_DESCRIPTION_OVERRIDES["grep"]
+        write_file_description = TOOL_DESCRIPTION_OVERRIDES["write_file"]
+        edit_file_description = TOOL_DESCRIPTION_OVERRIDES["edit_file"]
 
         self.assertIn("pass the path through `file_path`", read_file_description)
         self.assertIn("request the next fragment with a new `offset`", read_file_description)
@@ -669,13 +736,16 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("`path` points to a directory", grep_description)
         self.assertIn("single file name can be passed through `glob`", grep_description)
         self.assertIn("exit code, stdout, and stderr", TOOL_DESCRIPTION_OVERRIDES["execute"])
+        self.assertIn("`/` is the configured user workspace root", write_file_description)
+        self.assertIn("do not write under `/deep_agent/`", write_file_description)
+        self.assertIn("should be edited only for explicit agent code", edit_file_description)
 
     def test_load_skills_description_rejects_auxiliary_files(self) -> None:
         """Описание load_skills должно запрещать загрузку fields.md как skill."""
 
         self.assertIn("loads only `SKILL.md` files", LOAD_SKILLS_DESCRIPTION)
         self.assertIn(
-            "Do not pass paths like `/home/user_123456/deep_agent/skills/name/fields.md`",
+            "Do not pass paths like `/deep_agent/skills/name/fields.md`",
             LOAD_SKILLS_DESCRIPTION,
         )
 
@@ -705,8 +775,11 @@ class ReliableExecutionTests(unittest.TestCase):
         )
         self.assertIn("Never expose private chain-of-thought", SYSTEM_PROMPT)
         self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
+        self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
+        self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
         self.assertIn("bounded code and workspace tasks", CODING_AGENT_PROMPT)
         self.assertIn("Do not access table data", CODING_AGENT_PROMPT)
+        self.assertIn("`/deep_agent/` is the agent implementation directory", CODING_AGENT_PROMPT)
         self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
         self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
         self.assertIn("material parameters", CODING_AGENT_PROMPT)

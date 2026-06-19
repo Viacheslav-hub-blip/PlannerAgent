@@ -7,10 +7,14 @@
 - _load_config_payload: чтение и объединение JSON-конфигов.
 - _read_json_file: чтение JSON-файла.
 - _validate_required_config_keys: проверка обязательных ключей.
+- _optional_config_value: чтение необязательного значения конфига с default.
+- _workspace_path_from_config: построение workspace-пути из optional config key.
 - _resolve_project_path: приведение пути к абсолютному.
 - _resolve_workspace_path: разрешение и проверка пути внутри workspace.
-- workspace_tool_root: преобразование корня workspace в полный путь filesystem tools.
+- workspace_tool_root: виртуальный корень filesystem tools.
 - workspace_tool_path: преобразование реального пути в путь filesystem tools.
+- workspace_tool_root_aliases: список абсолютных ОС-префиксов, эквивалентных виртуальному корню tools.
+- strip_workspace_tool_prefix: преобразование tool-пути или ОС-пути workspace в путь относительно workspace.
 - _int_from_config: чтение целого числа из конфига.
 - _bool_from_config: чтение boolean из конфига.
 - _dict_from_config: чтение словаря из конфига.
@@ -29,18 +33,19 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "defaults.json"
 CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
+DEFAULT_AGENTS_FILE_NAME = "AGENTS.md"
+DEFAULT_SKILLS_RELATIVE_PATH = "deep_agent/skills"
+DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH = "runs/deep_agent_tool_outputs"
+DEFAULT_TRACE_LOG_RELATIVE_PATH = "runs/deep_agent_traces"
 REQUIRED_CONFIG_KEYS = (
     "harness_profile_key",
     "thread_id",
     "workspace_root",
-    "agents_file_name",
     "enable_interrupts",
     "terminal_timeout",
     "terminal_max_output_bytes",
-    "skills_root",
     "data_tools_factory",
     "data_tools_factory_kwargs",
-    "tool_outputs_dir",
     "tool_output_min_rows_to_save",
     "tool_output_min_content_chars_to_save",
     "tool_output_preview_rows",
@@ -52,7 +57,6 @@ REQUIRED_CONFIG_KEYS = (
     "max_tool_calls_per_run",
     "max_subagent_model_calls",
     "graph_recursion_limit",
-    "trace_log_dir",
 )
 
 
@@ -105,18 +109,32 @@ class DeepAgentSettings:
             harness_profile_key=str(payload["harness_profile_key"]),
             thread_id=str(payload["thread_id"]),
             workspace_root=workspace_root,
-            agents_file_name=str(payload["agents_file_name"]).strip() or "AGENTS.md",
+            agents_file_name=str(
+                _optional_config_value(
+                    payload,
+                    "agents_file_name",
+                    DEFAULT_AGENTS_FILE_NAME,
+                )
+            ).strip()
+            or DEFAULT_AGENTS_FILE_NAME,
             enable_interrupts=_interrupts_enabled_from_config(payload),
             terminal_timeout=_int_from_config(payload, "terminal_timeout"),
             terminal_max_output_bytes=_int_from_config(
                 payload,
                 "terminal_max_output_bytes",
             ),
-            skills_root=_resolve_workspace_path(payload["skills_root"], workspace_root),
+            skills_root=_workspace_path_from_config(
+                payload,
+                "skills_root",
+                DEFAULT_SKILLS_RELATIVE_PATH,
+                workspace_root,
+            ),
             data_tools_factory=_optional_str_from_config(payload, "data_tools_factory"),
             data_tools_factory_kwargs=_dict_from_config(payload, "data_tools_factory_kwargs"),
-            tool_outputs_dir=_resolve_workspace_path(
-                payload["tool_outputs_dir"],
+            tool_outputs_dir=_workspace_path_from_config(
+                payload,
+                "tool_outputs_dir",
+                DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH,
                 workspace_root,
             ),
             tool_output_min_rows_to_save=_int_from_config(payload, "tool_output_min_rows_to_save"),
@@ -133,7 +151,12 @@ class DeepAgentSettings:
             max_tool_calls_per_run=_int_from_config(payload, "max_tool_calls_per_run"),
             max_subagent_model_calls=_int_from_config(payload, "max_subagent_model_calls"),
             graph_recursion_limit=_int_from_config(payload, "graph_recursion_limit"),
-            trace_log_dir=_resolve_workspace_path(payload["trace_log_dir"], workspace_root),
+            trace_log_dir=_workspace_path_from_config(
+                payload,
+                "trace_log_dir",
+                DEFAULT_TRACE_LOG_RELATIVE_PATH,
+                workspace_root,
+            ),
         )
 
 
@@ -178,6 +201,49 @@ def _validate_required_config_keys(payload: dict[str, Any]) -> None:
         raise ValueError(f"DeepAgent config missing required keys: {', '.join(missing_keys)}")
 
 
+def _optional_config_value(payload: dict[str, Any], key: str, default: Any) -> Any:
+    """Возвращает значение необязательного ключа или default.
+
+    Args:
+        payload: Словарь конфигурации.
+        key: Имя необязательного ключа.
+        default: Значение по умолчанию, если ключ отсутствует или равен ``None``.
+
+    Returns:
+        Значение из ``payload`` или ``default``.
+    """
+
+    value = payload.get(key, default)
+    return default if value is None else value
+
+
+def _workspace_path_from_config(
+    payload: dict[str, Any],
+    key: str,
+    default_relative_path: str,
+    workspace_root: Path,
+) -> Path:
+    """Строит путь внутри workspace из необязательного config key.
+
+    Args:
+        payload: Словарь конфигурации.
+        key: Имя необязательного path-ключа.
+        default_relative_path: Относительный путь от ``workspace_root``.
+        workspace_root: Корень пользовательского workspace.
+
+    Returns:
+        Абсолютный путь внутри ``workspace_root``.
+
+    Raises:
+        ValueError: Путь из конфига выходит за пределы ``workspace_root``.
+    """
+
+    return _resolve_workspace_path(
+        _optional_config_value(payload, key, default_relative_path),
+        workspace_root,
+    )
+
+
 def _resolve_project_path(value: Any, project_root: Path) -> Path:
     """Приводит значение к абсолютному пути относительно корня проекта."""
 
@@ -213,20 +279,82 @@ def _resolve_workspace_path(value: Any, workspace_root: Path) -> Path:
 
 
 def workspace_tool_root(workspace_root: Path) -> str:
-    """Возвращает полный POSIX-путь workspace для интерфейса tools.
+    """Возвращает виртуальный POSIX-корень workspace для интерфейса tools.
 
     Args:
         workspace_root: Реальный корень файлового пространства агента.
 
     Returns:
-        Абсолютный путь вида ``/home/user_123456``. На Windows путь приводится
-        к стабильному POSIX-виду ``/C:/Users/...``.
+        Канонический корень ``/``. Реальный ``workspace_root`` не включается в
+        ответы tools, чтобы supervisor и subagents видели одинаковые пути.
+    """
+
+    return "/"
+
+
+def workspace_tool_root_aliases(workspace_root: Path) -> tuple[str, ...]:
+    """Возвращает ОС-пути workspace, которые считаются алиасами виртуального корня.
+
+    Args:
+        workspace_root: Реальный корень файлового пространства агента.
+
+    Returns:
+        Кортеж POSIX-префиксов, например ``/home/user_id_omega-sbrf-ru``. На Windows
+        дополнительно поддерживается исторический вид ``/C:/Users/...``.
     """
 
     raw_path = workspace_root.resolve().as_posix().rstrip("/")
-    if not raw_path:
-        return "/"
-    return raw_path if raw_path.startswith("/") else f"/{raw_path}"
+    aliases: list[str] = []
+    if raw_path and raw_path != "/":
+        aliases.append(raw_path)
+        if ":" in raw_path and not raw_path.startswith("/"):
+            aliases.append(f"/{raw_path}")
+    return tuple(dict.fromkeys(aliases))
+
+
+def strip_workspace_tool_prefix(value: str, workspace_root: Path) -> str | None:
+    """Срезает виртуальный или ОС-префикс workspace и возвращает относительный POSIX-путь.
+
+    Args:
+        value: Путь из tool-вызова, подсказки или Python-кода агента.
+        workspace_root: Реальный корень файлового пространства агента.
+
+    Returns:
+        Путь относительно workspace без начального слеша, пустую строку для корня
+        workspace или ``None``, если путь не похож на workspace/tool-путь.
+    """
+
+    normalized = str(value or "").strip().replace("\\", "/")
+    if not normalized:
+        return None
+    for alias in sorted(
+        workspace_tool_root_aliases(workspace_root),
+        key=len,
+        reverse=True,
+    ):
+        prefix = alias.rstrip("/")
+        if normalized == prefix:
+            return ""
+        if normalized.startswith(f"{prefix}/"):
+            return normalized[len(prefix) :].lstrip("/")
+    if normalized == "/":
+        return ""
+    if normalized.startswith("/") and not _is_windows_drive_path(normalized.lstrip("/")):
+        return normalized.lstrip("/")
+    return None
+
+
+def _is_windows_drive_path(value: str) -> bool:
+    """Проверяет, начинается ли POSIX-строка с Windows drive-префикса.
+
+    Args:
+        value: Нормализованная строка пути без начального виртуального слеша.
+
+    Returns:
+        ``True``, если строка начинается с префикса вида ``C:/``.
+    """
+
+    return len(value) >= 3 and value[1:3] == ":/" and value[0].isalpha()
 
 
 def workspace_tool_path(
@@ -243,8 +371,8 @@ def workspace_tool_path(
         directory: Нужно ли добавить завершающий слеш.
 
     Returns:
-        Полный путь вида ``/home/user_123456/deep_agent/skills/``,
-        однозначно соответствующий ``workspace_root/deep_agent/skills``.
+        Виртуальный путь вида ``/deep_agent/skills/``, однозначно соответствующий
+        ``workspace_root/deep_agent/skills``.
 
     Raises:
         ValueError: Путь находится вне workspace.
@@ -334,12 +462,18 @@ def _optional_str_from_config(payload: dict[str, Any], key: str) -> str | None:
 
 __all__ = [
     "CONFIG_ENV_VAR",
+    "DEFAULT_AGENTS_FILE_NAME",
     "DEFAULT_CONFIG_PATH",
+    "DEFAULT_SKILLS_RELATIVE_PATH",
+    "DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH",
+    "DEFAULT_TRACE_LOG_RELATIVE_PATH",
     "PACKAGE_ROOT",
     "PROJECT_ROOT",
     "REQUIRED_CONFIG_KEYS",
     "DeepAgentSettings",
     "load_deep_agent_settings",
+    "strip_workspace_tool_prefix",
+    "workspace_tool_root_aliases",
     "workspace_tool_root",
     "workspace_tool_path",
 ]

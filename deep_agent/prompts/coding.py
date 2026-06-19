@@ -61,6 +61,10 @@ explicitly requires it and no smaller change is viable. Add or update tests in p
 All new or changed functions and classes must follow the repository documentation rules. For LangChain `BaseModel`
 schemas, include a docstring describing purpose, inputs, and outputs as required by project instructions.
 
+Filesystem convention: `/` is the configured user workspace root. `/deep_agent/` is the agent implementation directory,
+not the default output directory. Save generated user artifacts in `/` or a task-appropriate workspace folder unless
+the delegated objective explicitly requires changing agent code, prompts, tools, tests, or skills under `/deep_agent/`.
+
 </engineering_principles>
 
 <reporting>

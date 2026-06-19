@@ -29,8 +29,8 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 from deep_agent.settings import (
     load_deep_agent_settings,
+    strip_workspace_tool_prefix,
     workspace_tool_path,
-    workspace_tool_root,
 )
 
 CONVERT_JUPYTER_NOTEBOOK_TOOL_NAME = "convert_jupyter_notebook"
@@ -459,12 +459,13 @@ def _resolve_workspace_file_path(raw_path: str, workspace_root: Path) -> Path:
     if not normalized_path:
         raise ValueError("Путь не может быть пустым.")
 
-    tool_root = workspace_tool_root(workspace_root)
-    if normalized_path == tool_root:
-        candidate = workspace_root
-    elif normalized_path.startswith(f"{tool_root.rstrip('/')}/"):
-        relative_part = normalized_path[len(tool_root.rstrip("/")) + 1 :]
-        candidate = workspace_root.joinpath(*Path(relative_part).parts)
+    relative_path = strip_workspace_tool_prefix(normalized_path, workspace_root)
+    if relative_path is not None:
+        candidate = (
+            workspace_root.joinpath(*Path(relative_path).parts)
+            if relative_path
+            else workspace_root
+        )
     else:
         candidate_path = Path(raw_path)
         candidate = (

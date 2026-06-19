@@ -17,7 +17,10 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
 from deep_agent.models.vlm import QwenVLMClient
-from deep_agent.settings import load_deep_agent_settings, workspace_tool_path
+from deep_agent.settings import (
+    load_deep_agent_settings,
+    strip_workspace_tool_prefix,
+)
 
 ANALYZE_IMAGE_TOOL_NAME = "analyze_image"
 ANALYZE_IMAGE_SYSTEM_PROMPT = (
@@ -38,7 +41,7 @@ class AnalyzeImageInput(BaseModel):
     image_path: str = Field(
         description=(
             "Путь к изображению. Можно передать абсолютный путь ОС или workspace-путь "
-            "вида `/home/user_123456/reports/slide.png`, который будет разрешён "
+            "вида `/reports/slide.png`, который будет разрешён "
             "относительно настроенного workspace_root."
         ),
     )
@@ -210,19 +213,13 @@ def _resolve_image_path(image_path: str, workspace_root: Path) -> Path:
     """
 
     raw_path = str(image_path or "").strip()
-    normalized_raw_path = raw_path.replace("\\", "/")
-    workspace_root_path = workspace_tool_path(workspace_root, workspace_root)
-    normalized_root = workspace_root_path.rstrip("/")
-    if (
-        normalized_root
-        and normalized_root != "/"
-        and (
-            normalized_raw_path == normalized_root
-            or normalized_raw_path.startswith(f"{normalized_root}/")
+    relative_path = strip_workspace_tool_prefix(raw_path, workspace_root)
+    if relative_path is not None:
+        return (
+            (workspace_root / relative_path).resolve()
+            if relative_path
+            else workspace_root.resolve()
         )
-    ):
-        suffix = normalized_raw_path[len(normalized_root) :].lstrip("/")
-        return (workspace_root / suffix).resolve() if suffix else workspace_root.resolve()
 
     path = Path(raw_path)
     if path.is_absolute() and not raw_path.startswith("/"):

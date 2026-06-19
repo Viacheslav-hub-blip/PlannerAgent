@@ -3,7 +3,6 @@
 Содержит:
 - DeepAgentPythonSandbox: persistent runtime для выполнения Python-кода.
 - build_python_sandbox: фабрика runtime с рабочей директорией workspace.
-- _starts_with_workspace_tool_root: проверка полного workspace-префикса tools.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import types
 from pathlib import Path
 from typing import Any
 
-from deep_agent.settings import DeepAgentSettings, workspace_tool_path
+from deep_agent.settings import DeepAgentSettings, strip_workspace_tool_prefix
 
 SANDBOX_HELPER_NAMES = frozenset(
     {
@@ -66,8 +65,6 @@ class DeepAgentPythonSandbox:
 
         tool_outputs_dir = self.tool_outputs_dir
         project_root = self.working_directory
-        workspace_root_path = workspace_tool_path(project_root, project_root)
-
         def _resolve_workspace_path(path: Path) -> Path:
             """Преобразует путь относительно настроенного workspace в реальный путь.
 
@@ -79,10 +76,9 @@ class DeepAgentPythonSandbox:
             """
 
             raw_path = str(path)
-            normalized_raw_path = raw_path.replace("\\", "/")
-            if _starts_with_workspace_tool_root(normalized_raw_path, workspace_root_path):
-                suffix = normalized_raw_path[len(workspace_root_path.rstrip("/")) :].lstrip("/")
-                path = project_root / suffix if suffix else project_root
+            relative_path = strip_workspace_tool_prefix(raw_path, project_root)
+            if relative_path is not None:
+                path = project_root / relative_path if relative_path else project_root
             elif raw_path.startswith(("/", "\\")) and not path.drive:
                 relative_path = raw_path.lstrip("/\\")
                 path = project_root / relative_path
@@ -265,7 +261,7 @@ def build_python_sandbox(
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
-        tool_outputs_dir: Папка текущей сессии для сохранения артефактов; если ``None``,
+        tool_outputs_dir: Папка текущей сессии для временных/offload-артефактов; если ``None``,
             используется базовая папка из настроек.
         workspace_root: Рабочая директория агента; если ``None``, используется settings.
 
@@ -286,25 +282,6 @@ def build_python_sandbox(
         working_directory=resolved_workspace_root,
         readable_roots=readable_roots,
         tool_outputs_dir=resolved_tool_outputs_dir,
-    )
-
-
-def _starts_with_workspace_tool_root(value: str, workspace_root: str) -> bool:
-    """Проверяет, начинается ли путь с полного tool-префикса workspace.
-
-    Args:
-        value: Нормализованная строка пути из пользовательского Python-кода.
-        workspace_root: Полный workspace-префикс из ``workspace_tool_path``.
-
-    Returns:
-        ``True``, если путь совпадает с workspace root или находится внутри него.
-    """
-
-    normalized_root = workspace_root.rstrip("/")
-    return bool(
-        normalized_root
-        and normalized_root != "/"
-        and (value == normalized_root or value.startswith(f"{normalized_root}/"))
     )
 
 __all__ = [

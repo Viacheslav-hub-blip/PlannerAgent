@@ -55,12 +55,11 @@ What it does:
 Arguments:
 - `skill_names`: comma-separated known skill names or workspace paths in one string, for example
   `skill-a, skill-b` or
-  `/home/user_123456/deep_agent/skills/skill-a/SKILL.md, /home/user_123456/deep_agent/skills/skill-b/SKILL.md`;
+  `/deep_agent/skills/skill-a/SKILL.md, /deep_agent/skills/skill-b/SKILL.md`;
 - `already_loaded`: comma-separated skills that should not be loaded again. This can be empty.
 
 Use `load_skills` only for batch loading verified skills into the supervisor context. Do not guess names and do not
-request every available skill. Do not pass paths like `/home/user_123456/deep_agent/skills/name/fields.md`; they are
-not skills.
+request every available skill. Do not pass paths like `/deep_agent/skills/name/fields.md`; they are not skills.
 """.strip()
 
 

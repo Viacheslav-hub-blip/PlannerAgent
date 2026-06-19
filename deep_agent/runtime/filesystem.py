@@ -17,7 +17,7 @@ from pathlib import Path
 import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
 
-from deep_agent.settings import workspace_tool_root
+from deep_agent.settings import strip_workspace_tool_prefix, workspace_tool_root
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +115,12 @@ class WorkspacePathPrefixMixin:
             Путь относительно виртуального корня backend.
         """
 
-        normalized = str(key or "").replace("\\", "/")
-        prefix = self.tool_path_root.rstrip("/")
-        if prefix and prefix != "/" and normalized == prefix:
+        relative_path = strip_workspace_tool_prefix(str(key or ""), self.cwd)
+        if relative_path is None:
+            return key
+        if not relative_path:
             return "/"
-        if prefix and prefix != "/" and normalized.startswith(f"{prefix}/"):
-            suffix = normalized[len(prefix) :].lstrip("/")
-            return f"/{suffix}" if suffix else "/"
-        return key
+        return f"/{relative_path}"
 
 
 class Utf8SearchMixin(WorkspacePathPrefixMixin):

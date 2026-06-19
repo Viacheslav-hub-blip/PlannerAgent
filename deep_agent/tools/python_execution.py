@@ -150,7 +150,7 @@ execute_python_code
 Доступные helpers:
 - `PROJECT_ROOT`: корень текущего workspace;
 - `WORKSPACE_ROOT`: корень текущего workspace из настроек `workspace_root`;
-- `TOOL_OUTPUTS_DIR`: каталог текущей сессии из настроек `tool_outputs_dir` для `.pkl` и созданных артефактов;
+- `TOOL_OUTPUTS_DIR`: каталог текущей сессии для `.pkl`, offload и временных артефактов;
 - `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
 - `describe_pickle_file(path)`: тип, число строк, колонки и preview;
 - `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
@@ -169,19 +169,27 @@ result = chunked([1, 2, 3, 4], 3)
 ```
 Если нужен preview значения, передай `target_variable="result"`.
 
-Хорошее решение: сохранить запрошенный артефакт в каталог текущей сессии.
+Хорошее решение: сохранить запрошенный пользовательский артефакт в workspace root.
 ```python
 from pathlib import Path
-output_path = Path(TOOL_OUTPUTS_DIR) / "generated_report.json"
+output_path = Path(WORKSPACE_ROOT) / "generated_report.json"
 output_path.write_text('{"status": "ok"}', encoding="utf-8")
 print(output_path)
 ```
 Для задач, где главным результатом является созданный файл, `target_variable` можно не передавать:
 достаточно stdout или факта успешного выполнения.
 
+Хорошее решение: сохранить временный артефакт в каталог текущей сессии.
+```python
+from pathlib import Path
+output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"
+output_path.write_text('{"status": "ok"}', encoding="utf-8")
+print(output_path)
+```
+
 Работа с путями:
-- для workspace-файлов используй полный путь из configured root или `Path(WORKSPACE_ROOT)`;
-- для временных артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
+- для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`;
+- для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
 - при работе с pickle бери точный `workspace_file` из результата tool.
 
 Обработка ошибок:

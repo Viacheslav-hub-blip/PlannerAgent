@@ -98,6 +98,45 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
         self.assertIsNotNone(result.file_data)
         self.assertEqual(result.file_data["content"], "line 1\nline 2\n")
 
+    def test_read_accepts_workspace_root_alias_and_virtual_root(self) -> None:
+        """Читает один файл по каноническому ``/`` и ОС-алиасу workspace.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            file_path = root / "deep_agent" / "note.txt"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_text("same file\n", encoding="utf-8")
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            virtual_result = backend.read("/deep_agent/note.txt")
+            alias_result = backend.read(f"{root.as_posix()}/deep_agent/note.txt")
+
+        self.assertIsNone(virtual_result.error)
+        self.assertIsNone(alias_result.error)
+        self.assertIsNotNone(virtual_result.file_data)
+        self.assertIsNotNone(alias_result.file_data)
+        self.assertEqual(virtual_result.file_data["content"], "same file\n")
+        self.assertEqual(alias_result.file_data["content"], "same file\n")
+
+    def test_workspace_tool_path_uses_virtual_root(self) -> None:
+        """Возвращает workspace-путь относительно виртуального ``/``.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            file_path = root / "deep_agent" / "skills" / "SKILL.md"
+
+            result = workspace_tool_path(file_path, root)
+
+        self.assertEqual(result, "/deep_agent/skills/SKILL.md")
+
     def test_python_fallback_reads_utf8_explicitly(self) -> None:
         """Находит ASCII-поле в UTF-8 файле с русским текстом без использования ripgrep.
 
