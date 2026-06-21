@@ -25,11 +25,11 @@
    планы и state сохраняются через LangGraph `InMemorySaver`; повторный вызов с тем же
    `thread_id` продолжает текущий диалог в пределах процесса.
 
-3. HITL файловых изменений.
+3. Полный filesystem-доступ без HITL.
 
-   При `enable_interrupts=true` `write_file` и `edit_file` приостанавливаются через
-   `HumanInTheLoopMiddleware` и поддерживают `approve`, `edit`, `reject`.
-   При `enable_interrupts=false` файловые изменения выполняются без HITL.
+   `write_file` и `edit_file` выполняются сразу через backend без `permissions=` и
+   `interrupt_on`. После записи проектный middleware делает проверочное чтение и
+   возвращает ошибку, если файл не подтвержден на диске.
 
 4. Нативные skills.
 
@@ -63,14 +63,15 @@
 
    Если tool возвращает много строк или слишком большой текст, результат сохраняется в
    pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
-   путь к файлу и preview. Полный файл можно читать через `execute_python_code`.
+   путь к файлу и preview. Полный файл можно читать через `python`.
 
 9. Полный Python runtime.
 
-   Tool `execute_python_code` нужен для расчетов по выгруженным данным, чтения pickle,
+   Tool `python` нужен для REPL-расчетов по выгруженным данным, чтения pickle,
    join, фильтрации, подготовки итоговых таблиц, файловых операций и subprocess-задач
-   внутри настроенного workspace. Tool сохраняет переменные между вызовами и маппит
-   полные workspace-пути на фактический корень текущего запуска.
+   внутри настроенного workspace. Tool сохраняет переменные между вызовами, маппит
+   полные workspace-пути на фактический корень текущего запуска и регистрирует
+   артефакты через `save_json`, `save_text` и `save_dataframe`.
 
 10. Встроенные ограничения выполнения.
 
@@ -243,8 +244,6 @@ deep_agent/config/defaults.json
   `runs/deep_agent_traces`.
 - `agents_file_name`, `skills_root`, `tool_outputs_dir`, `trace_log_dir` можно
   передать в override-конфиге для совместимости, но базовый config их не требует.
-- `enable_interrupts` - human-in-the-loop для `write_file` и `edit_file` (`false` по умолчанию).
-  Устаревший alias: `enable_file_edit_approval`.
 - `terminal_timeout` - timeout terminal-команды.
 - `terminal_max_output_bytes` - предел возвращаемого terminal output.
 - terminal всегда получает только allowlist системных переменных; API-ключи и другие

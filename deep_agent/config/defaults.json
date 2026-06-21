@@ -2,7 +2,6 @@
   "harness_profile_key": "openai",
   "thread_id": "native-analytics-chat-001",
   "workspace_root": ".",
-  "enable_interrupts": false,
   "terminal_timeout": 120,
   "terminal_max_output_bytes": 100000,
   "data_tools_factory": null,

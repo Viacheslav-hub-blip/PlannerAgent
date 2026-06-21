@@ -1,25 +1,20 @@
-"""Инструмент генерации и выполнения Python-кода для DeepAgent supervisor.
+"""Инструмент persistent Python REPL для DeepAgent.
 
 Содержит:
 - PythonExecutionResult: контейнер результата выполнения Python-кода.
-- ExecutePythonCodeInput: схема аргументов инструмента ``execute_python_code``.
-- ExecutePythonCodeTool: LangChain tool выполнения Python-кода в sandbox.
-- build_execute_python_code_tool: фабрика инструмента ``execute_python_code``.
+- PythonInput: схема аргументов инструмента ``python``.
+- PythonTool: LangChain tool выполнения Python-кода в persistent runtime.
+- build_python_tool: фабрика инструмента ``python``.
 - _normalize_code_text: нормализация текста Python-кода.
-- _normalize_target_variable: проверка имени целевой переменной результата.
-- _execute_python_code: компиляция и выполнение Python-кода.
+- _execute_python_repl: компиляция и выполнение Python-кода.
 - _validate_code_policy: базовая проверка непустого Python-кода.
 - _working_directory_context: временная смена рабочей директории процесса.
 - _get_cwd_execution_lock: получение общего lock для смены cwd.
 - _combined_stdio: объединение stdout и stderr.
-- _preview_stdio_result: preview результата без целевой переменной.
-- _preview_value: preview значения целевой переменной.
 - _python_error_possible_causes: вероятные причины ошибки выполнения.
 - _python_error_solution_options: варианты исправления ошибки выполнения.
 - _python_retry_guidance: инструкция для повторного запуска после ошибки.
 - _visible_variable_names: список пользовательских переменных sandbox.
-- _is_dataframe: проверка значения на сходство с pandas DataFrame.
-- _is_series: проверка значения на сходство с pandas Series.
 - _json_default: JSON-сериализация нестандартных объектов.
 - _limit_text: ограничение длинного текста.
 - _compact_error_message: краткая строка с причиной ошибки.
@@ -34,7 +29,6 @@ import builtins
 import contextlib
 import io
 import json
-import keyword
 import os
 import threading
 import traceback
@@ -43,14 +37,12 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from deep_agent.runtime.python_sandbox import DeepAgentPythonSandbox, SANDBOX_HELPER_NAMES
 
-EXECUTE_PYTHON_CODE_TOOL_NAME = "execute_python_code"
-MAX_TEXT_PREVIEW_CHARS = 4_000
+PYTHON_TOOL_NAME = "python"
 MAX_STDIO_CHARS = 8_000
-MAX_DATAFRAME_PREVIEW_ROWS = 10
 CWD_EXECUTION_LOCK_ATTR = "_deep_agent_sandbox_cwd_lock"
 ERROR_RETRY_HINT = (
     "Попробуйте вызвать инструмент с другими параметрами или использовать другой инструмент."
@@ -64,9 +56,8 @@ class PythonExecutionResult:
         success: Признак успешного выполнения кода.
         message: Краткое сообщение о результате выполнения.
         generated_code: Нормализованный Python-код, который был выполнен.
-        target_variable: Имя переменной результата или пустая строка.
-        variable_preview: Компактное описание значения результата.
         execution_output: Текст stdout/stderr, полученный при выполнении.
+        artifacts: Созданные артефакты, зарегистрированные helper-функциями.
         error: Краткое описание ошибки.
         traceback_text: Полный traceback ошибки.
         available_variables: Список доступных переменных sandbox.
@@ -78,9 +69,8 @@ class PythonExecutionResult:
     success: bool
     message: str
     generated_code: str
-    target_variable: str
-    variable_preview: str = ""
     execution_output: str = ""
+    artifacts: list[dict[str, str]] | None = None
     error: str = ""
     traceback_text: str = ""
     available_variables: list[str] | None = None
@@ -99,9 +89,8 @@ class PythonExecutionResult:
             "success": self.success,
             "message": self.message,
             "generated_code": self.generated_code,
-            "target_variable": self.target_variable,
-            "variable_preview": self.variable_preview,
             "execution_output": self.execution_output,
+            "artifacts": self.artifacts or [],
             "error": self.error,
             "traceback": self.traceback_text,
             "available_variables": self.available_variables or [],
@@ -112,39 +101,36 @@ class PythonExecutionResult:
         return json.dumps(payload, ensure_ascii=False, default=_json_default)
 
 
-EXECUTE_PYTHON_CODE_DESCRIPTION = """
-execute_python_code
+PYTHON_TOOL_DESCRIPTION = """
+python
 ---
 Назначение:
-Генерирует и выполняет Python-код в persistent runtime. Используй инструмент активно,
-когда код дает более точный, воспроизводимый и проверяемый результат, чем ручное
-рассуждение модели.
+Выполняет Python-код в persistent REPL-сессии внутри configured workspace.
+Переменные, импорты, функции и загруженные данные сохраняются между вызовами
+в рамках текущей сессии агента.
 
-Предпочитай инструмент:
+Используй для:
 - для нетривиальных вычислений, сравнений, преобразований и проверок;
-- для генерации и проверки алгоритмов, небольших модулей, функций и примеров использования;
-- для прототипирования решения до внесения изменений в исходники проекта;
-- для разбора и преобразования структурированных форматов: `list[dict]`, DataFrame, pickle, CSV или JSON;
+- для обработки `.pkl`, CSV, JSON, DataFrame и результатов `load_data`;
 - для проверки гипотезы на фактических входах перед формулированием вывода;
+- для генерации CSV/JSON/Markdown-отчётов, таблиц, графиков и других артефактов;
+- для прототипирования решения до внесения изменений в исходники проекта;
 - для обработки полного `.pkl`, сохраненного middleware после `load_data`, вместо выводов
   по ограниченному preview;
-- для построения таблиц, графиков, отчётов и других воспроизводимых артефактов;
-- для чтения, записи, удаления и преобразования файлов внутри configured workspace;
-- для запуска shell/subprocess-команд через Python, когда это проще выразить кодом;
-- для генерации текстового содержимого файла или готового артефакта;
-- когда несколько последовательных преобразований проще надежно выразить кодом.
+- когда несколько связанных преобразований проще и надежнее выразить кодом.
 
 Правило выбора:
 - если результат зависит от точного вычисления, структуры данных, поведения алгоритма,
   преобразования формата или проверки условия, сначала выполни код;
-- вычисляй такие результаты кодом, когда это повышает точность;
-- один содержательный вызов с несколькими связанными операциями лучше серии мелких
-  вызовов, если промежуточный результат не нужен для принятия следующего решения.
+- используй `print()` для важных результатов;
+- не выводи огромные DataFrame целиком: печатай shape, columns, head, агрегаты;
+- сохраняй пользовательские артефакты в `/reports` или явно заданный путь;
+- сохраняй временные артефакты в `TOOL_OUTPUTS_DIR`;
+- для обычного редактирования исходников используй filesystem tools, а не Python;
+- для тестов, сборки и package-команд используй shell `execute`, а не Python.
 
 Аргументы:
 - `code`: исполняемый Python-код;
-- `target_variable`: необязательное имя переменной с главным результатом. Передавай
-  только когда результат удобно сохранить в переменную и нужен preview значения;
 - `description`: краткая цель вычисления на русском языке для трассировки.
 
 Доступные helpers:
@@ -154,8 +140,37 @@ execute_python_code
 - `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
 - `describe_pickle_file(path)`: тип, число строк, колонки и preview;
 - `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
+- `save_dataframe(df, path, format=None)`: сохранение DataFrame и регистрация artifact;
+- `save_json(path, data)`: сохранение JSON и регистрация artifact;
+- `save_text(path, content)`: сохранение текста и регистрация artifact;
 - `pd`, `np`: pandas и numpy, если они установлены;
 - пользовательские переменные сохраняются между вызовами в одной сессии.
+
+Видимый результат:
+- результат доступен агенту только если он напечатан через `print(...)`;
+- или если файл сохранён через `save_json`, `save_text`, `save_dataframe` и появился в `artifacts`;
+- простое присваивание переменной сохраняет её в REPL-сессии, но не показывает итог агенту.
+
+Плохое решение: присвоить результат без вывода.
+```python
+result = df.groupby("rule").size()
+```
+
+Хорошее решение: явно вывести компактный результат.
+```python
+result = df.groupby("rule").size()
+print(result.to_string())
+```
+
+Плохой вызов: передать несуществующий аргумент.
+```json
+{"code": "print(result)", "target_variable": "result"}
+```
+
+Хороший вызов: использовать только публичный контракт.
+```json
+{"code": "print(result)", "description": "Показать итог расчета"}
+```
 
 Хорошее решение: сгенерировать и проверить самостоятельную функцию.
 ```python
@@ -166,24 +181,30 @@ def chunked(items, size):
 
 assert chunked([1, 2, 3], 2) == [[1, 2], [3]]
 result = chunked([1, 2, 3, 4], 3)
+print(result)
 ```
-Если нужен preview значения, передай `target_variable="result"`.
 
 Хорошее решение: сохранить запрошенный пользовательский артефакт в workspace root.
 ```python
-from pathlib import Path
-output_path = Path(WORKSPACE_ROOT) / "generated_report.json"
-output_path.write_text('{"status": "ok"}', encoding="utf-8")
+output_path = save_json("/reports/generated_report.json", {"status": "ok"})
 print(output_path)
 ```
-Для задач, где главным результатом является созданный файл, `target_variable` можно не передавать:
-достаточно stdout или факта успешного выполнения.
 
 Хорошее решение: сохранить временный артефакт в каталог текущей сессии.
 ```python
 from pathlib import Path
 output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"
-output_path.write_text('{"status": "ok"}', encoding="utf-8")
+print(save_json(str(output_path), {"status": "ok"}))
+```
+
+Хорошее решение: обработать полный offload artifact.
+```python
+rows = read_pickle_file("/runs/deep_agent_tool_outputs/session_x/load_data_x.pkl")
+df = rows_to_dataframe(rows)
+print(df.shape)
+print(df.columns.tolist())
+stats = df.groupby("main_rule")["transaction_amount_in_rub"].agg(["count", "mean"])
+output_path = save_dataframe(stats.reset_index(), "/reports/rule_stats.csv")
 print(output_path)
 ```
 
@@ -193,29 +214,22 @@ print(output_path)
 - при работе с pickle бери точный `workspace_file` из результата tool.
 
 Обработка ошибок:
-- для stdout, файловых операций, side effects и действий без единственного Python-значения
-  не передавай `target_variable`;
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
 - если Python не подходит для следующего шага, используй другой доступный tool.
 """.strip()
 
 
-class ExecutePythonCodeInput(BaseModel):
-    """Аргументы tool ``execute_python_code``: код, опциональная переменная результата, описание."""
+class PythonInput(BaseModel):
+    """Аргументы tool ``python``: код и краткое описание цели выполнения."""
+
+    model_config = ConfigDict(extra="forbid")
 
     code: str = Field(
         description=(
             "Python-код для точного и воспроизводимого вычисления. Используй helpers "
-            "`read_pickle_file`, `rows_to_dataframe`, `pd`, `np` и переменные из "
-            "предыдущих вызовов. Связанные преобразования объединяй в один вызов."
-        ),
-    )
-    target_variable: str | None = Field(
-        default=None,
-        description=(
-            "Необязательное имя переменной, в которую нужно сохранить главный результат. "
-            "Передавай только если нужен preview значения этой переменной. Если результатом "
-            "является stdout, созданный файл или другой side effect, опусти аргумент."
+            "`read_pickle_file`, `rows_to_dataframe`, `save_dataframe`, `save_json`, "
+            "`save_text`, `pd`, `np` и переменные из предыдущих вызовов. Важные "
+            "результаты выводи через print()."
         ),
     )
     description: str = Field(
@@ -224,21 +238,21 @@ class ExecutePythonCodeInput(BaseModel):
     )
 
 
-class ExecutePythonCodeTool(BaseTool):
+class PythonTool(BaseTool):
     """LangChain tool выполнения Python-кода в persistent runtime DeepAgent.
 
     Перед выполнением код нормализуется и проверяется только на непустое значение.
     Импорты, файловые операции, удаление файлов и subprocess доступны внутри настроенного
     workspace. Само выполнение и формирование информативного результата делегируются
-    локальной переиспользуемой функции ``_execute_python_code``.
+    локальной переиспользуемой функции ``_execute_python_repl``.
 
     Успешный результат возвращается строкой JSON. При ошибке возвращается только строка
     ``ТипИсключения: сообщение`` без traceback и служебных метаданных.
     """
 
-    name: str = EXECUTE_PYTHON_CODE_TOOL_NAME
-    description: str = EXECUTE_PYTHON_CODE_DESCRIPTION
-    args_schema: type[BaseModel] = ExecutePythonCodeInput
+    name: str = PYTHON_TOOL_NAME
+    description: str = PYTHON_TOOL_DESCRIPTION
+    args_schema: type[BaseModel] = PythonInput
 
     _sandbox: DeepAgentPythonSandbox = PrivateAttr()
 
@@ -255,7 +269,6 @@ class ExecutePythonCodeTool(BaseTool):
     def _run(
         self,
         code: str,
-        target_variable: str | None = None,
         description: str = "",
         **_: Any,
     ) -> str:
@@ -263,7 +276,6 @@ class ExecutePythonCodeTool(BaseTool):
 
         Args:
             code: Python-код для выполнения.
-            target_variable: Необязательное имя переменной результата или ``None``.
             description: Краткая цель кода для трассировки.
             **_: Служебные аргументы LangChain, не используются.
 
@@ -274,19 +286,16 @@ class ExecutePythonCodeTool(BaseTool):
         generated_code = _normalize_code_text(str(code or ""))
         try:
             _validate_code_policy(generated_code)
-            _normalize_target_variable(target_variable)
         except Exception as exc:
             return _policy_error_payload(
                 generated_code,
-                target_variable,
                 exc,
                 sandbox=self._sandbox,
             )
 
-        result = _execute_python_code(
+        result = _execute_python_repl(
             sandbox=self._sandbox,
             code=generated_code,
-            target_variable=target_variable,
             description=description,
         )
         return _result_to_json(result, sandbox=self._sandbox)
@@ -294,7 +303,6 @@ class ExecutePythonCodeTool(BaseTool):
     async def _arun(
         self,
         code: str,
-        target_variable: str | None = None,
         description: str = "",
         **_: Any,
     ) -> str:
@@ -302,7 +310,6 @@ class ExecutePythonCodeTool(BaseTool):
 
         Args:
             code: Python-код для выполнения.
-            target_variable: Имя переменной результата или ``None``.
             description: Краткая цель кода.
             **_: Служебные аргументы LangChain, не используются.
 
@@ -312,22 +319,21 @@ class ExecutePythonCodeTool(BaseTool):
 
         return self._run(
             code=code,
-            target_variable=target_variable,
             description=description,
         )
 
 
-def build_execute_python_code_tool(sandbox: DeepAgentPythonSandbox) -> ExecutePythonCodeTool:
-    """Фабрика tool ``execute_python_code`` для supervisor.
+def build_python_tool(sandbox: DeepAgentPythonSandbox) -> PythonTool:
+    """Фабрика tool ``python`` для supervisor и subagents.
 
     Args:
         sandbox: Persistent sandbox с helpers чтения pickle и аналитическими библиотеками.
 
     Returns:
-        Готовый ``ExecutePythonCodeTool`` для регистрации в списке tools.
+        Готовый ``PythonTool`` для регистрации в списке tools.
     """
 
-    return ExecutePythonCodeTool(sandbox=sandbox)
+    return PythonTool(sandbox=sandbox)
 
 
 def _normalize_code_text(code: str) -> str:
@@ -354,32 +360,10 @@ def _normalize_code_text(code: str) -> str:
     return raw_code.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
 
 
-def _normalize_target_variable(target_variable: str | None) -> str | None:
-    """Проверяет имя целевой переменной результата.
-
-    Args:
-        target_variable: Имя переменной результата или ``None``.
-
-    Returns:
-        Нормализованное имя переменной или ``None``.
-
-    Raises:
-        ValueError: Имя переменной не является валидным Python-идентификатором.
-    """
-
-    name = str(target_variable or "").strip()
-    if not name:
-        return None
-    if not name.isidentifier() or keyword.iskeyword(name):
-        raise ValueError("target_variable must be a valid Python identifier, for example result_df")
-    return name
-
-
-def _execute_python_code(
+def _execute_python_repl(
     *,
     sandbox: DeepAgentPythonSandbox,
     code: str,
-    target_variable: str | None = None,
     description: str = "",
 ) -> PythonExecutionResult:
     """Выполняет Python-код в persistent sandbox.
@@ -387,7 +371,6 @@ def _execute_python_code(
     Args:
         sandbox: Sandbox с общими переменными и рабочими директориями.
         code: Python-код для проверки, компиляции и выполнения.
-        target_variable: Опциональное имя переменной результата.
         description: Краткое описание цели кода для сообщения об успехе.
 
     Returns:
@@ -396,15 +379,13 @@ def _execute_python_code(
 
     generated_code = _normalize_code_text(str(code or ""))
     try:
-        target_name = _normalize_target_variable(target_variable)
         _validate_code_policy(generated_code)
-        compiled = compile(generated_code, "<execute_python_code>", "exec")
+        compiled = compile(generated_code, "<python>", "exec")
     except Exception as exc:
         return PythonExecutionResult(
             success=False,
             message="Python code did not pass validation or compilation.",
             generated_code=generated_code,
-            target_variable=str(target_variable or ""),
             error=f"{exc.__class__.__name__}: {exc}",
             traceback_text=_limit_text(traceback.format_exc(), max_chars=MAX_STDIO_CHARS),
             available_variables=_visible_variable_names(sandbox.globals),
@@ -415,6 +396,7 @@ def _execute_python_code(
 
     stdout = io.StringIO()
     stderr = io.StringIO()
+    sandbox.artifacts.clear()
     try:
         with (
             _working_directory_context(sandbox.working_directory),
@@ -427,8 +409,8 @@ def _execute_python_code(
             success=False,
             message="Python code execution failed. Fix generated_code and retry.",
             generated_code=generated_code,
-            target_variable=target_name or "",
             execution_output=_combined_stdio(stdout, stderr),
+            artifacts=list(sandbox.artifacts),
             error=f"{exc.__class__.__name__}: {exc}",
             traceback_text=_limit_text(traceback.format_exc(), max_chars=MAX_STDIO_CHARS),
             available_variables=_visible_variable_names(sandbox.globals),
@@ -439,45 +421,12 @@ def _execute_python_code(
 
     execution_output = _combined_stdio(stdout, stderr)
     purpose = f" Purpose: {description.strip()}" if description.strip() else ""
-    if target_name is None:
-        return PythonExecutionResult(
-            success=True,
-            message=f"Python code executed successfully.{purpose}",
-            generated_code=generated_code,
-            target_variable="",
-            variable_preview=_preview_stdio_result(execution_output),
-            execution_output=execution_output,
-            available_variables=_visible_variable_names(sandbox.globals),
-        )
-
-    if target_name not in sandbox.globals:
-        return PythonExecutionResult(
-            success=False,
-            message=(
-                "Python code executed but did not create target_variable. "
-                f"Create variable '{target_name}' and retry."
-            ),
-            generated_code=generated_code,
-            target_variable=target_name,
-            execution_output=execution_output,
-            error=f"MissingTargetVariable: {target_name}",
-            available_variables=_visible_variable_names(sandbox.globals),
-            possible_causes=[f"Код выполнился, но не создал переменную '{target_name}'."],
-            solution_options=[
-                f"Добавь присваивание результата в переменную '{target_name}'.",
-                "Проверь, что присваивание выполняется на всех ветках кода.",
-                "Если достаточно stdout, повтори вызов без target_variable.",
-            ],
-            retry_guidance=_python_retry_guidance(),
-        )
-
     return PythonExecutionResult(
         success=True,
         message=f"Python code executed successfully.{purpose}",
         generated_code=generated_code,
-        target_variable=target_name,
-        variable_preview=_preview_value(sandbox.globals[target_name]),
         execution_output=execution_output,
+        artifacts=list(sandbox.artifacts),
         available_variables=_visible_variable_names(sandbox.globals),
     )
 
@@ -556,66 +505,6 @@ def _combined_stdio(stdout: io.StringIO, stderr: io.StringIO) -> str:
     return _limit_text("\n".join(parts), max_chars=MAX_STDIO_CHARS)
 
 
-def _preview_stdio_result(stdio: str) -> str:
-    """Формирует preview для успешного выполнения без целевой переменной.
-
-    Args:
-        stdio: Текст stdout/stderr после выполнения кода.
-
-    Returns:
-        Краткий preview консольного вывода или пустая строка.
-    """
-
-    text = str(stdio or "").strip()
-    if not text:
-        return ""
-    return _limit_text(f"type: console_output\n{text}", max_chars=MAX_TEXT_PREVIEW_CHARS)
-
-
-def _preview_value(value: Any) -> str:
-    """Формирует компактный preview значения результата.
-
-    Args:
-        value: Значение переменной результата.
-
-    Returns:
-        Строка с типом и кратким содержимым значения.
-    """
-
-    if _is_dataframe(value):
-        shape = getattr(value, "shape", None)
-        columns = list(getattr(value, "columns", []))
-        dtypes = {str(column): str(dtype) for column, dtype in getattr(value, "dtypes", {}).items()}
-        head_text = value.head(MAX_DATAFRAME_PREVIEW_ROWS).to_string()
-        return _limit_text(
-            "\n".join(
-                [
-                    "type: DataFrame",
-                    f"shape: {shape}",
-                    f"columns: {columns}",
-                    f"dtypes: {dtypes}",
-                    "head:",
-                    head_text,
-                ]
-            ),
-            max_chars=MAX_TEXT_PREVIEW_CHARS,
-        )
-
-    if _is_series(value):
-        shape = getattr(value, "shape", None)
-        head_text = value.head(MAX_DATAFRAME_PREVIEW_ROWS).to_string()
-        return _limit_text(
-            f"type: Series\nshape: {shape}\nhead:\n{head_text}",
-            max_chars=MAX_TEXT_PREVIEW_CHARS,
-        )
-
-    try:
-        text = json.dumps(value, ensure_ascii=False, indent=2, default=_json_default)
-    except Exception:
-        text = repr(value)
-    return _limit_text(f"type: {type(value).__name__}\nvalue:\n{text}", max_chars=MAX_TEXT_PREVIEW_CHARS)
-
-
 def _python_error_possible_causes(exc: Exception) -> list[str]:
     """Возвращает вероятные причины ошибки выполнения кода.
 
@@ -651,9 +540,9 @@ def _python_error_solution_options(exc: Exception) -> list[str]:
 
     options = [
         "Проверь available_variables и используй только существующие имена переменных.",
-        "Исправь generated_code с учетом traceback и повтори execute_python_code.",
-        "Если нужна именованная переменная, сохрани результат в target_variable.",
-        "Если достаточно print-вывода, повтори вызов без target_variable и читай execution_output.",
+        "Исправь generated_code с учетом traceback и повтори python.",
+        "Выведи важные результаты через print().",
+        "Для файловых результатов используй save_text, save_json или save_dataframe.",
     ]
     if isinstance(exc, SyntaxError):
         options.insert(0, "Исправь синтаксис Python-кода перед повторным запуском.")
@@ -675,7 +564,7 @@ def _python_retry_guidance() -> str:
 
     return (
         "Не повторяй тот же код без изменений. Используй generated_code, error, "
-        "traceback и available_variables из этого ответа, исправь причину и повтори execute_python_code."
+        "traceback и available_variables из этого ответа, исправь причину и повтори python."
     )
 
 
@@ -694,32 +583,6 @@ def _visible_variable_names(globals_dict: dict[str, Any]) -> list[str]:
         for name in globals_dict
         if not str(name).startswith("__") and name not in vars(builtins)
     )
-
-
-def _is_dataframe(value: Any) -> bool:
-    """Проверяет, похоже ли значение на pandas DataFrame.
-
-    Args:
-        value: Проверяемое значение.
-
-    Returns:
-        ``True``, если значение похоже на DataFrame.
-    """
-
-    return value.__class__.__name__ == "DataFrame" and hasattr(value, "head")
-
-
-def _is_series(value: Any) -> bool:
-    """Проверяет, похоже ли значение на pandas Series.
-
-    Args:
-        value: Проверяемое значение.
-
-    Returns:
-        ``True``, если значение похоже на Series.
-    """
-
-    return value.__class__.__name__ == "Series" and hasattr(value, "head")
 
 
 def _json_default(value: Any) -> Any:
@@ -764,7 +627,6 @@ def _limit_text(value: str | None, *, max_chars: int) -> str:
 
 def _policy_error_payload(
     generated_code: str,
-    target_variable: str | None,
     exc: Exception,
     *,
     sandbox: DeepAgentPythonSandbox,
@@ -773,14 +635,13 @@ def _policy_error_payload(
 
     Args:
         generated_code: Нормализованный код, который не прошёл проверку.
-        target_variable: Запрошенное имя переменной результата или ``None``.
         exc: Исключение валидации политики.
         sandbox: Sandbox для перечисления доступных переменных и путей.
 
     Returns:
         Краткая строка с причиной ошибки.
     """
-    del generated_code, target_variable, sandbox
+    del generated_code, sandbox
     return _compact_error_message(f"{exc.__class__.__name__}: {exc}")
 
 
@@ -804,7 +665,7 @@ def _result_to_json(result: PythonExecutionResult, *, sandbox: DeepAgentPythonSa
     """Дополняет результат выполнения контекстом sandbox и сериализует в JSON.
 
     Args:
-        result: Результат ``_execute_python_code`` (успех или ошибка выполнения).
+        result: Результат ``_execute_python_repl`` (успех или ошибка выполнения).
         sandbox: Sandbox для добавления helpers и разрешённых путей в ответ.
 
     Returns:
@@ -823,8 +684,8 @@ def _result_to_json(result: PythonExecutionResult, *, sandbox: DeepAgentPythonSa
 
 
 __all__ = [
-    "EXECUTE_PYTHON_CODE_DESCRIPTION",
-    "EXECUTE_PYTHON_CODE_TOOL_NAME",
-    "ExecutePythonCodeTool",
-    "build_execute_python_code_tool",
+    "PYTHON_TOOL_DESCRIPTION",
+    "PYTHON_TOOL_NAME",
+    "PythonTool",
+    "build_python_tool",
 ]

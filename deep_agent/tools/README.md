@@ -3,7 +3,7 @@
 Папка содержит только реализации LangChain tools продукта:
 
 - `load_data` через Spark или совместимую фабрику data tools;
-- `execute_python_code` для расчётов по выгруженным артефактам;
+- `python` для persistent REPL-расчётов по выгруженным артефактам;
 - `load_skills` для загрузки `SKILL.md`;
 - `analyze_image(image_path, query)` для анализа локальных изображений через Qwen VLM;
 - `skill_loader.py` для materialized-загрузки skills.

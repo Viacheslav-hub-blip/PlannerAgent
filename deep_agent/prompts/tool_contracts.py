@@ -44,6 +44,30 @@ Output:
 Use when:
 - an isolated task should be executed in a separate context;
 - the subagent result should be returned as a compact report.
+
+Do not use when:
+- the next action is one small direct tool call;
+- the current agent already has enough verified evidence to answer;
+- delegation would only restate known context.
+
+Bad example:
+```text
+task(subagent_type="<subagent-name>", description="Fix paths")
+```
+
+Good example:
+```text
+task(
+  subagent_type="<subagent-name>",
+  description="
+Objective: fix incorrect workspace path handling.
+Scope: /deep_agent/runtime/python_sandbox.py and tests.
+Constraints: no broad rewrite, preserve existing API except documented python tool contract.
+Expected report: changed files, commands run, test results, limitations.
+Stopping condition: focused tests pass or blocker with evidence.
+"
+)
+```
 """.strip()
 
 TOOL_DESCRIPTION_OVERRIDES = {
@@ -57,6 +81,7 @@ Lists the contents of one directory.
 
 Input:
 - `path`: an absolute directory path in the tools file namespace.
+- Use canonical POSIX workspace paths such as `/reports/` or `/deep_agent/agent.py`; do not pass Windows paths.
 
 Output:
 - a list of files and subdirectories, or an error message for inaccessible or missing paths.
@@ -75,6 +100,7 @@ Input:
 - `file_path`: an absolute file path in the tools file namespace.
 - `offset`: the first line to read when paginating.
 - `limit`: the maximum number of lines to read.
+- Use canonical POSIX workspace paths such as `/reports/report.md`; do not pass Windows paths.
 
 Output:
 - the requested text fragment and metadata about the range that was read.
@@ -82,6 +108,11 @@ Output:
 Call format:
 - pass the path through `file_path`;
 - if the file was not read completely, request the next fragment with a new `offset`.
+
+Example:
+```text
+read_file(file_path="/deep_agent/prompts/supervisor.py", offset=1, limit=120)
+```
 
 Use when:
 - source code, configuration, documentation, or another text artifact is needed.
@@ -98,17 +129,25 @@ Creates a text file or fully replaces the contents of an existing file.
 Input:
 - the target file path;
 - the complete new text content for the file.
+- Use canonical POSIX workspace paths such as `/reports/report.md`; do not pass Windows paths.
 
 Output:
-- the write result or an error message.
+- the write result plus a verification notice, or an error message if the file cannot be read back after writing.
 
 Use when:
 - the result should be saved as a new file;
 - an existing file should be replaced as a whole.
 
+Example:
+```text
+write_file(file_path="/reports/summary.md", content="<complete markdown report>")
+```
+
 Limitations:
 - the tool works with text files;
 - `/` is the configured user workspace root and is the default place for user artifacts;
+- user-facing artifacts should be saved in `/reports`, `/runs`, another task-appropriate workspace folder,
+  or an explicit user-requested path;
 - `/deep_agent/` is the agent implementation directory, not an output folder;
 - do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
 - partial changes to an existing file are usually handled through `edit_file`.
@@ -120,15 +159,26 @@ Description:
 Edits an existing text file by replacing an exact text fragment.
 
 Input:
-- the target file path;
-- the original text fragment;
-- the replacement text fragment.
+- `file_path`: the target file path;
+- `old_string`: the exact text fragment to replace;
+- `new_string`: the replacement text fragment;
+- `replace_all`: whether to replace every occurrence instead of one unique occurrence.
+- Use canonical POSIX workspace paths such as `/deep_agent/prompts/supervisor.py`; do not pass Windows paths.
 
 Output:
-- the replacement result or an error message.
+- the replacement result plus a verification notice, or an error message if the file cannot be read back after editing.
 
 Use when:
 - an existing text file needs a local change.
+
+Example:
+```text
+edit_file(
+  file_path="/deep_agent/prompts/coding.py",
+  old_string="exact existing fragment without line-number prefixes",
+  new_string="replacement fragment"
+)
+```
 
 Limitations:
 - the fragment to replace must be found unambiguously in the file;
@@ -145,6 +195,7 @@ Finds files by a glob pattern.
 Input:
 - `pattern`: a glob pattern, for example `**/*.md`;
 - `path`: the base search directory.
+- Use canonical POSIX workspace paths such as `/` or `/deep_agent/`; do not pass Windows paths.
 
 Output:
 - a list of paths matching the pattern.
@@ -163,6 +214,7 @@ Input:
 - `path`: the search directory;
 - `glob`: the file filter;
 - `output_mode`: the output mode, such as `files_with_matches`, `content`, or `count`.
+- Use canonical POSIX workspace paths such as `/` or `/deep_agent/`; do not pass Windows paths.
 
 Output:
 - matching content, files with matches, or match counts depending on `output_mode`.
@@ -195,8 +247,30 @@ Use when:
 - tests, a linter, formatter, type checker, build, generator, or diagnostic command should be run;
 - command output is needed as a verifiable observation.
 
+Do not use when:
+- you only need to read or edit a text file;
+- `python` is better for a data calculation over an existing artifact;
+- the command requires API keys, secrets, interactive input, or long-running services.
+
+Example:
+```text
+execute(command="python -m pytest tests/test_filesystem_path_contract.py -q")
+```
+
+Bad example:
+```text
+execute(command="type deep_agent\\agent.py")
+```
+
+Good example:
+```text
+read_file(file_path="/deep_agent/agent.py", offset=1, limit=120)
+```
+
 Limitations:
 - the command must not require interactive input;
 - the tool must not be used for commands that require secrets or API keys.
+- use filesystem tools for ordinary text read/write/edit operations; use shell for tests, builds, diagnostics,
+  package commands, and copy/move operations.
 """.strip(),
 }

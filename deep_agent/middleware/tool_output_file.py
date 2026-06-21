@@ -245,12 +245,12 @@ def _build_file_summary(
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Чтобы работать со ВСЕМИ строками или с урезанной выборкой из этого набора, используй "
-        "`execute_python_code` (НЕ новый load_data). Helpers: read_pickle_file, "
-        "describe_pickle_file, rows_to_dataframe, pd, np. Один и тот же `workspace_file` "
-        "используется в `execute_python_code` и filesystem tools. Пример:\n"
+        "`python` (НЕ новый load_data). Helpers: read_pickle_file, "
+        "describe_pickle_file, rows_to_dataframe, save_dataframe, save_json, save_text, pd, np. "
+        "Один и тот же `workspace_file` используется в `python` и filesystem tools. Пример:\n"
         f"rows = read_pickle_file(r\"{workspace_path}\")\n"
         "df = rows_to_dataframe(rows)\n"
-        "При ошибке execute_python_code читай traceback из ответа tool и исправляй код.\n"
+        "При ошибке python читай error/traceback из ответа tool и исправляй код.\n"
         f"Preview первых {len(preview)} строк:\n{preview_text}"
         f"{original_note}"
     )
@@ -289,7 +289,7 @@ def _build_inline_saved_file_note(
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Если следующий шаг — урезанная выборка из ЭТОГО же набора (другие фильтры, подмножество "
         "строк, агрегация, уникальные значения), НЕ запускай новый load_data: отфильтруй через "
-        "`execute_python_code` (`read_pickle_file` → `rows_to_dataframe` / pandas).\n"
+        "`python` (`read_pickle_file` → `rows_to_dataframe` / pandas).\n"
         f"Пример: rows = read_pickle_file(r\"{workspace_path}\")\n"
     )
 

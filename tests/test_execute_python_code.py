@@ -1,7 +1,7 @@
-"""Тесты полного доступа и компактной обработки ошибок execute_python_code.
+"""Тесты полного доступа и компактной обработки ошибок tool ``python``.
 
 Содержит:
-- ExecutePythonCodeTests: проверки helpers, файлового доступа, subprocess и формата ошибок.
+- PythonToolTests: проверки helpers, файлового доступа, subprocess и формата ошибок.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from pathlib import Path
 from deep_agent.runtime.python_sandbox import DeepAgentPythonSandbox
 from deep_agent.settings import workspace_tool_path
 from deep_agent.tools.python_execution import (
-    EXECUTE_PYTHON_CODE_DESCRIPTION,
-    build_execute_python_code_tool,
+    PYTHON_TOOL_DESCRIPTION,
+    build_python_tool,
 )
 
 
-class ExecutePythonCodeTests(unittest.TestCase):
-    """Проверяет контракт Python execution tool с полным доступом внутри workspace."""
+class PythonToolTests(unittest.TestCase):
+    """Проверяет контракт REPL tool ``python`` с полным доступом внутри workspace."""
 
     def test_description_contains_policy_as_prompt_sections(self) -> None:
         """Проверяет декларативную политику выбора инструмента и примеры.
@@ -31,7 +31,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
         """
 
         required_fragments = (
-            "Предпочитай инструмент:",
+            "Назначение:",
             "Правило выбора:",
             "Хорошее решение:",
             "Работа с путями:",
@@ -39,7 +39,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
             "сначала выполни код",
         )
         for fragment in required_fragments:
-            self.assertIn(fragment, EXECUTE_PYTHON_CODE_DESCRIPTION)
+            self.assertIn(fragment, PYTHON_TOOL_DESCRIPTION)
 
     def test_description_shows_session_artifact_path_example(self) -> None:
         """Проверяет примеры сохранения пользовательских и временных артефактов.
@@ -52,33 +52,50 @@ class ExecutePythonCodeTests(unittest.TestCase):
         """
 
         self.assertIn(
-            'output_path = Path(WORKSPACE_ROOT) / "generated_report.json"',
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            'output_path = save_json("/reports/generated_report.json", {"status": "ok"})',
+            PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
             'output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"',
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
-        )
-        self.assertIn(
-            "`target_variable` можно не передавать",
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
             "для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`",
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
             "для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`",
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "для запуска shell/subprocess-команд через Python",
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            "для тестов, сборки и package-команд используй shell `execute`, а не Python",
+            PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "для генерации и проверки алгоритмов",
-            EXECUTE_PYTHON_CODE_DESCRIPTION,
+            "для прототипирования решения до внесения изменений в исходники проекта",
+            PYTHON_TOOL_DESCRIPTION,
         )
+
+    def test_tool_schema_has_no_target_variable(self) -> None:
+        """Проверяет публичное имя и отсутствие скрытого поля результата.
+
+        Returns:
+            ``None``. Тест завершается успешно, если schema содержит только новый контракт.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sandbox = DeepAgentPythonSandbox(
+                working_directory=root,
+                readable_roots=(root,),
+                tool_outputs_dir=root,
+            )
+            tool = build_python_tool(sandbox)
+
+        self.assertEqual(tool.name, "python")
+        self.assertIn("code", tool.args)
+        self.assertIn("description", tool.args)
+        self.assertNotIn("target_variable", tool.args)
 
     def test_full_workspace_path_can_be_read_and_written(self) -> None:
         """Проверяет чтение и запись по полному workspace-пути.
@@ -95,7 +112,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -104,9 +121,8 @@ class ExecutePythonCodeTests(unittest.TestCase):
                             "from pathlib import Path\n"
                             f"path = Path(r'{workspace_tool_path(workspace_file, root)}')\n"
                             "path.write_text('{\"ok\": true}', encoding='utf-8')\n"
-                            "result = path.read_text(encoding='utf-8')"
+                            "print(path.read_text(encoding='utf-8'))"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
@@ -114,7 +130,9 @@ class ExecutePythonCodeTests(unittest.TestCase):
 
         self.assertTrue(payload["success"])
         self.assertEqual(written_text, '{"ok": true}')
-        self.assertIn('\\"ok\\": true', payload["variable_preview"])
+        self.assertIn('{"ok": true}', payload["execution_output"])
+        self.assertNotIn("target_variable", payload)
+        self.assertNotIn("variable_preview", payload)
 
     def test_open_uses_configured_tool_outputs_dir(self) -> None:
         """Проверяет запись файла в каталог артефактов из настроек sandbox.
@@ -132,7 +150,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root, outputs_dir),
                 tool_outputs_dir=outputs_dir,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -142,9 +160,8 @@ class ExecutePythonCodeTests(unittest.TestCase):
                             "output_path = Path(TOOL_OUTPUTS_DIR) / 'my_notebook.ipynb'\n"
                             "with open(output_path, 'w', encoding='utf-8') as file:\n"
                             "    file.write('{}')\n"
-                            "result = str(output_path)"
+                            "print(str(output_path))"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
@@ -152,13 +169,13 @@ class ExecutePythonCodeTests(unittest.TestCase):
             notebook_path = outputs_dir / "my_notebook.ipynb"
             self.assertTrue(payload["success"])
             self.assertTrue(notebook_path.exists())
-        self.assertIn("configured_outputs", payload["variable_preview"])
+        self.assertIn("configured_outputs", payload["execution_output"])
 
-    def test_target_variable_can_be_omitted_for_file_side_effect(self) -> None:
+    def test_python_can_run_file_side_effect_without_print(self) -> None:
         """Проверяет выполнение кода без переменной результата для файлового side effect.
 
         Returns:
-            ``None``; тест подтверждает, что ``target_variable`` не обязателен.
+            ``None``; тест подтверждает выполнение side effect без stdout.
         """
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -168,7 +185,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -185,9 +202,45 @@ class ExecutePythonCodeTests(unittest.TestCase):
             side_effect_exists = side_effect_path.exists()
 
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["target_variable"], "")
-        self.assertEqual(payload["variable_preview"], "")
+        self.assertEqual(payload["execution_output"], "")
+        self.assertEqual(payload["artifacts"], [])
         self.assertTrue(side_effect_exists)
+
+    def test_save_json_registers_artifact(self) -> None:
+        """Проверяет сохранение JSON и возврат artifact metadata.
+
+        Returns:
+            ``None``. Тест подтверждает, что helper регистрирует созданный файл.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            sandbox = DeepAgentPythonSandbox(
+                working_directory=root,
+                readable_roots=(root,),
+                tool_outputs_dir=root,
+            )
+            tool = build_python_tool(sandbox)
+
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": (
+                            "path = save_json('/reports/result.json', {'ok': True})\n"
+                            "print(path)"
+                        ),
+                    }
+                )
+            )
+
+            report_path = root / "reports" / "result.json"
+            report_exists = report_path.exists()
+
+        self.assertTrue(payload["success"])
+        self.assertTrue(report_exists)
+        self.assertEqual(payload["artifacts"][0]["path"], "/reports/result.json")
+        self.assertEqual(payload["artifacts"][0]["type"], "json")
+        self.assertIn("/reports/result.json", payload["execution_output"])
 
     """Проверяет импорт sandbox helpers и компактный формат ошибок инструмента."""
 
@@ -205,22 +258,21 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
                     {
                         "code": (
                             "from functions import rows_to_dataframe\n"
-                            "result = rows_to_dataframe([{'value': 1}]).shape[0]"
+                            "print(rows_to_dataframe([{'value': 1}]).shape[0])"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
 
         self.assertTrue(payload["success"])
-        self.assertIn("value:\n1", payload["variable_preview"])
+        self.assertIn("1", payload["execution_output"])
 
     def test_read_pickle_file_maps_full_workspace_path(self) -> None:
         """Проверяет чтение pickle по полному workspace-пути.
@@ -241,7 +293,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -249,15 +301,15 @@ class ExecutePythonCodeTests(unittest.TestCase):
                         "code": (
                             "result = read_pickle_file("
                             f"r'{workspace_tool_path(pickle_path, root)}'"
-                            ")"
+                            ")\n"
+                            "print(result)"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
 
         self.assertTrue(payload["success"])
-        self.assertIn('"value": 7', payload["variable_preview"])
+        self.assertIn("'value': 7", payload["execution_output"])
 
     def test_runtime_error_contains_only_short_error(self) -> None:
         """Проверяет удаление traceback и служебных полей из ошибки.
@@ -273,7 +325,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             error = tool.invoke({"code": "raise ValueError('bad input')"})
 
@@ -297,7 +349,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -310,15 +362,14 @@ class ExecutePythonCodeTests(unittest.TestCase):
                             "    text=True,\n"
                             "    check=True,\n"
                             ")\n"
-                            "result = completed.stdout.strip()"
+                            "print(completed.stdout.strip())"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
 
         self.assertTrue(payload["success"])
-        self.assertIn("42", payload["variable_preview"])
+        self.assertIn("42", payload["execution_output"])
 
     def test_remove_and_path_unlink_are_available(self) -> None:
         """Проверяет удаление файлов через ``os.remove`` и ``Path.unlink``.
@@ -338,7 +389,7 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
 
             payload = json.loads(
                 tool.invoke(
@@ -348,9 +399,8 @@ class ExecutePythonCodeTests(unittest.TestCase):
                             "from pathlib import Path\n"
                             "os.remove('remove.txt')\n"
                             "Path('unlink.txt').unlink()\n"
-                            "result = 'deleted'"
+                            "print('deleted')"
                         ),
-                        "target_variable": "result",
                     }
                 )
             )
@@ -373,20 +423,19 @@ class ExecutePythonCodeTests(unittest.TestCase):
                 readable_roots=(root,),
                 tool_outputs_dir=root,
             )
-            tool = build_execute_python_code_tool(sandbox)
+            tool = build_python_tool(sandbox)
             long_comment = "#" + ("x" * 55_000)
 
             payload = json.loads(
                 tool.invoke(
                     {
-                        "code": f"{long_comment}\nresult = 123",
-                        "target_variable": "result",
+                        "code": f"{long_comment}\nprint(123)",
                     }
                 )
             )
 
         self.assertTrue(payload["success"])
-        self.assertIn("123", payload["variable_preview"])
+        self.assertIn("123", payload["execution_output"])
 
 
 if __name__ == "__main__":

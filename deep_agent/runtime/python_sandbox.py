@@ -15,7 +15,11 @@ import types
 from pathlib import Path
 from typing import Any
 
-from deep_agent.settings import DeepAgentSettings, strip_workspace_tool_prefix
+from deep_agent.settings import (
+    DeepAgentSettings,
+    strip_workspace_tool_prefix,
+    workspace_tool_path,
+)
 
 SANDBOX_HELPER_NAMES = frozenset(
     {
@@ -25,12 +29,15 @@ SANDBOX_HELPER_NAMES = frozenset(
         "read_pickle_file",
         "describe_pickle_file",
         "rows_to_dataframe",
+        "save_dataframe",
+        "save_json",
+        "save_text",
     }
 )
 
 
 class DeepAgentPythonSandbox:
-    """In-memory runtime с общими переменными между вызовами ``execute_python_code``."""
+    """In-memory runtime с общими переменными между вызовами tool ``python``."""
 
     def __init__(
         self,
@@ -51,20 +58,21 @@ class DeepAgentPythonSandbox:
         self.readable_roots = tuple(path.resolve() for path in readable_roots)
         self.tool_outputs_dir = tool_outputs_dir.resolve()
         self.globals: dict[str, Any] = {}
-        self.last_target_variable: str | None = None
         self.last_dataframe_variable: str | None = None
+        self.artifacts: list[dict[str, str]] = []
         self._seed_helpers()
 
     def _seed_helpers(self) -> None:
         """Заполняет ``globals`` helpers чтения pickle и библиотеками pandas/numpy.
 
-        Добавляет ``PROJECT_ROOT``, ``WORKSPACE_ROOT``, ``TOOL_OUTPUTS_DIR``, ``read_pickle_file``,
-        ``describe_pickle_file``, ``rows_to_dataframe`` и (если доступны) ``pd``/``np``.
+        Добавляет ``PROJECT_ROOT``, ``WORKSPACE_ROOT``, ``TOOL_OUTPUTS_DIR``, helpers чтения,
+        helpers сохранения артефактов и (если доступны) ``pd``/``np``.
         Полные workspace-пути преобразуются в реальные пути текущего запуска.
         """
 
         tool_outputs_dir = self.tool_outputs_dir
         project_root = self.working_directory
+
         def _resolve_workspace_path(path: Path) -> Path:
             """Преобразует путь относительно настроенного workspace в реальный путь.
 
@@ -85,6 +93,32 @@ class DeepAgentPythonSandbox:
             elif not path.is_absolute():
                 path = project_root / path
             return path.expanduser().resolve()
+
+        def _workspace_artifact_path(path: Path) -> str:
+            """Возвращает canonical workspace-путь артефакта для ответа tool."""
+
+            try:
+                return workspace_tool_path(path.resolve(), project_root)
+            except ValueError:
+                return str(path.resolve())
+
+        def _register_artifact(
+            file_path: str | Path,
+            *,
+            artifact_type: str = "file",
+            description: str = "",
+        ) -> str:
+            """Регистрирует созданный файл как артефакт текущего Python-вызова."""
+
+            resolved = _resolve_workspace_path(Path(file_path))
+            payload = {
+                "path": _workspace_artifact_path(resolved),
+                "type": artifact_type,
+                "description": str(description or ""),
+            }
+            if payload not in self.artifacts:
+                self.artifacts.append(payload)
+            return payload["path"]
 
         def _assert_readable_path(path: Path) -> Path:
             """Разрешает путь и проверяет, что файл существует."""
@@ -126,6 +160,50 @@ class DeepAgentPythonSandbox:
 
             frame = pd.DataFrame(rows, columns=columns)
             return frame
+
+        def save_text(file_path: str, content: str, *, description: str = "") -> str:
+            """Сохраняет текстовый артефакт и возвращает его workspace-путь."""
+
+            path = _resolve_workspace_path(Path(file_path))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(str(content), encoding="utf-8")
+            return _register_artifact(path, artifact_type="text", description=description)
+
+        def save_json(file_path: str, data: Any, *, description: str = "") -> str:
+            """Сохраняет JSON-артефакт и возвращает его workspace-путь."""
+
+            import json
+
+            path = _resolve_workspace_path(Path(file_path))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            return _register_artifact(path, artifact_type="json", description=description)
+
+        def save_dataframe(
+            frame: Any,
+            file_path: str,
+            *,
+            format: str | None = None,
+            index: bool = False,
+            description: str = "",
+        ) -> str:
+            """Сохраняет DataFrame в CSV/JSON/Pickle и возвращает workspace-путь."""
+
+            path = _resolve_workspace_path(Path(file_path))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            output_format = (format or path.suffix.lstrip(".") or "csv").lower()
+            if output_format == "csv":
+                frame.to_csv(path, index=index)
+            elif output_format == "json":
+                frame.to_json(path, orient="records", force_ascii=False)
+            elif output_format in {"pkl", "pickle"}:
+                frame.to_pickle(path)
+            else:
+                raise ValueError("save_dataframe поддерживает только csv, json, pkl и pickle.")
+            return _register_artifact(path, artifact_type=output_format, description=description)
 
         default_open = builtins.open
 
@@ -187,6 +265,9 @@ class DeepAgentPythonSandbox:
                 "read_pickle_file": read_pickle_file,
                 "describe_pickle_file": describe_pickle_file,
                 "rows_to_dataframe": rows_to_dataframe,
+                "save_dataframe": save_dataframe,
+                "save_json": save_json,
+                "save_text": save_text,
             }
         )
         helper_module = types.ModuleType("functions")
@@ -254,7 +335,7 @@ def build_python_sandbox(
     tool_outputs_dir: Path | None = None,
     workspace_root: Path | None = None,
 ) -> DeepAgentPythonSandbox:
-    """Собирает persistent runtime для ``execute_python_code``.
+    """Собирает persistent runtime для tool ``python``.
 
     Рабочая директория — это workspace из настроек. ``readable_roots`` сохраняются
     как диагностическая информация в ответе инструмента.

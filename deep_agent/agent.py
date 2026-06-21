@@ -19,13 +19,12 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _normalize_data_tools: проверка и нормализация списка инструментов.
 - _normalize_extra_tools: проверка и нормализация дополнительных tools.
 - build_analytics_deep_agent: сборка supervisor и subagents.
-- build_skills_backend: сборка workspace backend для coding-agent.
-- build_supervisor_backend: сборка backend без shell для supervisor и data-agent.
+- build_skills_backend: сборка shell-capable workspace backend для supervisor и coding-agent.
+- build_supervisor_backend: сборка filesystem-only backend для data-agent.
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
-- _build_file_edit_interrupts: конфигурация approval для изменения файлов.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - _require_workspace_path: проверка принадлежности пути workspace.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
@@ -71,10 +70,11 @@ from deep_agent.runtime.filesystem import (
 )
 from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.jupyter_notebook import build_convert_jupyter_notebook_tool
-from deep_agent.tools.python_execution import build_execute_python_code_tool
+from deep_agent.tools.python_execution import build_python_tool
 from deep_agent.tools.project_structure import build_get_project_structure_tool
 from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
+from deep_agent.middleware.filesystem_path_contract import FilesystemPathContractMiddleware
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
 from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
@@ -180,7 +180,7 @@ def build_analytics_deep_agent(
 
     Это главная точка сборки агента. Сборка нативная для DeepAgents: supervisor получает
     встроенные tools (`write_todos`, `task`, filesystem, `execute`), custom tools
-    `execute_python_code`, project memory из ``AGENTS.md`` и два
+    `python`, project memory из ``AGENTS.md`` и два
     специализированных subagents.
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
@@ -199,7 +199,7 @@ def build_analytics_deep_agent(
     4. Backend — workspace с terminal, skills и spill-файлами.
     5. Subagents — штатный `general-purpose`, отдельный `coding-agent` для кода
        и `data-retrieval-agent` для таблиц.
-    6. Custom tool supervisor — `execute_python_code` для расчётов и чтения `.pkl`.
+    6. Custom tool supervisor — `python` для REPL-расчётов, чтения `.pkl` и артефактов.
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
@@ -262,7 +262,7 @@ def build_analytics_deep_agent(
     data_tools = wrap_data_tools_with_query_code(data_tools)
     extra_tools = _normalize_extra_tools(extra_tools)
     # Шаг 3. Единственный project-specific middleware сохраняет табличные результаты
-    # в pickle. Skills, retries, limits, filesystem, memory, HITL и subagents собираются
+    # в pickle. Skills, retries, limits, filesystem, memory и subagents собираются
     # штатными middleware LangChain/Deep Agents.
     tool_output_file_middleware = ToolOutputFileMiddleware(
         output_dir=session_tool_outputs_dir,
@@ -272,7 +272,12 @@ def build_analytics_deep_agent(
         preview_rows=settings.tool_output_preview_rows,
         inline_original_content_chars=settings.tool_output_inline_original_chars,
     )
-    supervisor_backend = build_supervisor_backend(
+    data_backend = build_supervisor_backend(
+        settings,
+        tool_outputs_dir=session_tool_outputs_dir,
+        workspace_root=resolved_workspace_root,
+    )
+    supervisor_backend = build_skills_backend(
         settings,
         tool_outputs_dir=session_tool_outputs_dir,
         workspace_root=resolved_workspace_root,
@@ -288,7 +293,7 @@ def build_analytics_deep_agent(
         tool_outputs_dir=session_tool_outputs_dir,
         workspace_root=resolved_workspace_root,
     )
-    python_tool = build_execute_python_code_tool(python_sandbox)
+    python_tool = build_python_tool(python_sandbox)
     load_skills_tool = build_load_skills_tool(
         settings,
         skills_root=resolved_skills_root,
@@ -300,7 +305,6 @@ def build_analytics_deep_agent(
     jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
         workspace_root=resolved_workspace_root,
     )
-    file_edit_interrupts = _build_file_edit_interrupts(settings)
     shared_skills_selection: dict[str, Any] = {}
     supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
         skills_root=resolved_skills_root,
@@ -318,10 +322,11 @@ def build_analytics_deep_agent(
         shared_selection=shared_skills_selection,
         prompt_template=DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     )
-
     coding_agent_middleware = _build_native_runtime_middleware(
         settings,
         tool_output_file_middleware,
+        filesystem_backend=workspace_backend,
+        workspace_root=resolved_workspace_root,
         agent_name="coding-agent",
         limit_model_calls=True,
     )
@@ -339,13 +344,14 @@ def build_analytics_deep_agent(
         ),
         backend=workspace_backend,
         memory=[agents_memory_path],
-        interrupt_on=file_edit_interrupts,
     )
     data_retrieval_agent_middleware = [
         subagent_skills_middleware,
         *_build_native_runtime_middleware(
             settings,
             tool_output_file_middleware,
+            filesystem_backend=data_backend,
+            workspace_root=resolved_workspace_root,
             agent_name="data-retrieval-agent",
             limit_model_calls=True,
         ),
@@ -362,7 +368,7 @@ def build_analytics_deep_agent(
             common_middleware=data_retrieval_agent_middleware,
             skill_sources=[skills_workspace_dir],
         ),
-        backend=supervisor_backend,
+        backend=data_backend,
         memory=[agents_memory_path],
     )
 
@@ -393,12 +399,13 @@ def build_analytics_deep_agent(
             *_build_native_runtime_middleware(
                 settings,
                 tool_output_file_middleware,
+                filesystem_backend=supervisor_backend,
+                workspace_root=resolved_workspace_root,
                 agent_name="supervisor",
                 limit_model_calls=False,
             ),
         ],
         memory=[agents_memory_path],
-        interrupt_on=file_edit_interrupts,
         checkpointer=(
             build_conversation_checkpointer()
             if checkpointer is _DEFAULT_CHECKPOINTER
@@ -413,6 +420,8 @@ def _build_native_runtime_middleware(
     settings: DeepAgentSettings,
     tool_output_file_middleware: ToolOutputFileMiddleware,
     *,
+    filesystem_backend: Any | None = None,
+    workspace_root: Path | None = None,
     agent_name: str = "supervisor",
     limit_model_calls: bool,
 ) -> list[Any]:
@@ -421,6 +430,8 @@ def _build_native_runtime_middleware(
     Args:
         settings: Настройки лимитов и управления контекстом.
         tool_output_file_middleware: Единственный project-specific middleware.
+        filesystem_backend: Backend filesystem tools для нормализации путей и проверки записи.
+        workspace_root: Корень workspace для canonical POSIX-путей filesystem tools.
         agent_name: Имя агента для служебного логирования.
         limit_model_calls: Нужно ли ограничивать число model calls для subagent.
 
@@ -439,7 +450,6 @@ def _build_native_runtime_middleware(
             on_failure=format_model_error,
         ),
         tool_output_file_middleware,
-        ToolContextNoticeMiddleware(),
         ContextEditingMiddleware(
             edits=[
                 ClearToolUsesEdit(
@@ -453,6 +463,15 @@ def _build_native_runtime_middleware(
             exit_behavior="continue",
         ),
     ]
+    if filesystem_backend is not None and workspace_root is not None:
+        middleware.insert(
+            3,
+            FilesystemPathContractMiddleware(
+                workspace_root=workspace_root.resolve(),
+                backend=filesystem_backend,
+            ),
+        )
+    middleware.append(ToolContextNoticeMiddleware())
     if postgres_logging_middleware is not None:
         middleware.insert(3, postgres_logging_middleware)
     if limit_model_calls:
@@ -521,7 +540,7 @@ def build_supervisor_backend(
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
 ) -> Any:
-    """Собирает backend supervisor с полным filesystem-доступом к workspace.
+    """Собирает filesystem-only backend для data-agent с полным доступом к workspace.
 
     Args:
         settings: Настройки агента; если ``None``, загружаются defaults.
@@ -689,30 +708,6 @@ def _build_terminal_environment() -> dict[str, str]:
         "WINDIR",
     )
     return {name: os.environ[name] for name in allowed_names if name in os.environ}
-
-
-def _build_file_edit_interrupts(
-    settings: DeepAgentSettings,
-) -> dict[str, Any] | None:
-    """Создаёт approval policy только для файловых изменений.
-
-    Args:
-        settings: Настройки с флагом включения approval.
-
-    Returns:
-        Конфигурация HITL для ``write_file`` и ``edit_file`` либо ``None``.
-    """
-
-    if not settings.enable_interrupts:
-        return None
-    config = {
-        "allowed_decisions": ["approve", "edit", "reject"],
-        "description": "Изменение файла в рабочем workspace требует подтверждения.",
-    }
-    return {
-        "write_file": dict(config),
-        "edit_file": dict(config),
-    }
 
 
 def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:

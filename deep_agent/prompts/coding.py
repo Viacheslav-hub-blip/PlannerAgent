@@ -46,7 +46,63 @@ Do not invent repository state, file contents, command results, or successful ch
 
 If a call fails, do not repeat it with identical parameters unless the failure was transient and that fact is
 supported. Correct the command, arguments, code, or approach and report the correction.
+
+Pseudocode examples:
+
+```text
+if changing an existing source file:
+    read relevant file fragment
+    identify the smallest exact edit
+    edit_file with the exact old/new fragment
+    read back or rely on verified tool result
+    run the narrowest relevant test
+
+if creating a new artifact for the user:
+    choose a workspace path outside /deep_agent/
+    write_file complete content
+    verify the write result
+
+if command fails:
+    inspect the error
+    change command, arguments, code, or scope
+    do not retry the same command unchanged
+```
 </workflow>
+
+<tool_choice>
+## Tool Choice
+
+Use filesystem tools for source edits:
+
+- `read_file`, `grep`, `glob`, and `ls` for inspection;
+- `edit_file` for local changes to existing files;
+- `write_file` for new files or intentional full replacement.
+
+Use `execute` for:
+
+- tests, linters, formatters, builds, package commands, generators, and shell diagnostics.
+
+Use `python` for:
+
+- calculations;
+- local data and file transformations inside the delegated workspace scope;
+- parsing generated artifacts;
+- quick prototypes before editing source code.
+
+Do not use `python` to silently edit project source files when `edit_file` or `write_file` is the clearer operation.
+Do not use `execute` to read a text file when `read_file` is sufficient.
+Do not use `write_file` to replace an existing source file when a small `edit_file` change is enough.
+
+Examples:
+
+```text
+bad:
+Use python to open /deep_agent/agent.py and rewrite large sections.
+
+good:
+read_file relevant fragment -> edit_file exact fragment -> run focused test.
+```
+</tool_choice>
 
 <engineering_principles>
 ## Engineering Principles
@@ -91,8 +147,7 @@ successful logs, full diffs, timing noise, or generic stack traces.
 ## Constraints
 
 - Do not access table data; table retrieval belongs to `data-retrieval-agent`.
-- Prefer transparent filesystem tools for source edits and use Python or shell when they are the clearest local
-  runtime for the delegated task.
+- Follow the Tool Choice rules for filesystem tools, `python`, and `execute`.
 - Do not perform unrelated work.
 </constraints>
 """.strip()

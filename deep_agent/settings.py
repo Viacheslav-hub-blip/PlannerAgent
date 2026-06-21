@@ -16,7 +16,6 @@
 - workspace_tool_root_aliases: список абсолютных ОС-префиксов, эквивалентных виртуальному корню tools.
 - strip_workspace_tool_prefix: преобразование tool-пути или ОС-пути workspace в путь относительно workspace.
 - _int_from_config: чтение целого числа из конфига.
-- _bool_from_config: чтение boolean из конфига.
 - _dict_from_config: чтение словаря из конфига.
 - _optional_str_from_config: чтение опциональной строки из конфига.
 """
@@ -41,7 +40,6 @@ REQUIRED_CONFIG_KEYS = (
     "harness_profile_key",
     "thread_id",
     "workspace_root",
-    "enable_interrupts",
     "terminal_timeout",
     "terminal_max_output_bytes",
     "data_tools_factory",
@@ -68,7 +66,6 @@ class DeepAgentSettings:
     thread_id: str
     workspace_root: Path
     agents_file_name: str
-    enable_interrupts: bool
     terminal_timeout: int
     terminal_max_output_bytes: int
     skills_root: Path
@@ -117,7 +114,6 @@ class DeepAgentSettings:
                 )
             ).strip()
             or DEFAULT_AGENTS_FILE_NAME,
-            enable_interrupts=_interrupts_enabled_from_config(payload),
             terminal_timeout=_int_from_config(payload, "terminal_timeout"),
             terminal_max_output_bytes=_int_from_config(
                 payload,
@@ -404,39 +400,6 @@ def _int_from_config(payload: dict[str, Any], key: str) -> int:
         return int(payload[key])
     except (TypeError, ValueError):
         raise ValueError(f"Config key '{key}' must be an integer.") from None
-
-
-def _interrupts_enabled_from_config(payload: dict[str, Any]) -> bool:
-    """Читает флаг HITL: ``enable_interrupts`` или устаревший ``enable_file_edit_approval``."""
-
-    if "enable_interrupts" in payload:
-        return _bool_from_config(payload, "enable_interrupts")
-    if "enable_file_edit_approval" in payload:
-        return _bool_from_config(payload, "enable_file_edit_approval")
-    raise ValueError(
-        "DeepAgent config must define 'enable_interrupts' "
-        "(or legacy 'enable_file_edit_approval')."
-    )
-
-
-def _bool_from_config(payload: dict[str, Any], key: str) -> bool:
-    """Читает boolean-ключ конфига, иначе бросает ValueError.
-
-    Args:
-        payload: Словарь конфигурации.
-        key: Имя обязательного ключа.
-
-    Returns:
-        Значение ``bool`` из конфигурации.
-
-    Raises:
-        ValueError: Значение ключа не является ``bool``.
-    """
-
-    value = payload[key]
-    if isinstance(value, bool):
-        return value
-    raise ValueError(f"Config key '{key}' must be a boolean.")
 
 
 def _dict_from_config(payload: dict[str, Any], key: str) -> dict[str, Any]:

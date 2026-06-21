@@ -29,7 +29,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.agent import (
     _agents_memory_path,
-    _build_file_edit_interrupts,
     _build_native_runtime_middleware,
     build_conversation_checkpointer,
     build_skills_backend,
@@ -405,6 +404,23 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertEqual(backend.default.cwd, workspace.resolve())
         self.assertNotIn("OPENAI_API_KEY", backend.default._env)
 
+    def test_agent_builder_gives_shell_backend_to_supervisor_only(self) -> None:
+        """Проверяет wiring backend-ов без запуска внешней модели.
+
+        Returns:
+            ``None``. Тест фиксирует, что supervisor получает shell-capable backend,
+            а data-agent остаётся на filesystem-only backend.
+        """
+
+        source = (Path(__file__).parents[1] / "deep_agent" / "agent.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("data_backend = build_supervisor_backend(", source)
+        self.assertIn("supervisor_backend = build_skills_backend(", source)
+        self.assertIn("backend=data_backend", source)
+        self.assertIn("backend=supervisor_backend", source)
+
     def test_settings_derive_paths_from_workspace_root(self) -> None:
         """Проверяет, что path-настройки выводятся из ``workspace_root``.
 
@@ -418,7 +434,6 @@ class ReliableExecutionTests(unittest.TestCase):
                 "harness_profile_key": "openai",
                 "thread_id": "test-thread",
                 "workspace_root": str(workspace),
-                "enable_interrupts": False,
                 "terminal_timeout": 120,
                 "terminal_max_output_bytes": 100000,
                 "data_tools_factory": None,
@@ -655,24 +670,20 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
 
-    def test_file_edit_approval_does_not_interrupt_terminal(self) -> None:
-        """HITL должен применяться только к write_file и edit_file."""
+    def test_agent_builder_does_not_add_permissions_or_interrupt_fallback(self) -> None:
+        """Сборка агента не должна содержать permission rules или HITL fallback.
 
-        settings = replace(load_deep_agent_settings(), enable_interrupts=True)
-        interrupts = _build_file_edit_interrupts(settings)
+        Returns:
+            ``None``.
+        """
 
-        self.assertEqual(set(interrupts or {}), {"write_file", "edit_file"})
-        self.assertNotIn("execute", interrupts or {})
-        self.assertEqual(
-            interrupts["edit_file"]["allowed_decisions"],
-            ["approve", "edit", "reject"],
+        source = (Path(__file__).parents[1] / "deep_agent" / "agent.py").read_text(
+            encoding="utf-8"
         )
 
-    def test_enable_interrupts_false_disables_hitl(self) -> None:
-        """Флаг enable_interrupts=false должен отключать interrupt_on."""
-
-        settings = replace(load_deep_agent_settings(), enable_interrupts=False)
-        self.assertIsNone(_build_file_edit_interrupts(settings))
+        self.assertNotIn("permissions=", source)
+        self.assertNotIn("interrupt_on=", source)
+        self.assertNotIn("FilesystemPermission", source)
 
     def test_agents_memory_and_conversation_checkpointer_use_native_runtime(self) -> None:
         """Project memory и краткосрочная память должны использовать DeepAgents/LangGraph."""
