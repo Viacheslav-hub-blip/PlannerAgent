@@ -72,6 +72,18 @@ class PythonToolTests(unittest.TestCase):
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
+            'save_dataframe(df, "/reports/export.csv")',
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
+            'df.to_csv("/runs/export.csv", index=False)',
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
+            "а не прямой `df.to_csv(...)`",
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
             "для прототипирования решения до внесения изменений в исходники проекта",
             PYTHON_TOOL_DESCRIPTION,
         )

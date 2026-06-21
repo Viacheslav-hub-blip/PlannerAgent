@@ -12,9 +12,12 @@ from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 
 CODING_AGENT_NAME = "coding-agent"
 CODING_AGENT_DESCRIPTION = (
-    "Исследует кодовую базу и выполняет ограниченные coding-задачи: проектирование, генерацию и изменение "
-    "кода, рефакторинг, исправление ошибок, создание тестов, skills, документации и файловых артефактов. "
-    "Проверяет результат доступными командами и не имеет доступа к load_data."
+    "Use for bounded code and workspace file tasks: inspect a repository, refactor existing code, edit or create "
+    "source files, tests, prompts, skills, documentation, configuration, notebooks, and other text artifacts; convert "
+    "files between supported formats; debug implementation issues; run validation commands; and report changed files "
+    "with evidence. Provide a precise objective, scope, relevant paths or skills, expected artifacts, validation "
+    "commands, and stopping condition. Do not use for table data retrieval, business analytics over source systems, "
+    "or `load_data` calls; "
 )
 
 

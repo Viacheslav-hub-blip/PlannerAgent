@@ -103,6 +103,10 @@ if result is offloaded to an artifact:
 Select only confirmed columns. Include an `event_dt` filter whenever the period is known. For an exact `event_id`
 lookup, the first read may omit the period only to discover `event_dt` and identifiers needed for subsequent reads.
 
+Do not add `LIMIT` unless the original user request or the supervisor objective explicitly contains a row limit,
+sample size, "top N", "первые N", or "не более N строк" requirement. If no such requirement exists, omit `LIMIT` and
+return the full matching result; offload/preview handles large outputs without changing the result population.
+
 When the delegated objective contains a relative period, use the exact dates passed by the supervisor. If the
 supervisor did not pass exact dates but the runtime Current date is visible in context, calculate the period from that
 date. Never replace a current-date relative period with dates from examples, validation cases, demo data, available
@@ -128,6 +132,12 @@ Call contract:
 - convert rows with `rows_to_dataframe(rows)` when tabular operations are needed;
 - print compact results with `print(...)`;
 - save user-facing outputs with `save_json`, `save_text`, or `save_dataframe`.
+
+When saving workspace artifacts from Python, use the helper functions. For DataFrame exports to `/reports/...`,
+`/runs/...`, or another workspace path, call `save_dataframe(df, "/reports/file.csv")` or
+`save_dataframe(df, "/runs/file.csv")`. Do not call `df.to_csv("/runs/file.csv")`, `df.to_excel(...)`, or direct
+`Path("/runs/...").write_text(...)` for workspace paths: third-party libraries may treat `/runs` as the operating
+system root instead of the configured workspace.
 
 Examples:
 

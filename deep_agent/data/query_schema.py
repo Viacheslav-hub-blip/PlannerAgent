@@ -200,7 +200,8 @@ class ParsedDataQuery(BaseModel):
         group_by: Колонки группировки.
         aggregations: Агрегаты для расчёта.
         order_by: Правила сортировки.
-        max_rows: Максимальное число строк результата.
+        max_rows: Максимальное число строк результата. Заполняется только при явном
+            пользовательском запросе на LIMIT/sample/top N.
         problem: Описание проблемы, если запрос нельзя выполнить.
         missing_inputs: Список недостающих обязательных входных данных.
 
@@ -216,7 +217,14 @@ class ParsedDataQuery(BaseModel):
     group_by: list[str] = Field(default_factory=list, description="Колонки группировки.")
     aggregations: list[AggregationSpec] = Field(default_factory=list, description="Агрегаты для расчёта.")
     order_by: list[OrderBySpec] = Field(default_factory=list, description="Правила сортировки результата.")
-    max_rows: int | None = Field(default=None, ge=0, description="Максимальное число строк результата.")
+    max_rows: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Максимальное число строк результата. Значение должно оставаться null, "
+            "если пользователь явно не просил LIMIT, sample, top N, первые N или не более N строк."
+        ),
+    )
     problem: str = Field(default="", description="Описание проблемы, если status не ready.")
     missing_inputs: list[str] = Field(default_factory=list, description="Недостающие обязательные входные данные.")
 
@@ -239,7 +247,8 @@ class ReadTableInput(BaseModel):
             "Период можно не указывать только для точечного WHERE event_id = '<точный_id>'; "
             "такой lookup нужен, чтобы сначала получить event_dt и клиентский ключ. "
             "Фильтры записывай в WHERE обычными SQL-операторами: =, !=, <>, >, >=, <, <=, "
-            "LIKE, CONTAINS, IN, BETWEEN."
+            "LIKE, CONTAINS, IN, BETWEEN. LIMIT не обязателен и допустим только при явном "
+            "пользовательском запросе на ограничение числа строк, sample или top N."
         ),
         examples=[
             (

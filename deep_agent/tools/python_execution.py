@@ -126,6 +126,11 @@ python
 - не выводи огромные DataFrame целиком: печатай shape, columns, head, агрегаты;
 - сохраняй пользовательские артефакты в `/reports` или явно заданный путь;
 - сохраняй временные артефакты в `TOOL_OUTPUTS_DIR`;
+- для workspace-путей вида `/runs/...`, `/reports/...` и других файлов пользователя
+  сохраняй DataFrame только через `save_dataframe`, а JSON/текст через `save_json`/`save_text`;
+- не используй прямые `df.to_csv("/runs/...")`, `df.to_excel("/reports/...")`,
+  `Path("/runs/...").write_text(...)` для workspace-путей: сторонние библиотеки могут
+  воспринять такой путь как системный корень ОС, а не как workspace;
 - для обычного редактирования исходников используй filesystem tools, а не Python;
 - для тестов, сборки и package-команд используй shell `execute`, а не Python.
 
@@ -190,6 +195,17 @@ output_path = save_json("/reports/generated_report.json", {"status": "ok"})
 print(output_path)
 ```
 
+Хорошее решение: сохранить DataFrame в workspace-файл через helper.
+```python
+output_path = save_dataframe(df, "/reports/export.csv")
+print(output_path)
+```
+
+Плохое решение: прямой pandas path к workspace-корню.
+```python
+df.to_csv("/runs/export.csv", index=False)
+```
+
 Хорошее решение: сохранить временный артефакт в каталог текущей сессии.
 ```python
 from pathlib import Path
@@ -211,6 +227,8 @@ print(output_path)
 Работа с путями:
 - для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`;
 - для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
+- для сохранения DataFrame в workspace используй `save_dataframe(df, "/reports/file.csv")`
+  или `save_dataframe(df, "/runs/file.csv")`, а не прямой `df.to_csv(...)`;
 - при работе с pickle бери точный `workspace_file` из результата tool.
 
 Обработка ошибок:

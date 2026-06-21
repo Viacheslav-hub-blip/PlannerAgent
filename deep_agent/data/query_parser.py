@@ -109,6 +109,8 @@ _QUERY_PARSER_SYSTEM_PROMPT = """
 - IN (...) преобразуй в operator="in".
 - BETWEEN преобразуй в operator="between", values=[start, end].
 - Сохраняй строковые идентификаторы строками.
+- max_rows заполняй только если в исходном query явно есть LIMIT <int>. Если LIMIT отсутствует,
+  всегда возвращай "max_rows": null. Не добавляй лимит по умолчанию.
 - Не выдумывай поля, которых нет в query. Если данных недостаточно, верни needs_more_input.
 
 Примеры:
@@ -246,6 +248,7 @@ def _repair_parsed_query_with_llm(
         "Если в query есть SELECT col1, col2, скопируй эти имена в select_columns.\n"
         "Если в query есть COUNT(*) или count(col), перенеси это в aggregations.\n"
         "Если в query есть PERIOD date_col FROM 'start' TO 'end', добавь фильтр between по date_col.\n"
+        "Если в query нет явного LIMIT <int>, установи max_rows=null и не добавляй лимит.\n"
         "Если в query есть равенство через =, ==, eq или equals, используй operator=\"eq\".\n"
         "Если в query есть неравенство через !=, <> или not_equals, используй operator=\"ne\".\n"
         "Если первая строка содержит известный alias таблицы рядом с лишним словом или опечаткой, используй alias.\n"

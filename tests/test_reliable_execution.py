@@ -48,6 +48,7 @@ from deep_agent.prompts.tool_contracts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
+from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION
 from deep_agent.settings import (
     DEFAULT_CONFIG_PATH,
     DeepAgentSettings,
@@ -352,6 +353,11 @@ class ReliableExecutionTests(unittest.TestCase):
             specs[1]["description"],
             DATA_RETRIEVAL_AGENT_DESCRIPTION,
         )
+        self.assertIn("refactor existing code", CODING_AGENT_DESCRIPTION)
+        self.assertIn("edit or create source files", CODING_AGENT_DESCRIPTION)
+        self.assertIn("convert files between supported formats", CODING_AGENT_DESCRIPTION)
+        self.assertIn("run validation commands", CODING_AGENT_DESCRIPTION)
+        self.assertIn("Do not use for table data retrieval", CODING_AGENT_DESCRIPTION)
 
     def test_subagent_builders_return_create_deep_agent_kwargs(self) -> None:
         """Builder-ы должны возвращать независимые kwargs без registry-описания."""
@@ -864,6 +870,21 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
         self.assertIn("material parameters", CODING_AGENT_PROMPT)
         self.assertIn("observed result", CODING_AGENT_PROMPT)
+        self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
+        self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
+        self.assertIn('save_dataframe(df, "/reports/file.csv")', DATA_RETRIEVAL_PROMPT)
+        self.assertIn('Do not call `df.to_csv("/runs/file.csv")`', DATA_RETRIEVAL_PROMPT)
+
+    def test_load_data_description_makes_limit_user_explicit_only(self) -> None:
+        """Описание ``load_data`` должно запрещать неявный LIMIT.
+
+        Returns:
+            ``None``.
+        """
+
+        self.assertIn("LIMIT не является обязательным", READ_TABLE_DESCRIPTION)
+        self.assertIn("Не добавляй LIMIT самостоятельно", READ_TABLE_DESCRIPTION)
+        self.assertIn("LIMIT запрещён", READ_TABLE_DESCRIPTION)
 
     def test_tool_context_notice_text_is_human_readable(self) -> None:
         """Tool notice должен явно сообщать о переданном контексте."""
