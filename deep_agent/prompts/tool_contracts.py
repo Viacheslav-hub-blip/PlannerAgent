@@ -239,6 +239,8 @@ Runs a non-interactive shell command in the tool working directory.
 Input:
 - the command to run;
 - when supported by the runtime: timeout, working directory, and additional execution parameters.
+- Workspace-absolute paths returned by filesystem tools, such as `/VLM PRES.ipynb`, are mapped to real shell paths.
+  Quote paths that contain spaces.
 
 Output:
 - the command exit code, stdout, and stderr.
@@ -255,6 +257,7 @@ Do not use when:
 Example:
 ```text
 execute(command="python -m pytest tests/test_filesystem_path_contract.py -q")
+execute(command="jupyter nbconvert --to script \"/VLM PRES.ipynb\" --output \"/VLM_PRES.py\"")
 ```
 
 Bad example:

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,7 @@ from deepagents.middleware import filesystem as filesystem_middleware
 
 from deep_agent.runtime.filesystem import (
     Utf8FilesystemBackend,
+    Utf8LocalShellBackend,
     configure_read_file_default_limit,
 )
 from deep_agent.settings import workspace_tool_path
@@ -136,6 +138,45 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
             result = workspace_tool_path(file_path, root)
 
         self.assertEqual(result, "/deep_agent/skills/SKILL.md")
+
+    def test_execute_maps_quoted_workspace_path_with_space(self) -> None:
+        """Проверяет shell-доступ к файлу по виртуальному workspace-пути с пробелом.
+
+        Returns:
+            ``None``. Тест подтверждает, что ``execute`` видит тот же файл, что и ``ls``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            notebook_path = root / "VLM PRES.ipynb"
+            notebook_path.write_text("notebook", encoding="utf-8")
+            backend = Utf8LocalShellBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.execute(
+                f'"{sys.executable}" -c "import pathlib, sys; print(pathlib.Path(sys.argv[1]).read_text())" "/VLM PRES.ipynb"'
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("notebook", result.output)
+
+    def test_execute_maps_workspace_output_path_when_parent_exists(self) -> None:
+        """Проверяет запись нового файла по виртуальному workspace-пути.
+
+        Returns:
+            ``None``. Тест подтверждает, что output path внутри workspace тоже маппится.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            backend = Utf8LocalShellBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.execute(
+                f'"{sys.executable}" -c "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text(\'ok\', encoding=\'utf-8\')" "/created file.txt"'
+            )
+            created_text = (root / "created file.txt").read_text(encoding="utf-8")
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(created_text, "ok")
 
     def test_python_fallback_reads_utf8_explicitly(self) -> None:
         """Находит ASCII-поле в UTF-8 файле с русским текстом без использования ripgrep.

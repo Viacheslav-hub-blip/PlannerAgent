@@ -6,12 +6,16 @@
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
+- _rewrite_workspace_paths_in_shell_command: перенос виртуальных workspace-путей в реальные shell-пути.
+- _workspace_shell_path: преобразование одного workspace-пути для shell-команды.
+- _quote_shell_path: безопасное quoting пути для shell-команды.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import shlex
 from pathlib import Path
 
 import wcmatch.glob as wcglob
@@ -244,7 +248,124 @@ class Utf8FilesystemBackend(Utf8SearchMixin, FilesystemBackend):
 
 
 class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
-    """LocalShellBackend рабочего workspace с UTF-8 fallback grep."""
+    """LocalShellBackend рабочего workspace с UTF-8 fallback grep и workspace path rewrite."""
+
+    def execute(
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
+    ):
+        """Выполняет shell-команду с преобразованием виртуальных workspace-путей.
+
+        Args:
+            command: Команда shell, где пути вида ``/file.txt`` относятся к workspace.
+            timeout: Максимальное время выполнения команды в секундах.
+
+        Returns:
+            Результат выполнения команды из базового ``LocalShellBackend``.
+        """
+
+        rewritten_command = _rewrite_workspace_paths_in_shell_command(command, self.cwd)
+        return super().execute(rewritten_command, timeout=timeout)
+
+
+def _rewrite_workspace_paths_in_shell_command(command: str, workspace_root: Path) -> str:
+    """Переписывает виртуальные workspace-пути внутри shell-команды в реальные ОС-пути.
+
+    Args:
+        command: Исходная shell-команда от агента.
+        workspace_root: Реальный корень workspace, где выполняется shell.
+
+    Returns:
+        Команда, в которой существующие или создаваемые workspace-пути вида
+        ``/file.txt`` заменены на абсолютные ОС-пути внутри ``workspace_root``.
+    """
+
+    text = str(command or "")
+    result: list[str] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char in {"'", '"'}:
+            quote = char
+            end = index + 1
+            escaped = False
+            while end < len(text):
+                current = text[end]
+                if current == "\\" and quote == '"' and not escaped:
+                    escaped = True
+                    end += 1
+                    continue
+                if current == quote and not escaped:
+                    break
+                escaped = False
+                end += 1
+            if end >= len(text):
+                result.append(text[index:])
+                break
+            raw_value = text[index + 1 : end]
+            mapped_value = _workspace_shell_path(raw_value, workspace_root)
+            if mapped_value is None:
+                result.append(text[index : end + 1])
+            else:
+                escaped_value = mapped_value.replace("\\", "\\\\") if quote == '"' else mapped_value
+                escaped_value = escaped_value.replace(quote, f"\\{quote}")
+                result.append(f"{quote}{escaped_value}{quote}")
+            index = end + 1
+            continue
+
+        if char.isspace() or char in "|&;<>()":
+            result.append(char)
+            index += 1
+            continue
+
+        end = index
+        while end < len(text) and not text[end].isspace() and text[end] not in "|&;<>()":
+            end += 1
+        token = text[index:end]
+        mapped_token = _workspace_shell_path(token, workspace_root)
+        result.append(_quote_shell_path(mapped_token) if mapped_token is not None else token)
+        index = end
+    return "".join(result)
+
+
+def _workspace_shell_path(value: str, workspace_root: Path) -> str | None:
+    """Преобразует один виртуальный workspace-путь в реальный путь для shell.
+
+    Args:
+        value: Токен или значение внутри кавычек из shell-команды.
+        workspace_root: Реальный корень workspace.
+
+    Returns:
+        Абсолютный POSIX-путь внутри workspace или ``None``, если значение не похоже
+        на workspace-путь.
+    """
+
+    relative_path = strip_workspace_tool_prefix(value, workspace_root)
+    if relative_path is None:
+        return None
+    candidate = workspace_root.resolve() if not relative_path else (workspace_root / relative_path).resolve()
+    try:
+        candidate.relative_to(workspace_root.resolve())
+    except ValueError:
+        return None
+    if candidate.exists() or candidate.parent.exists():
+        return candidate.as_posix()
+    return None
+
+
+def _quote_shell_path(path: str) -> str:
+    """Экранирует путь для shell-команды, если он был вне кавычек.
+
+    Args:
+        path: Реальный путь к файлу или директории.
+
+    Returns:
+        Shell-safe представление пути.
+    """
+
+    return shlex.quote(path)
 
 
 __all__ = [
