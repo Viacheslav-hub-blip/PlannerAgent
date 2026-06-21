@@ -106,6 +106,7 @@ class ToolOutputFileMiddleware(AgentMiddleware):
         query_metadata = _extract_query_metadata(result.artifact)
         artifact = {
             "workspace_file": workspace_path,
+            "absolute_file": str(file_path.resolve()),
             "format": "pkl",
             "rows": len(rows),
             "columns": sorted({key for row in rows for key in row}),
@@ -129,6 +130,7 @@ class ToolOutputFileMiddleware(AgentMiddleware):
         else:
             content = content_text + _build_inline_saved_file_note(
                 workspace_path=workspace_path,
+                real_path=file_path.resolve(),
                 rows=rows,
                 query_metadata=query_metadata,
             )
@@ -241,6 +243,7 @@ def _build_file_summary(
         f"запроса; в контексте сейчас лишь {len(preview)} строк для ознакомления.\n"
         f"Файл: {resolved_path.name}\n"
         f"workspace_file: {workspace_path}\n"
+        f"real_file: {resolved_path}\n"
         f"Формат: pickle (list[dict]).\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
@@ -274,6 +277,7 @@ def _extract_query_metadata(artifact: Any) -> dict[str, Any] | None:
 def _build_inline_saved_file_note(
     *,
     workspace_path: str,
+    real_path: Path,
     rows: list[dict[str, Any]],
     query_metadata: dict[str, Any] | None = None,
 ) -> str:
@@ -285,6 +289,7 @@ def _build_inline_saved_file_note(
         "\n\n[Полный результат сохранён в pickle для переиспользования без повторного load_data]\n"
         f"{query_note}"
         f"workspace_file: {workspace_path}\n"
+        f"real_file: {real_path.resolve()}\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Если следующий шаг — урезанная выборка из ЭТОГО же набора (другие фильтры, подмножество "

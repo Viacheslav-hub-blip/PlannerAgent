@@ -212,6 +212,11 @@ results or saved artifacts instead of repeating reads.
 Use an explicit `event_dt` period for partitioned tables whenever the period is known. An exact `event_id` lookup may
 omit the period only to discover the event date and identifiers required for subsequent reads.
 
+For relative periods such as "today", "yesterday", "last 2 days", or "за последние 2 дня", calculate exact calendar
+dates from the runtime Current date in `<runtime_context>`. Do not infer the period from examples in skills, validation
+cases, demo rows, available partitions, or previously seen table values. If the resulting current-date period has no
+data, report that as the factual result instead of silently switching to an older period.
+
 If several interpretations are plausible, present the ambiguity and supported facts instead of forcing an unsupported
 conclusion.
 </data_principles>

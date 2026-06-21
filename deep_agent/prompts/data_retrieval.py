@@ -103,6 +103,12 @@ if result is offloaded to an artifact:
 Select only confirmed columns. Include an `event_dt` filter whenever the period is known. For an exact `event_id`
 lookup, the first read may omit the period only to discover `event_dt` and identifiers needed for subsequent reads.
 
+When the delegated objective contains a relative period, use the exact dates passed by the supervisor. If the
+supervisor did not pass exact dates but the runtime Current date is visible in context, calculate the period from that
+date. Never replace a current-date relative period with dates from examples, validation cases, demo data, available
+partitions, or previous outputs. If no rows exist for the requested current-date period, return zero rows with that
+period and report the limitation.
+
 Avoid broad scans and raw dumps. Request the complete result needed for the task rather than a preview unless examples
 are explicitly requested. Use a saved full-result artifact for calculations when the table result is offloaded.
 

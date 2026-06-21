@@ -25,6 +25,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
+- _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - _require_workspace_path: проверка принадлежности пути workspace.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
@@ -41,6 +42,7 @@ import shutil
 import uuid
 import weakref
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -87,6 +89,7 @@ from deep_agent.prompts.supervisor import SYSTEM_PROMPT
 from deep_agent.settings import (
     DeepAgentSettings,
     load_deep_agent_settings,
+    workspace_tool_root,
     workspace_tool_path,
 )
 from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
@@ -305,6 +308,10 @@ def build_analytics_deep_agent(
     jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
         workspace_root=resolved_workspace_root,
     )
+    runtime_context_prompt = _build_runtime_context_prompt(
+        resolved_workspace_root,
+        session_tool_outputs_dir,
+    )
     shared_skills_selection: dict[str, Any] = {}
     supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
         skills_root=resolved_skills_root,
@@ -330,18 +337,20 @@ def build_analytics_deep_agent(
         agent_name="coding-agent",
         limit_model_calls=True,
     )
+    coding_agent_spec = build_coding_subagent_spec(
+        model=model,
+        tools=[
+            load_skills_tool,
+            python_tool,
+            project_structure_tool,
+            jupyter_notebook_tool,
+        ],
+        common_middleware=coding_agent_middleware,
+        skill_sources=[skills_workspace_dir],
+    )
+    coding_agent_spec["system_prompt"] = f"{coding_agent_spec['system_prompt']}\n\n{runtime_context_prompt}"
     coding_agent = create_deep_agent(
-        **build_coding_subagent_spec(
-            model=model,
-            tools=[
-                load_skills_tool,
-                python_tool,
-                project_structure_tool,
-                jupyter_notebook_tool,
-            ],
-            common_middleware=coding_agent_middleware,
-            skill_sources=[skills_workspace_dir],
-        ),
+        **coding_agent_spec,
         backend=workspace_backend,
         memory=[agents_memory_path],
     )
@@ -356,18 +365,22 @@ def build_analytics_deep_agent(
             limit_model_calls=True,
         ),
     ]
+    data_retrieval_agent_spec = build_data_retrieval_subagent_spec(
+        model=model,
+        data_tools=[
+            *data_tools,
+            load_skills_tool,
+            python_tool,
+            project_structure_tool,
+        ],
+        common_middleware=data_retrieval_agent_middleware,
+        skill_sources=[skills_workspace_dir],
+    )
+    data_retrieval_agent_spec["system_prompt"] = (
+        f"{data_retrieval_agent_spec['system_prompt']}\n\n{runtime_context_prompt}"
+    )
     data_retrieval_agent = create_deep_agent(
-        **build_data_retrieval_subagent_spec(
-            model=model,
-            data_tools=[
-                *data_tools,
-                load_skills_tool,
-                python_tool,
-                project_structure_tool,
-            ],
-            common_middleware=data_retrieval_agent_middleware,
-            skill_sources=[skills_workspace_dir],
-        ),
+        **data_retrieval_agent_spec,
         backend=data_backend,
         memory=[agents_memory_path],
     )
@@ -379,7 +392,7 @@ def build_analytics_deep_agent(
     )
 
     # Шаг 6. Финальная сборка DeepAgents supervisor.
-    system_prompt = SYSTEM_PROMPT
+    system_prompt = f"{SYSTEM_PROMPT}\n\n{runtime_context_prompt}"
     if system_prompt_suffix:
         system_prompt = f"{system_prompt}\n\n{system_prompt_suffix.strip()}"
 
@@ -412,7 +425,6 @@ def build_analytics_deep_agent(
             else checkpointer
         ),
     )
-    register_session_tool_outputs_cleanup(agent, session_tool_outputs_dir)
     return agent
 
 
@@ -708,6 +720,43 @@ def _build_terminal_environment() -> dict[str, str]:
         "WINDIR",
     )
     return {name: os.environ[name] for name in allowed_names if name in os.environ}
+
+
+def _build_runtime_context_prompt(workspace_root: Path, tool_outputs_dir: Path) -> str:
+    """Формирует runtime-блок для system prompt с датой запуска и путями.
+
+    Args:
+        workspace_root: Реальный корень workspace текущего запуска.
+        tool_outputs_dir: Реальный каталог session tool outputs.
+
+    Returns:
+        XML-подобный блок system prompt с текущей датой, корнем workspace и правилами
+        интерпретации относительных дат.
+    """
+
+    today = date.today().isoformat()
+    workspace_outputs_path = workspace_tool_path(
+        tool_outputs_dir,
+        workspace_root,
+        directory=True,
+    )
+    return f"""
+<runtime_context>
+## Runtime Context
+
+Current date: {today}.
+Workspace root: {workspace_tool_root(workspace_root)} maps to real path {workspace_root.resolve()}.
+Session tool outputs: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
+
+For relative dates in user requests, calculate the period from Current date. For example, "last 2 days" means the
+two calendar days ending on Current date unless the user explicitly defines another business convention. Never take
+relative dates from examples, validation cases, demo data, or visible table partitions.
+
+When reporting saved files, include the workspace path and, when available, the real path under Workspace root. If the
+user asked to see or download a result, save a user-facing artifact to `/reports` or the explicit path requested by
+the user, not only to session tool outputs.
+</runtime_context>
+""".strip()
 
 
 def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:

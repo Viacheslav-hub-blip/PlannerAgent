@@ -19,6 +19,7 @@ from typing import Any
 
 from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import ToolMessage
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
@@ -30,6 +31,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from deep_agent.agent import (
     _agents_memory_path,
     _build_native_runtime_middleware,
+    _build_runtime_context_prompt,
     build_conversation_checkpointer,
     build_skills_backend,
     build_supervisor_backend,
@@ -670,6 +672,38 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
 
+    def test_tool_output_summary_includes_virtual_and_real_paths(self) -> None:
+        """Offload summary должен показывать workspace_file и реальный путь файла.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            outputs_dir = workspace / "runs" / "deep_agent_tool_outputs" / "session_1"
+            middleware = ToolOutputFileMiddleware(
+                output_dir=outputs_dir,
+                workspace_root=workspace,
+                min_rows_to_save=1,
+            )
+            result = middleware._process_tool_message(
+                result=ToolMessage(
+                    content="[]",
+                    artifact=[{"event_id": "1"}, {"event_id": "2"}],
+                    tool_call_id="call-1",
+                    name="load_data",
+                ),
+                tool_name="load_data",
+            )
+            absolute_file_exists = Path(result.artifact["absolute_file"]).exists()
+
+        self.assertIn("workspace_file: /runs/deep_agent_tool_outputs/session_1/", result.content)
+        self.assertIn("real_file:", result.content)
+        self.assertIn(str(outputs_dir), result.content)
+        self.assertEqual(result.artifact["workspace_file"].split("/")[1], "runs")
+        self.assertTrue(absolute_file_exists)
+
     def test_agent_builder_does_not_add_permissions_or_interrupt_fallback(self) -> None:
         """Сборка агента не должна содержать permission rules или HITL fallback.
 
@@ -684,6 +718,41 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertNotIn("permissions=", source)
         self.assertNotIn("interrupt_on=", source)
         self.assertNotIn("FilesystemPermission", source)
+
+    def test_runtime_context_prompt_defines_current_date_and_artifact_paths(self) -> None:
+        """Runtime prompt должен явно фиксировать дату и реальные пути артефактов.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            outputs_dir = workspace / "runs" / "deep_agent_tool_outputs" / "session_1"
+            outputs_dir.mkdir(parents=True)
+            prompt = _build_runtime_context_prompt(workspace, outputs_dir)
+
+        self.assertIn("Current date:", prompt)
+        self.assertIn("Workspace root:", prompt)
+        self.assertIn("Session tool outputs:", prompt)
+        self.assertIn("last 2 days", prompt)
+        self.assertIn("Never take", prompt)
+        self.assertIn("examples", prompt)
+        self.assertIn("demo data", prompt)
+        self.assertIn("/reports", prompt)
+
+    def test_agent_builder_keeps_session_tool_outputs_persistent(self) -> None:
+        """Сборка агента не должна удалять session tool outputs при закрытии графа.
+
+        Returns:
+            ``None``.
+        """
+
+        source = (Path(__file__).parents[1] / "deep_agent" / "agent.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("\n    register_session_tool_outputs_cleanup(agent", source)
 
     def test_agents_memory_and_conversation_checkpointer_use_native_runtime(self) -> None:
         """Project memory и краткосрочная память должны использовать DeepAgents/LangGraph."""
