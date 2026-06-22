@@ -56,6 +56,27 @@ Rules:
 - Для `ipynb_to_py` исходный файл должен иметь расширение `.ipynb`, целевой файл `.py`.
 - Инструмент только конвертирует файлы и не выполняет код notebook.
 - При `ipynb_to_py` outputs и execution_count игнорируются.
+- Markdown/text cells are created only from percent cells marked exactly as `# %% [markdown]`.
+- Do not put text-only explanations into a code cell as `# Markdown: ...` or standalone triple-quoted strings.
+
+Good percent-script:
+```python
+# %% [markdown]
+# # Загрузка данных
+# Этот блок описывает входные файлы и параметры.
+
+# %%
+import pandas as pd
+df = pd.read_csv("/input.csv")
+```
+
+Bad percent-script:
+```python
+# %%
+# Markdown: Загрузка данных
+'''Этот блок описывает входные файлы и параметры.'''
+import pandas as pd
+```
 
 Result:
 Возвращает JSON со статусом, режимом, workspace-путями созданных файлов и числом ячеек.

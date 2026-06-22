@@ -209,6 +209,14 @@ Stopping condition: python tool accepts canonical workspace paths and tests pass
 Treat large tables as expensive resources. Request only the data needed for the user's goal and reuse successful
 results or saved artifacts instead of repeating reads.
 
+When the user asks a follow-up about an existing retrieval with phrases like "among these", "in this export",
+"in these rows", "среди этих", "по этой выгрузке", "по ним", or "в этих данных", first locate and reuse the saved
+artifact from the successful previous `load_data` or `python` call. Use `python` with
+`read_pickle_file(workspace_file)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path to filter, aggregate,
+visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
+missing, unreadable, or does not cover the requested source, period, fields, or population. If a new read is required,
+state exactly which coverage condition is missing.
+
 Use an explicit `event_dt` period for partitioned tables whenever the period is known. An exact `event_id` lookup may
 omit the period only to discover the event date and identifiers required for subsequent reads.
 
@@ -230,13 +238,12 @@ conclusion.
 ## Filesystem Principles
 
 Treat `/` in filesystem tools as the configured user workspace root. Save user-facing artifacts at the workspace root
-or in task-appropriate workspace folders such as `/reports`, `/runs`, `/notebooks`, or a path explicitly requested by
-the user.
+(`/`) by default, or at a path explicitly requested by the user.
 
 Treat `/deep_agent/` as the agent implementation directory. Read it when code, skills, prompts, or agent internals are
 relevant, but do not create, overwrite, or edit files under `/deep_agent/` unless the user explicitly asks to change
 the agent itself or the delegated coding task requires a targeted change there. Do not use `/deep_agent/` as a default
-location for analysis outputs, notebooks, temporary files, generated reports, or user data.
+location for analysis outputs, notebooks, temporary files, generated artifacts, or user data.
 </filesystem_principles>
 
 <reporting>

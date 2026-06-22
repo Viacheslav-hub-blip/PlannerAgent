@@ -133,8 +133,8 @@ Call contract:
 - print compact results with `print(...)`;
 - save user-facing outputs with `save_json`, `save_text`, or `save_dataframe`.
 
-When saving workspace artifacts from Python, use the helper functions. For DataFrame exports to `/reports/...`,
-`/runs/...`, or another workspace path, call `save_dataframe(df, "/reports/file.csv")` or
+When saving workspace artifacts from Python, use the helper functions. For DataFrame exports to the workspace root,
+`/runs/...`, or another workspace path, call `save_dataframe(df, "/file.csv")` or
 `save_dataframe(df, "/runs/file.csv")`. Do not call `df.to_csv("/runs/file.csv")`, `df.to_excel(...)`, or direct
 `Path("/runs/...").write_text(...)` for workspace paths: third-party libraries may treat `/runs` as the operating
 system root instead of the configured workspace.

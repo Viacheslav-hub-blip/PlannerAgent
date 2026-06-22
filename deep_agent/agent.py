@@ -753,8 +753,8 @@ two calendar days ending on Current date unless the user explicitly defines anot
 relative dates from examples, validation cases, demo data, or visible table partitions.
 
 When reporting saved files, include the workspace path and, when available, the real path under Workspace root. If the
-user asked to see or download a result, save a user-facing artifact to `/reports` or the explicit path requested by
-the user, not only to session tool outputs.
+user asked to see or download a result, save a user-facing artifact to `/` or the explicit path requested by the user,
+not only to session tool outputs.
 </runtime_context>
 """.strip()
 

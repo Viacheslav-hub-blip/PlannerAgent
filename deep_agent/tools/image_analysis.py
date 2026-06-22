@@ -41,7 +41,7 @@ class AnalyzeImageInput(BaseModel):
     image_path: str = Field(
         description=(
             "Путь к изображению. Можно передать абсолютный путь ОС или workspace-путь "
-            "вида `/reports/slide.png`, который будет разрешён "
+            "вида `/slide.png`, который будет разрешён "
             "относительно настроенного workspace_root."
         ),
     )

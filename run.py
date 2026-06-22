@@ -9,12 +9,45 @@
 - _tool_call_status: форматирование статуса вызова инструмента.
 - _compact_args_preview: компактное представление аргументов инструмента.
 - _last_message_text: извлечение текста последнего ответа агента.
+- _configure_openrouter_runtime: настройка OpenRouter для локального CLI-запуска.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_MODEL = "google/gemma-4-31b-it:free"
+OPENROUTER_TEMPERATURE = "0.2"
+OPENROUTER_TIMEOUT_SECONDS = "120"
+OPENROUTER_MAX_RETRIES = "0"
+
+# .\.venv\Scripts\Activate.ps1
+# $env:OPENAI_API_KEY = "<OPENROUTER_API_KEY>"
+# python run.py
+
+
+def _configure_openrouter_runtime() -> None:
+    """Настраивает OpenRouter как OpenAI-compatible провайдер для запуска из этого файла.
+
+    Args:
+        Отсутствуют. Функция использует константы модуля и переменные окружения.
+
+    Returns:
+        ``None``. В окружение процесса добавляются только отсутствующие настройки модели.
+    """
+
+    os.environ.setdefault("DEEP_AGENT_MODEL_PROVIDER", "openai")
+    os.environ.setdefault("OPENAI_BASE_URL", OPENROUTER_BASE_URL)
+    os.environ.setdefault("DEEP_AGENT_MODEL", OPENROUTER_MODEL)
+    os.environ.setdefault("DEEP_AGENT_TEMPERATURE", OPENROUTER_TEMPERATURE)
+    os.environ.setdefault("DEEP_AGENT_TIMEOUT", OPENROUTER_TIMEOUT_SECONDS)
+    os.environ.setdefault("DEEP_AGENT_MAX_RETRIES", OPENROUTER_MAX_RETRIES)
+
+
+_configure_openrouter_runtime()
 
 from deep_agent.agent import build_analytics_deep_agent
 from deep_agent.settings import load_deep_agent_settings
@@ -22,17 +55,16 @@ from deep_agent.runtime.tracing import FileTraceCallbackHandler, build_trace_fil
 from tests.support.fake_spark_data import build_fake_spark_data_tools
 from model import model
 
-USER_MESSAGE_1 = (
+USER_MESSAGE_2 = (
     "Сколько сработок правила «DENY оплата обучения после смены устройства» было с 24 января "
     "по 6 февраля 2026 года включительно? "
 )
-USER_MESSAGE_2 = (
+USER_MESSAGE_1 = (
     "Сколько уникальных клиентов имели сработку правила «DENY нетипичная сумма оплаты курсов» "
     "с 24 января по 6 февраля 2026 года включительно? "
 )
-USER_MESSAGE_3 = (
-    "Сколько сработок было у клиента с epk_id = 2099007770421995000001 с 24 января "
-    "по 20 февраля 2026 года включительно? "
+USER_MESSAGE = (
+   "найди  в моих файлах где находится prompt запрос для coding agent"
 )
 USER_MESSAGE_4 = (
     "Какова общая сумма в рублях по сработкам клиента epk_id = 2099007770421995000001 "
@@ -60,7 +92,7 @@ USER_MESSAGE_9 = (
 )
 USER_MESSAGE_10 = (
     "Сколько уникальных непустых значений event_description было среди сработок с 24 января "
-    "по 20 февраля 2026 года включительно? "
+    "по 20 февраля 2026 года включительно? Какие они были? Сохрани в виде таблицы "
 )
 USER_MESSAGE_11 = (
     "Сколько сработок с описанием, относящимся к оплате образования, было с 24 января "
@@ -143,111 +175,6 @@ USER_MESSAGE_30 = (
     "и среднее количество транзакций на один клиентский день с 24 января по 20 февраля 2026 года "
     "включительно."
 )
-
-# Для запуска другого кейса замените номер переменной в следующей строке.
-USER_MESSAGE = r"""
-PS C:\Users\Slav4ik\PycharmProjects\deepagent> powershell -ExecutionPolicy Bypass -File .\local_ui\start.ps1
-Agent Server: http://127.0.0.1:2024
-Assistant ID: analytics-agent
-UI: http://127.0.0.1:3000
-Остановка обоих процессов: Ctrl+C
-yarn run v1.22.22
-$ next dev --turbopack --port 3000
-▲ Next.js 16.2.6 (Turbopack)
-- Local:         http://localhost:3000
-- Network:       http://10.240.123.4:3000
-- Environments: .env.local
-✓ Ready in 18.7s
-⚠ Slow filesystem detected. The benchmark took 432ms. If C:\Users\Slav4ik\PycharmProjects\deepagent\local_ui\.runtime\deep-agents-ui\.next/dev is a network drive, consider moving it to a local folder.
-See more: https://nextjs.org/docs/app/guides/local-development
-
- GET / 200 in 7.0s (next.js: 5.5s, application-code: 1536ms)
- GET / 200 in 7.1s (next.js: 5.1s, application-code: 2.0s)
-⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "127.0.0.1".
-Cross-origin access to Next.js dev resources is blocked by default for safety.
-
-To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
-
-// next.config.js
-module.exports = {
-  allowedDevOrigins: ['127.0.0.1'],
-}
-
-Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
-⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "10.240.123.4".
-Cross-origin access to Next.js dev resources is blocked by default for safety.
-
-To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
-
-// next.config.js
-module.exports = {
-  allowedDevOrigins: ['10.240.123.4'],
-}
-
-Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
- GET / 200 in 51ms (next.js: 6ms, application-code: 46ms)
-
-
-я запускаю тебя командой 
-
-на http://127.0.0.1:2024
-{"ok":true}
-
-но на порте 3000 ничего не загружается. В чем может быть проблема? 
-"""
-
-USER_MESSAGE = r"""
-как исправить ошибку при твоем запуске:
-PS C:\Users\Slav4ik\PycharmProjects\deepagent> powershell -ExecutionPolicy Bypass -File .\local_ui\start.ps1
-Agent Server: http://127.0.0.1:2024
-Assistant ID: analytics-agent
-UI: http://127.0.0.1:3000
-Остановка обоих процессов: Ctrl+C
-yarn run v1.22.22
-$ next dev --turbopack --port 3000
-▲ Next.js 16.2.6 (Turbopack)
-- Local:         http://localhost:3000
-- Network:       http://10.240.123.4:3000
-- Environments: .env.local
-✓ Ready in 18.7s
-⚠ Slow filesystem detected. The benchmark took 432ms. If C:\Users\Slav4ik\PycharmProjects\deepagent\local_ui\.runtime\deep-agents-ui\.next/dev is a network drive, consider moving it to a local folder.
-See more: https://nextjs.org/docs/app/guides/local-development
-
- GET / 200 in 7.0s (next.js: 5.5s, application-code: 1536ms)
- GET / 200 in 7.1s (next.js: 5.1s, application-code: 2.0s)
-⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "127.0.0.1".
-Cross-origin access to Next.js dev resources is blocked by default for safety.
-
-To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
-
-// next.config.js
-module.exports = {
-  allowedDevOrigins: ['127.0.0.1'],
-}
-
-Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
-⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr from "10.240.123.4".
-Cross-origin access to Next.js dev resources is blocked by default for safety.
-
-To allow this host in development, add it to "allowedDevOrigins" in next.config.js and restart the dev server:
-
-// next.config.js
-module.exports = {
-  allowedDevOrigins: ['10.240.123.4'],
-}
-
-Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
- GET / 200 in 51ms (next.js: 6ms, application-code: 46ms)
-
-
-я запускаю тебя командой 
-
-на http://127.0.0.1:2024
-{"ok":true}
-
-но на порте 3000 ничего не загружается. В чем может быть проблема? 
-
-"""
 
 TOOL_STATUS_LABELS = {
     "write_todos": "Составляю план",
@@ -452,4 +379,4 @@ def _last_message_text(result: Any) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main_stream())
-#создать план для выполнения взаимоисключабщими агентами, чьи результаты в дальнейшем будут синтезированы в один ответ
+# создать план для выполнения взаимоисключабщими агентами, чьи результаты в дальнейшем будут синтезированы в один ответ
