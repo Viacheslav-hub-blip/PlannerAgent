@@ -110,6 +110,9 @@ After every tool or subagent result:
 - treat the output as evidence, not as guaranteed success;
 - decide whether it satisfies the stopping condition;
 - do not repeat the same action unchanged;
+- do not call tools in a loop after a successful result; if a file was saved or data was retrieved successfully, use
+  that result and continue to the next distinct step or final answer instead of retrying with a slightly different
+  filename, wording, or equivalent arguments;
 - if it failed, change the input, tool, scope, or approach before retrying.
 </operational_rules>
 

@@ -124,7 +124,7 @@ Limitations:
 write_file
 ---
 Description:
-Creates a new text file.
+Writes a text file.
 
 Input:
 - the target file path;
@@ -133,10 +133,10 @@ Input:
 
 Output:
 - the write result plus a verification notice, or an error message if the file cannot be read back after writing.
-- an error message if the target file already exists.
 
 Use when:
-- the result should be saved as a new file.
+- the result should be saved as a text file;
+- the complete content of an existing text file should be intentionally replaced.
 
 Example:
 ```text
@@ -145,8 +145,8 @@ write_file(file_path="/summary.md", content="<complete markdown report>")
 
 Limitations:
 - the tool works with text files;
-- the tool cannot overwrite an existing file. Delete the old file first when intentional replacement is required;
-- example delete command: `rm /summary.md`;
+- the tool overwrites an existing file at the same path; do not create duplicate filenames with suffixes like
+  `_final`, `_final_final`, or `_new` after a successful write;
 - `/` is the configured user workspace root and is the default place for user artifacts;
 - user-facing artifacts should be saved in `/` by default, or an explicit user-requested path;
 - `/deep_agent/` is the agent implementation directory, not an output folder;

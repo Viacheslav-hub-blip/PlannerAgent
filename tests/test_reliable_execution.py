@@ -823,6 +823,8 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("single file name can be passed through `glob`", grep_description)
         self.assertIn("exit code, stdout, and stderr", TOOL_DESCRIPTION_OVERRIDES["execute"])
         self.assertIn("`/` is the configured user workspace root", write_file_description)
+        self.assertIn("overwrites an existing file at the same path", write_file_description)
+        self.assertIn("_final_final", write_file_description)
         self.assertIn("do not write under `/deep_agent/`", write_file_description)
         self.assertIn("should be edited only for explicit agent code", edit_file_description)
 
@@ -861,6 +863,7 @@ class ReliableExecutionTests(unittest.TestCase):
         )
         self.assertIn("Never expose private chain-of-thought", SYSTEM_PROMPT)
         self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
+        self.assertIn("do not call tools in a loop after a successful result", SYSTEM_PROMPT)
         self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
         self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
         self.assertIn("среди этих", SYSTEM_PROMPT)

@@ -124,6 +124,27 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
         self.assertEqual(virtual_result.file_data["content"], "same file\n")
         self.assertEqual(alias_result.file_data["content"], "same file\n")
 
+    def test_write_overwrites_existing_file(self) -> None:
+        """``write`` должен перезаписывать существующий файл тем же путем.
+
+        Returns:
+            ``None``. Тест подтверждает, что ``write_file`` не вынуждает агента
+            создавать дубликаты с новыми именами.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            file_path = root / "summary.md"
+            file_path.write_text("old\n", encoding="utf-8")
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.write("/summary.md", "new\n")
+            saved_content = file_path.read_text(encoding="utf-8")
+
+        self.assertIsNone(result.error)
+        self.assertEqual(result.path, "/summary.md")
+        self.assertEqual(saved_content, "new\n")
+
     def test_workspace_tool_path_uses_virtual_root(self) -> None:
         """Возвращает workspace-путь относительно виртуального ``/``.
 

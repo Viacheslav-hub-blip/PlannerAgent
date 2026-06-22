@@ -3,6 +3,7 @@
 Содержит:
 - configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
 - WorkspacePathPrefixMixin: единое отображение полного workspace-префикса в tools.
+- WorkspacePathPrefixMixin.write: запись текстового файла с разрешенной перезаписью.
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
@@ -14,12 +15,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shlex
 from pathlib import Path
 
 import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
+from deepagents.backends.protocol import WriteResult
 
 from deep_agent.settings import strip_workspace_tool_prefix, workspace_tool_root
 
@@ -108,6 +111,38 @@ class WorkspacePathPrefixMixin:
             return self.tool_path_root
         base = self.tool_path_root.rstrip("/")
         return f"{base}/{relative_path}" if base else f"/{relative_path}"
+
+    def write(
+        self,
+        file_path: str,
+        content: str,
+    ) -> WriteResult:
+        """Записывает текстовый файл, создавая новый или перезаписывая существующий.
+
+        Args:
+            file_path: Виртуальный путь файла внутри workspace.
+            content: Полное текстовое содержимое, которое нужно сохранить.
+
+        Returns:
+            ``WriteResult`` с путем при успешной записи или текстом ошибки при сбое.
+        """
+
+        try:
+            resolved_path = self._resolve_path(file_path)
+        except (OSError, RuntimeError) as error:
+            return WriteResult(error=f"Error writing file '{file_path}': {error}")
+
+        try:
+            resolved_path.parent.mkdir(parents=True, exist_ok=True)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(resolved_path, flags, 0o644)
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as file:
+                file.write(content)
+            return WriteResult(path=file_path)
+        except (OSError, UnicodeEncodeError) as error:
+            return WriteResult(error=f"Error writing file '{file_path}': {error}")
 
     def _strip_workspace_prefix(self, key: str) -> str:
         """Удаляет полный workspace-префикс перед передачей пути в virtual backend.
