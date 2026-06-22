@@ -745,7 +745,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Never take", prompt)
         self.assertIn("examples", prompt)
         self.assertIn("demo data", prompt)
-        self.assertIn("/reports", prompt)
+        self.assertIn("save a user-facing artifact to `/`", prompt)
 
     def test_agent_builder_keeps_session_tool_outputs_persistent(self) -> None:
         """Сборка агента не должна удалять session tool outputs при закрытии графа.
@@ -863,6 +863,9 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
         self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
         self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
+        self.assertIn("среди этих", SYSTEM_PROMPT)
+        self.assertIn("read_pickle_file(workspace_file)", SYSTEM_PROMPT)
+        self.assertIn("Do not delegate a new `load_data`", SYSTEM_PROMPT)
         self.assertIn("bounded code and workspace tasks", CODING_AGENT_PROMPT)
         self.assertIn("Do not access table data", CODING_AGENT_PROMPT)
         self.assertIn("`/deep_agent/` is the agent implementation directory", CODING_AGENT_PROMPT)
@@ -872,7 +875,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("observed result", CODING_AGENT_PROMPT)
         self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
         self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
-        self.assertIn('save_dataframe(df, "/reports/file.csv")', DATA_RETRIEVAL_PROMPT)
+        self.assertIn('save_dataframe(df, "/file.csv")', DATA_RETRIEVAL_PROMPT)
         self.assertIn('Do not call `df.to_csv("/runs/file.csv")`', DATA_RETRIEVAL_PROMPT)
 
     def test_load_data_description_makes_limit_user_explicit_only(self) -> None:
@@ -955,6 +958,32 @@ class ReliableExecutionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "временного интервала"):
             _parsed_query_to_read_args(parsed)
+
+    def test_text_column_semantic_filter_skill_is_not_event_description_only(self) -> None:
+        """Skill смысловой фильтрации должен работать с любой текстовой колонкой."""
+
+        skill_path = (
+            Path(__file__).resolve().parents[1]
+            / "deep_agent"
+            / "skills"
+            / "poisk-zapisey-po-opisaniyu"
+            / "SKILL.md"
+        )
+
+        content = skill_path.read_text(encoding="utf-8")
+
+        self.assertIn("name: text-column-semantic-filter", content)
+        self.assertIn("text_column", content)
+        self.assertIn("unique_values", content)
+        self.assertIn("exact_candidates", content)
+        self.assertIn("atm_merchant_name", content)
+        self.assertIn("Загрузи полный список `unique_values` в контекст анализа", content)
+        self.assertIn("Не переходи к итоговому списку, пока не проверены все батчи", content)
+        self.assertIn("Не привязывай workflow к `event_description`", content)
+        self.assertIn("Не используй `LIKE` или `CONTAINS`", content)
+        self.assertIn("Не добавляй логику финальной выборки строк в этот skill", content)
+        self.assertNotIn("result_fields", content)
+        self.assertNotIn("final_artifact", content)
 
 
 def _create_test_skills(root: Path) -> Path:

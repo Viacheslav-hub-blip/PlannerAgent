@@ -1,52 +1,90 @@
 ---
-name: poisk-zapisey-po-opisaniyu
-description: "Ищи, считай, выгружай и анализируй записи по смысловой категории event_description, когда точные значения заранее неизвестны. Используй для запросов про образование, обучение, курсы, экзамены, репетиторов, доставку, такси, подписки, маркетплейсы и другие категории, заданные естественным языком."
+name: text-column-semantic-filter
+description: "Используй этот skill, когда нужно определить точные значения любого текстового столбца, которые соответствуют смысловой категории пользователя, а сами значения заранее неизвестны. Подходит для текстовых перечислений и описаний: event_description, merchant/name, rule/category, product, channel, comment, status, reason и других строковых колонок"
 ---
-
-# Поиск записей по смысловому описанию
-
-Используй, когда пользователь просит найти, посчитать, выгрузить или проанализировать операции/события по смысловой категории.
-
-Базовая таблица: обычно `hits`, если пользователь говорит о сработках. Для raw-истории переходи в `cards` или `uko` по правилам `/deep_agent/skills/hit-table/joins.md`.
 
 ## Алгоритм
 
-1. Выбери таблицу с `event_description` и нужным периодом.
-2. Загрузи полный набор строк `event_description` за период без агрегации и без ограничивающего `LIMIT`.
-3. Найди уникальные `event_description` из полного набора строк, не подменяя этот шаг предварительным `GROUP BY`.
-4. Выбери все ТОЧНЫЕ значения `event_description`, которые по смыслу соответствуют категории пользователя. Это список exact candidates, а не список ключевых слов.
-5. Если нужна детализация по другим полям, выполни полную выгрузку только по ТОЧНЫМ выбранным значениям `event_description`: используй `event_description IN (...)` или цепочку точных равенств. Не используй `CONTAINS` или `LIKE` на этом шаге.
-6. Посчитай результат по полной выборке или по агрегату, построенному после выбора точных смысловых кандидатов.
+1. Определи `text_column`
+2. Получи полный список уникальных непустых значений этой колонки в рамках уже заданного источника
+3. Загрузи полный список `unique_values` в контекст анализа. Не классифицируй только preview, sample или первые строки.
+4. Сравни каждое значение из `unique_values` со смысловой категорией пользователя.
+5. Верни только точные значения из исходной колонки, без переформулировок, масок, `LIKE`, `CONTAINS` и выдуманных
+   вариантов.
+6. Если значений слишком много для одного контекста, раздели `unique_values` на батчи, классифицируй каждый батч и
+   объедини результаты. Не переходи к итоговому списку, пока не проверены все батчи.
+7. Если подходящих значений нет, верни пустой `exact_candidates` и evidence: источник значений, колонка, количество
+   проверенных уникальных значений и примененные ограничения.
 
-## Пример для load_data
-
-```text
-query:
-LOAD hits
-PERIOD event_dt FROM '20260101' TO '20260131'
-SELECT event_description, event_dt
-```
-
-## Пример финальной выгрузки по выбранным значениям
+Для решения таких задач важно использовать именно llm для определения подходящих значений
+## Шаблон Делегирования
 
 ```text
-query:
-LOAD hits
-PERIOD event_dt FROM '20260101' TO '20260131'
-SELECT event_id, event_dt, event_time, epk_id, fio, event_description, main_rule, transaction_amount, transaction_amount_in_rub, policy_action, resolution_last
-WHERE event_description IN ('Оплата обучения', 'Оплата экзамена', 'Оплата учебных материалов', 'Оплата образовательной платформы', 'Оплата занятий с репетитором', 'Оплата онлайн-курсов')
+delegate data-retrieval-agent:
+  objective: загрузить все уникальные непустые значения выбранной текстовой колонки
+  inputs:
+    text_column: <колонка для смысловой классификации>
+    source: <таблица или существующий artifact, если уже определен>
+    period: <event_dt/date range, если уже задан пользователем или workflow>
+    base_filters: <фильтры, которые уже подтверждены до применения semantic filter>
+  expected evidence:
+    source, period, text_column, unique value count, artifact path
+  stopping condition:
+    полный список unique_values доступен для LLM-классификации значений text_column
 ```
 
-## Ограничения
+```text
+classify_text_column_values:
+    input:
+        text_column: <имя текстовой колонки>
+        user_category: <смысловая категория из запроса пользователя>
+        unique_values: <полный список уникальных значений text_column>
 
-- Не делай выводы по preview.
-- Не используй `GROUP BY` для первого шага уникальных описаний: сначала нужен полный набор.
-- Если результат сохранён в `.pkl`, не делай выводы по preview; используй только полный результат или запроси агрегат по выбранным кандидатам.
-- После выбора точных кандидатов запрещено заменять их ключевыми словами или морфологически близкими подстроками. Например, `образовательная платформа` не заменяет точное значение `Оплата образовательной платформы`, а `курсы` не заменяет `Оплата онлайн-курсов`.
-- Для категории "образование" включай близкие формулировки как смысловые кандидаты: обучение, онлайн-курсы, образовательная платформа, экзамен, репетитор, учебные материалы. Если такие формулировки найдены в полном наборе, используй их точные значения `event_description` в финальной выгрузке.
+    process:
+        exact_candidates = []
+        for value in unique_values:
+            if value точно соответствует user_category по смыслу:
+                exact_candidates.append(value)
 
-## Когда читать дополнительные файлы
+    output:
+        text_column
+        user_category
+        exact_candidates
+        checked_unique_values_count
+        evidence: source, period, filters, unique_values_artifact
+        limitations
+```
 
-- Если нужна таблица `hits`, смотри `/deep_agent/skills/hit-table/SKILL.md`.
-- Если нужны raw-поля карточного канала, смотри `/deep_agent/skills/cards-event-table/SKILL.md`.
-- Если нужны raw-поля ДБО/СБП, смотри `/deep_agent/skills/uko-event-table/SKILL.md`.
+## Примеры Запросов
+
+### Получить все значения текстовой колонки
+
+```text
+LOAD hits
+PERIOD event_dt FROM '20260619' TO '20260621'
+SELECT event_description
+WHERE event_description IS NOT NULL
+```
+
+```text
+LOAD cards
+PERIOD event_dt FROM '20260619' TO '20260621'
+SELECT atm_merchant_name
+WHERE atm_merchant_name IS NOT NULL
+```
+
+## Пример Результата Классификации
+
+```text
+text_column: atm_merchant_name
+user_category: образовательные сервисы
+checked_unique_values_count: 3842
+exact_candidates:
+  - UNIVERSITY STORE
+  - ONLINE SCHOOL
+  - COURSE PLATFORM
+evidence:
+  unique_values_artifact: /runs/atm_merchant_name_unique_values.pkl
+limitations:
+  - классификация выполнена только по значениям text_column, без анализа остальных полей записи
+```

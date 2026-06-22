@@ -81,7 +81,7 @@ Lists the contents of one directory.
 
 Input:
 - `path`: an absolute directory path in the tools file namespace.
-- Use canonical POSIX workspace paths such as `/reports/` or `/deep_agent/agent.py`; do not pass Windows paths.
+- Use canonical POSIX workspace paths such as `/` or `/deep_agent/agent.py`; do not pass Windows paths.
 
 Output:
 - a list of files and subdirectories, or an error message for inaccessible or missing paths.
@@ -100,7 +100,7 @@ Input:
 - `file_path`: an absolute file path in the tools file namespace.
 - `offset`: the first line to read when paginating.
 - `limit`: the maximum number of lines to read.
-- Use canonical POSIX workspace paths such as `/reports/report.md`; do not pass Windows paths.
+- Use canonical POSIX workspace paths such as `/report.md`; do not pass Windows paths.
 
 Output:
 - the requested text fragment and metadata about the range that was read.
@@ -124,30 +124,31 @@ Limitations:
 write_file
 ---
 Description:
-Creates a text file or fully replaces the contents of an existing file.
+Creates a new text file.
 
 Input:
 - the target file path;
 - the complete new text content for the file.
-- Use canonical POSIX workspace paths such as `/reports/report.md`; do not pass Windows paths.
+- Use canonical POSIX workspace paths such as `/report.md`; do not pass Windows paths.
 
 Output:
 - the write result plus a verification notice, or an error message if the file cannot be read back after writing.
+- an error message if the target file already exists.
 
 Use when:
-- the result should be saved as a new file;
-- an existing file should be replaced as a whole.
+- the result should be saved as a new file.
 
 Example:
 ```text
-write_file(file_path="/reports/summary.md", content="<complete markdown report>")
+write_file(file_path="/summary.md", content="<complete markdown report>")
 ```
 
 Limitations:
 - the tool works with text files;
+- the tool cannot overwrite an existing file. Delete the old file first when intentional replacement is required;
+- example delete command: `rm /summary.md`;
 - `/` is the configured user workspace root and is the default place for user artifacts;
-- user-facing artifacts should be saved in `/reports`, `/runs`, another task-appropriate workspace folder,
-  or an explicit user-requested path;
+- user-facing artifacts should be saved in `/` by default, or an explicit user-requested path;
 - `/deep_agent/` is the agent implementation directory, not an output folder;
 - do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
 - partial changes to an existing file are usually handled through `edit_file`.
