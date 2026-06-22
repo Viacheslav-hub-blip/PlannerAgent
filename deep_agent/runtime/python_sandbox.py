@@ -84,6 +84,14 @@ class DeepAgentPythonSandbox:
             """
 
             raw_path = str(path)
+            if path.is_absolute():
+                resolved_path = path.expanduser().resolve()
+                for readable_root in self.readable_roots:
+                    try:
+                        resolved_path.relative_to(readable_root)
+                    except ValueError:
+                        continue
+                    return resolved_path
             relative_path = strip_workspace_tool_prefix(raw_path, project_root)
             if relative_path is not None:
                 path = project_root / relative_path if relative_path else project_root

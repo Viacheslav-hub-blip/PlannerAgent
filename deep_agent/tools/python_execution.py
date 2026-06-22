@@ -213,10 +213,9 @@ output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"
 print(save_json(str(output_path), {"status": "ok"}))
 ```
 
-Хорошее решение: обработать полный offload artifact.
+Хорошее решение: обработать полный offload artifact через полный путь ОС.
 ```python
-rows = read_pickle_file("/runs/deep_agent_tool_outputs/session_x/load_data_x.pkl")
-df = rows_to_dataframe(rows)
+df = pd.read_pickle("/runs/deep_agent_tool_outputs/session_x/load_data_x.pkl")
 print(df.shape)
 print(df.columns.tolist())
 stats = df.groupby("main_rule")["transaction_amount_in_rub"].agg(["count", "mean"])
@@ -227,9 +226,11 @@ print(output_path)
 Работа с путями:
 - для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`;
 - для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
-- для сохранения DataFrame в workspace используй `save_dataframe(df, "/file.csv")`
-  или `save_dataframe(df, "/runs/file.csv")`, а не прямой `df.to_csv(...)`;
-- при работе с pickle бери точный `workspace_file` из результата tool.
+- для сохранения пользовательского DataFrame в workspace используй `save_dataframe(df, "/file.csv")`,
+  а не прямой `df.to_csv(...)`;
+- при работе с pickle через pandas бери `artifact_path` / полный путь ОС из результата tool;
+- на Linux `artifact_path` может быть `/runs/...`, его можно передавать в стандартный `pd.read_pickle(...)`;
+- `read_pickle_file(r"<artifact_path>")` используй только когда нужен helper.
 
 Обработка ошибок:
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;

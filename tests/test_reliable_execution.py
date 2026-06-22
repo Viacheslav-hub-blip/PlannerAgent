@@ -358,6 +358,14 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("convert files between supported formats", CODING_AGENT_DESCRIPTION)
         self.assertIn("run validation commands", CODING_AGENT_DESCRIPTION)
         self.assertIn("Do not use for table data retrieval", CODING_AGENT_DESCRIPTION)
+        self.assertIn("Use only for bounded table data retrieval with load_data", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("fetch unique values of one column", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("retrieve rows matching exact identifiers", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("Provide a precise retrieval objective", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("Do not use for calculations", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("semantic classification decisions", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("Bad tasks: calculate totals or averages", DATA_RETRIEVAL_AGENT_DESCRIPTION)
+        self.assertIn("delegate those follow-up tasks to coding-agent", DATA_RETRIEVAL_AGENT_DESCRIPTION)
 
     def test_subagent_builders_return_create_deep_agent_kwargs(self) -> None:
         """Builder-ы должны возвращать независимые kwargs без registry-описания."""
@@ -471,6 +479,44 @@ class ReliableExecutionTests(unittest.TestCase):
             settings.trace_log_dir,
             workspace / "runs" / "deep_agent_traces",
         )
+
+    def test_settings_allow_external_tool_outputs_dir(self) -> None:
+        """Проверяет, что tool outputs можно вынести за пределы workspace.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            external_outputs = root / "runs" / "deep_agent_tool_outputs"
+            workspace.mkdir()
+            payload = {
+                "harness_profile_key": "openai",
+                "thread_id": "test-thread",
+                "workspace_root": str(workspace),
+                "terminal_timeout": 120,
+                "terminal_max_output_bytes": 100000,
+                "data_tools_factory": None,
+                "data_tools_factory_kwargs": {},
+                "tool_outputs_dir": str(external_outputs),
+                "tool_output_min_rows_to_save": 30,
+                "tool_output_min_content_chars_to_save": 60000,
+                "tool_output_preview_rows": 30,
+                "tool_output_inline_original_chars": 10000,
+                "context_edit_trigger_tokens": 100000,
+                "context_edit_keep_tool_results": 3,
+                "read_file_default_limit": 500,
+                "max_model_retries": 5,
+                "max_tool_calls_per_run": 40,
+                "max_subagent_model_calls": 19,
+                "graph_recursion_limit": 100,
+            }
+
+            settings = DeepAgentSettings.from_mapping(payload)
+
+        self.assertEqual(settings.tool_outputs_dir, external_outputs.resolve())
 
     def test_default_config_keeps_only_workspace_root_as_path_setting(self) -> None:
         """Проверяет, что базовый config не хранит производные path-настройки.
@@ -678,8 +724,8 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
 
-    def test_tool_output_summary_includes_virtual_and_real_paths(self) -> None:
-        """Offload summary должен показывать workspace_file и реальный путь файла.
+    def test_tool_output_summary_includes_real_pickle_path(self) -> None:
+        """Offload summary должен показывать реальный путь для pandas pickle.
 
         Returns:
             ``None``.
@@ -704,11 +750,43 @@ class ReliableExecutionTests(unittest.TestCase):
             )
             absolute_file_exists = Path(result.artifact["absolute_file"]).exists()
 
-        self.assertIn("workspace_file: /runs/deep_agent_tool_outputs/session_1/", result.content)
-        self.assertIn("real_file:", result.content)
+        self.assertIn("artifact_path:", result.content)
+        self.assertIn("pandas_read_pickle: pd.read_pickle", result.content)
+        self.assertIn("read_pickle_file: read_pickle_file", result.content)
         self.assertIn(str(outputs_dir), result.content)
         self.assertEqual(result.artifact["workspace_file"].split("/")[1], "runs")
         self.assertTrue(absolute_file_exists)
+
+    def test_tool_output_summary_supports_external_runs_path(self) -> None:
+        """Offload summary не требует, чтобы tool outputs находились внутри workspace.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            outputs_dir = root / "runs" / "deep_agent_tool_outputs" / "session_1"
+            workspace.mkdir()
+            middleware = ToolOutputFileMiddleware(
+                output_dir=outputs_dir,
+                workspace_root=workspace,
+                min_rows_to_save=1,
+            )
+            result = middleware._process_tool_message(
+                result=ToolMessage(
+                    content="[]",
+                    artifact=[{"event_id": "1"}, {"event_id": "2"}],
+                    tool_call_id="call-1",
+                    name="load_data",
+                ),
+                tool_name="load_data",
+            )
+
+        self.assertIn(f"artifact_path: {outputs_dir}", result.content)
+        self.assertIn(f'pd.read_pickle(r"{outputs_dir}', result.content)
+        self.assertTrue(str(result.artifact["workspace_file"]).startswith(str(outputs_dir)))
 
     def test_agent_builder_does_not_add_permissions_or_interrupt_fallback(self) -> None:
         """Сборка агента не должна содержать permission rules или HITL fallback.
@@ -867,8 +945,14 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
         self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
         self.assertIn("среди этих", SYSTEM_PROMPT)
-        self.assertIn("read_pickle_file(workspace_file)", SYSTEM_PROMPT)
+        self.assertIn("pd.read_pickle(artifact_path)", SYSTEM_PROMPT)
+        self.assertIn("read_pickle_file(artifact_path)", SYSTEM_PROMPT)
         self.assertIn("Do not delegate a new `load_data`", SYSTEM_PROMPT)
+        self.assertIn("good plan for analytics over retrieved data", SYSTEM_PROMPT)
+        self.assertIn("retrieve raw trigger rows for the last calendar month", SYSTEM_PROMPT)
+        self.assertIn("retrieve raw trigger rows for the previous calendar month", SYSTEM_PROMPT)
+        self.assertIn("calculate absolute change and percentage", SYSTEM_PROMPT)
+        self.assertIn("handling of zero previous-month counts", SYSTEM_PROMPT)
         self.assertIn("bounded code and workspace tasks", CODING_AGENT_PROMPT)
         self.assertIn("Do not access table data", CODING_AGENT_PROMPT)
         self.assertIn("`/deep_agent/` is the agent implementation directory", CODING_AGENT_PROMPT)
@@ -879,7 +963,16 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
         self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
         self.assertIn('save_dataframe(df, "/file.csv")', DATA_RETRIEVAL_PROMPT)
-        self.assertIn('Do not call `df.to_csv("/runs/file.csv")`', DATA_RETRIEVAL_PROMPT)
+        self.assertIn("real operating-system paths", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("pd.read_pickle(...)", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("Comparison and change requests require separate comparable populations", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("two adjacent 7-day windows", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("do not replace them with one 20260601-20260614 aggregate", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("A mandatory calls section with one item per tool invocation", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("exact tool name", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("exact material parameters / input parameters", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("## Вызовы инструментов", DATA_RETRIEVAL_PROMPT)
+        self.assertIn('Do not add a separate "Ограничения" / limitations section by default', DATA_RETRIEVAL_PROMPT)
 
     def test_load_data_description_makes_limit_user_explicit_only(self) -> None:
         """Описание ``load_data`` должно запрещать неявный LIMIT.

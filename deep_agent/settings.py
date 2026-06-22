@@ -127,7 +127,7 @@ class DeepAgentSettings:
             ),
             data_tools_factory=_optional_str_from_config(payload, "data_tools_factory"),
             data_tools_factory_kwargs=_dict_from_config(payload, "data_tools_factory_kwargs"),
-            tool_outputs_dir=_workspace_path_from_config(
+            tool_outputs_dir=_tool_outputs_path_from_config(
                 payload,
                 "tool_outputs_dir",
                 DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH,
@@ -238,6 +238,32 @@ def _workspace_path_from_config(
         _optional_config_value(payload, key, default_relative_path),
         workspace_root,
     )
+
+
+def _tool_outputs_path_from_config(
+    payload: dict[str, Any],
+    key: str,
+    default_relative_path: str,
+    workspace_root: Path,
+) -> Path:
+    """Строит путь для служебных tool output артефактов.
+
+    Args:
+        payload: Словарь конфигурации.
+        key: Имя path-ключа для каталога tool outputs.
+        default_relative_path: Относительный путь от ``workspace_root`` по умолчанию.
+        workspace_root: Корень пользовательского workspace.
+
+    Returns:
+        Абсолютный путь. Относительные значения остаются внутри ``workspace_root``,
+        а абсолютные значения разрешены как реальные пути ОС, например ``/runs/...``.
+    """
+
+    raw_value = _optional_config_value(payload, key, default_relative_path)
+    path = Path(str(raw_value))
+    if path.is_absolute():
+        return path.expanduser().resolve()
+    return _resolve_workspace_path(path, workspace_root)
 
 
 def _resolve_project_path(value: Any, project_root: Path) -> Path:

@@ -198,20 +198,22 @@ def _write_rows_to_pkl(*, rows: list[dict[str, Any]], output_dir: Path, tool_nam
 
 
 def _workspace_tool_output_path(*, file_path: Path, workspace_root: Path) -> str:
-    """Строит единый путь к tool output относительно ``workspace_root``.
+    """Строит путь к tool output для ответа агента.
 
     Args:
         file_path: Абсолютный путь к сохранённому pickle-файлу.
         workspace_root: Корень файлового пространства агента.
 
     Returns:
-        Виртуальный путь вида ``/runs/deep_agent_tool_outputs/session_x/data.pkl``.
-
-    Raises:
-        ValueError: Файл находится вне workspace.
+        Workspace-путь для файлов внутри workspace или реальный путь ОС для
+        внешних каталогов tool outputs, например ``/runs/...``.
     """
 
-    return workspace_tool_path(file_path.resolve(), workspace_root.resolve())
+    resolved_file = file_path.resolve()
+    try:
+        return workspace_tool_path(resolved_file, workspace_root.resolve())
+    except ValueError:
+        return str(resolved_file)
 
 
 def _build_file_summary(
@@ -242,17 +244,17 @@ def _build_file_summary(
         f"ВАЖНО: всего в результате (в файле) {len(rows)} строк — это полный объём этого "
         f"запроса; в контексте сейчас лишь {len(preview)} строк для ознакомления.\n"
         f"Файл: {resolved_path.name}\n"
-        f"workspace_file: {workspace_path}\n"
-        f"real_file: {resolved_path}\n"
+        f"artifact_path: {resolved_path}\n"
+        f"pandas_read_pickle: pd.read_pickle(r\"{resolved_path}\")\n"
+        f"read_pickle_file: read_pickle_file(r\"{workspace_path}\")\n"
         f"Формат: pickle (list[dict]).\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Чтобы работать со ВСЕМИ строками или с урезанной выборкой из этого набора, используй "
-        "`python` (НЕ новый load_data). Helpers: read_pickle_file, "
-        "describe_pickle_file, rows_to_dataframe, save_dataframe, save_json, save_text, pd, np. "
-        "Один и тот же `workspace_file` используется в `python` и filesystem tools. Пример:\n"
+        "`python` (НЕ новый load_data). `artifact_path` — реальный путь ОС, его можно передавать "
+        "в стандартный `pd.read_pickle(...)`. Пример:\n"
+        f"df = pd.read_pickle(r\"{resolved_path}\")\n"
         f"rows = read_pickle_file(r\"{workspace_path}\")\n"
-        "df = rows_to_dataframe(rows)\n"
         "При ошибке python читай error/traceback из ответа tool и исправляй код.\n"
         f"Preview первых {len(preview)} строк:\n{preview_text}"
         f"{original_note}"
@@ -288,14 +290,16 @@ def _build_inline_saved_file_note(
     return (
         "\n\n[Полный результат сохранён в pickle для переиспользования без повторного load_data]\n"
         f"{query_note}"
-        f"workspace_file: {workspace_path}\n"
-        f"real_file: {real_path.resolve()}\n"
+        f"artifact_path: {real_path.resolve()}\n"
+        f"pandas_read_pickle: pd.read_pickle(r\"{real_path.resolve()}\")\n"
+        f"read_pickle_file: read_pickle_file(r\"{workspace_path}\")\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Если следующий шаг — урезанная выборка из ЭТОГО же набора (другие фильтры, подмножество "
         "строк, агрегация, уникальные значения), НЕ запускай новый load_data: отфильтруй через "
-        "`python` (`read_pickle_file` → `rows_to_dataframe` / pandas).\n"
-        f"Пример: rows = read_pickle_file(r\"{workspace_path}\")\n"
+        "`python` (`pd.read_pickle` по `artifact_path` или `read_pickle_file` по указанному пути).\n"
+        f"Пример pandas: df = pd.read_pickle(r\"{real_path.resolve()}\")\n"
+        f"Пример helper: rows = read_pickle_file(r\"{workspace_path}\")\n"
     )
 
 

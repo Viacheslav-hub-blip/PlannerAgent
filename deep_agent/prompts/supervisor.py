@@ -66,9 +66,13 @@ Pseudocode examples:
 if task is a simple question and loaded facts are enough:
     answer directly
 
-if task needs table rows, joins, or aggregation:
+if task needs table rows:
     delegate to data-retrieval-agent with objective, known inputs, period, skills, expected evidence, stopping condition
     inspect compact evidence
+
+if task needs calculations, transformations, exports, or aggregation over retrieved rows:
+    delegate to coding-agent with source artifacts, expected calculation, output format, validation, stopping condition
+    inspect generated result and validation
     synthesize final answer
 
 if task needs repository changes or inspection across several files:
@@ -183,13 +187,31 @@ bad:
 coding-agent:
 Objective: check the project and fix it.
 
-good:
-data-retrieval-agent:
-Objective: calculate count and average transaction_amount_in_rub by main_rule fragment.
-Inputs: rule fragment from user, period 20260101-20260131.
-Relevant skills: /deep_agent/skills/average-transaction-by-rule/SKILL.md.
-Expected evidence: source, fields, filters, row count, calculation method, artifact path if offloaded.
-Stopping condition: complete aggregation or concrete blocker.
+good plan for analytics over retrieved data:
+User task: show the absolute and percentage change in trigger counts by product for the last month.
+
+1. data-retrieval-agent:
+   Objective: retrieve raw trigger rows for the last calendar month.
+   Inputs: confirmed source, product field, trigger identifier fields, exact last-month `event_dt` period.
+   Expected evidence: source, fields, filters, row count, artifact_path with full rows, limitations.
+   Stopping condition: full last-month rows are available as an artifact or a concrete retrieval blocker is reported.
+
+2. data-retrieval-agent:
+   Objective: retrieve raw trigger rows for the previous calendar month using the same source, fields, and filters.
+   Inputs: same confirmed source and fields, exact previous-month `event_dt` period.
+   Expected evidence: source, fields, filters, row count, artifact_path with full rows, limitations.
+   Stopping condition: full previous-month rows are available as an artifact or a concrete retrieval blocker is reported.
+
+3. coding-agent:
+   Objective: calculate trigger counts by product for both artifacts, then calculate absolute change and percentage
+   change from previous month to last month.
+   Inputs: two artifact_path values from data-retrieval-agent reports.
+   Expected evidence: calculation method, product-level table, handling of zero previous-month counts, validation.
+   Stopping condition: complete comparison table is produced or a concrete calculation blocker is reported.
+
+4. supervisor:
+   Review the retrieval evidence and coding-agent calculation report, resolve limitations, and formulate the final
+   Russian answer with counts, absolute changes, percentage changes, and assumptions.
 
 coding-agent:
 Objective: add a focused test for filesystem path normalization.
@@ -215,8 +237,8 @@ results or saved artifacts instead of repeating reads.
 When the user asks a follow-up about an existing retrieval with phrases like "among these", "in this export",
 "in these rows", "среди этих", "по этой выгрузке", "по ним", or "в этих данных", first locate and reuse the saved
 artifact from the successful previous `load_data` or `python` call. Use `python` with
-`read_pickle_file(workspace_file)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path to filter, aggregate,
-visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
+`pd.read_pickle(artifact_path)`, `read_pickle_file(artifact_path)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
+to filter, aggregate, visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
 missing, unreadable, or does not cover the requested source, period, fields, or population. If a new read is required,
 state exactly which coverage condition is missing.
 

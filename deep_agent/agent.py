@@ -239,7 +239,7 @@ def build_analytics_deep_agent(
         settings.workspace_root,
         resolved_workspace_root,
     )
-    resolved_tool_outputs_root = _rebase_workspace_path(
+    resolved_tool_outputs_root = _rebase_tool_outputs_path(
         settings.tool_outputs_dir,
         settings.workspace_root,
         resolved_workspace_root,
@@ -506,8 +506,8 @@ def build_skills_backend(
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
-        tool_outputs_dir: Папка tool outputs текущего запуска, которая должна находиться
-            внутри workspace.
+        tool_outputs_dir: Папка tool outputs текущего запуска; может находиться
+            внутри workspace или быть внешним абсолютным путём.
         workspace_root: Корень доступного агенту workspace.
         state_artifacts_virtual_dir: Виртуальная директория, направляемая в ``StateBackend``
             для отображения текстовых артефактов в LangGraph UI.
@@ -520,12 +520,11 @@ def build_skills_backend(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_workspace_path(
+    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_tool_outputs_path(
         settings.tool_outputs_dir,
         settings.workspace_root,
         resolved_workspace_root,
     )
-    _require_workspace_path(resolved_tool_outputs_dir, resolved_workspace_root)
     routes: dict[str, Any] = {}
     artifacts_root = "/"
     if state_artifacts_virtual_dir:
@@ -556,7 +555,8 @@ def build_supervisor_backend(
 
     Args:
         settings: Настройки агента; если ``None``, загружаются defaults.
-        tool_outputs_dir: Папка pickle-результатов внутри workspace.
+        tool_outputs_dir: Папка pickle-результатов внутри workspace или внешний
+            абсолютный путь.
         workspace_root: Единый корень доступного файлового пространства.
         state_artifacts_virtual_dir: Виртуальная директория UI-артефактов.
 
@@ -568,12 +568,11 @@ def build_supervisor_backend(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_workspace_path(
+    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_tool_outputs_path(
         settings.tool_outputs_dir,
         settings.workspace_root,
         resolved_workspace_root,
     )
-    _require_workspace_path(resolved_tool_outputs_dir, resolved_workspace_root)
     routes: dict[str, Any] = {}
     artifacts_root = "/"
     if state_artifacts_virtual_dir:
@@ -670,6 +669,32 @@ def _rebase_workspace_path(
     return (target_workspace_root / relative_path).resolve()
 
 
+def _rebase_tool_outputs_path(
+    path: Path,
+    source_workspace_root: Path,
+    target_workspace_root: Path,
+) -> Path:
+    """Переносит workspace-relative tool outputs или оставляет внешний абсолютный путь.
+
+    Args:
+        path: Абсолютный путь из настроек.
+        source_workspace_root: ``workspace_root``, относительно которого загружены настройки.
+        target_workspace_root: Фактический workspace текущей сборки агента.
+
+    Returns:
+        Путь внутри ``target_workspace_root`` для workspace-relative настроек или
+        исходный абсолютный путь для внешних каталогов вроде ``/runs/...``.
+    """
+
+    source_root = source_workspace_root.resolve()
+    resolved_path = path.resolve()
+    try:
+        relative_path = resolved_path.relative_to(source_root)
+    except ValueError:
+        return resolved_path
+    return (target_workspace_root / relative_path).resolve()
+
+
 def _require_workspace_path(path: Path, workspace_root: Path) -> Path:
     """Проверяет, что путь находится внутри workspace, и возвращает его абсолютный вид.
 
@@ -735,11 +760,14 @@ def _build_runtime_context_prompt(workspace_root: Path, tool_outputs_dir: Path) 
     """
 
     today = date.today().isoformat()
-    workspace_outputs_path = workspace_tool_path(
-        tool_outputs_dir,
-        workspace_root,
-        directory=True,
-    )
+    try:
+        workspace_outputs_path = workspace_tool_path(
+            tool_outputs_dir,
+            workspace_root,
+            directory=True,
+        )
+    except ValueError:
+        workspace_outputs_path = str(tool_outputs_dir.resolve())
     return f"""
 <runtime_context>
 ## Runtime Context
