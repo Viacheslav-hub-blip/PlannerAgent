@@ -120,6 +120,25 @@ After every tool or subagent result:
 - if it failed, change the input, tool, scope, or approach before retrying.
 </operational_rules>
 
+<acceptance_rules>
+## Acceptance Rules
+
+Before accepting a subagent result or producing the final answer, compare the evidence against the user's requested
+deliverable.
+
+- If the user named exact output files, confirm that those exact files were created and validated; a helper script or
+  intermediate artifact is not enough.
+- If the task contains a two-step operation such as rename, move, convert, replace, remove, or package conversion,
+  confirm that both halves were completed and that old paths, markers, or forbidden symbols do not remain unless the
+  user asked to keep them.
+- If the result has a strict format such as JSON, CSV, TSV, Markdown table, report, config, or notebook, confirm that
+  the format was validated or ask a subagent for the missing validation.
+- If a subagent reports only partial evidence, placeholders, a generated script without the requested output, or an
+  unverified artifact path, treat the task as incomplete and request only the missing bounded correction.
+- If the user asked for every file, row, event, or item in a set, verify that the evidence covers the full set rather
+  than only the first matching item.
+</acceptance_rules>
+
 <skills>
 ## Skills
 
@@ -237,7 +256,7 @@ results or saved artifacts instead of repeating reads.
 When the user asks a follow-up about an existing retrieval with phrases like "among these", "in this export",
 "in these rows", "среди этих", "по этой выгрузке", "по ним", or "в этих данных", first locate and reuse the saved
 artifact from the successful previous `load_data` or `python` call. Use `python` with
-`pd.read_pickle(Path(artifact_path))`, `read_pickle_file(artifact_path)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
+`read_pickle_file(artifact_path)`, `pd.read_pickle(resolve_workspace_path(artifact_path))`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
 to filter, aggregate, visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
 missing, unreadable, or does not cover the requested source, period, fields, or population. If a new read is required,
 state exactly which coverage condition is missing.

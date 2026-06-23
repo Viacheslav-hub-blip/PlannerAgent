@@ -80,6 +80,18 @@ class PythonToolTests(unittest.TestCase):
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
+            'rows = read_pickle_file(r"/artifacts/load_data_x.pkl")',
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
+            'rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))',
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
+            "`resolve_workspace_path(path)`",
+            PYTHON_TOOL_DESCRIPTION,
+        )
+        self.assertIn(
             "для сохранения DataFrame используй обычный pandas writer",
             PYTHON_TOOL_DESCRIPTION,
         )
@@ -328,6 +340,44 @@ class PythonToolTests(unittest.TestCase):
 
         self.assertTrue(payload["success"])
         self.assertIn("'value': 7", payload["execution_output"])
+
+    def test_resolve_workspace_path_maps_artifact_path_for_pandas(self) -> None:
+        """Проверяет чтение pandas по workspace-пути через helper разрешения пути.
+
+        Returns:
+            ``None``; тест подтверждает, что pandas получает реальный путь ОС.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            artifacts_dir = root / "artifacts"
+            artifacts_dir.mkdir()
+            pickle_path = artifacts_dir / "data.pkl"
+            with pickle_path.open("wb") as file:
+                pickle.dump([{"value": 11}], file)
+
+            sandbox = DeepAgentPythonSandbox(
+                working_directory=root,
+                readable_roots=(root,),
+                tool_outputs_dir=artifacts_dir,
+            )
+            tool = build_python_tool(sandbox)
+
+            payload = json.loads(
+                tool.invoke(
+                    {
+                        "code": (
+                            "df = pd.read_pickle("
+                            "resolve_workspace_path(r'/artifacts/data.pkl')"
+                            ")\n"
+                            "print(df[0]['value'])"
+                        ),
+                    }
+                )
+            )
+
+        self.assertTrue(payload["success"])
+        self.assertIn("11", payload["execution_output"])
 
     def test_runtime_error_contains_only_short_error(self) -> None:
         """Проверяет удаление traceback и служебных полей из ошибки.

@@ -138,6 +138,7 @@ python
 - `PROJECT_ROOT`: корень текущего workspace;
 - `WORKSPACE_ROOT`: корень текущего workspace из настроек `workspace_root`;
 - `ARTIFACTS_DIR`: реальный путь ОС к единому каталогу `/artifacts`;
+- `resolve_workspace_path(path)`: преобразование workspace-пути `/artifacts/...` в реальный путь ОС для pandas/open;
 - `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
 - `describe_pickle_file(path)`: тип, число строк, колонки и preview;
 - `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
@@ -220,7 +221,8 @@ print(output_path)
 ```python
 from pathlib import Path
 
-df = pd.read_pickle(Path("/artifacts/load_data_x.pkl"))
+rows = read_pickle_file(r"/artifacts/load_data_x.pkl")
+df = rows_to_dataframe(rows)
 print(df.shape)
 print(df.columns.tolist())
 stats = df.groupby("main_rule")["transaction_amount_in_rub"].agg(["count", "mean"])
@@ -234,7 +236,11 @@ print(output_path)
 - для сохранения DataFrame используй обычный pandas writer с `Path`-объектом внутри `ARTIFACTS_DIR`;
 - при работе с pickle через pandas бери `artifact_path` из результата tool;
 - `artifact_path` должен быть workspace-путем внутри `/artifacts`;
-- `read_pickle_file(r"<artifact_path>")` используй когда нужен helper.
+- для чтения pickle из offload artifact используй `rows = read_pickle_file(r"<artifact_path>")`,
+  затем `df = rows_to_dataframe(rows)` перед pandas-операциями;
+- если нужен именно pandas reader, передай в него реальный путь:
+  `rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))`;
+- не переопределяй `ARTIFACTS_DIR = Path("/artifacts")` в коде: helper уже содержит реальный путь ОС.
 
 Обработка ошибок:
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
@@ -250,7 +256,7 @@ class PythonInput(BaseModel):
     code: str = Field(
         description=(
             "Python-код для точного и воспроизводимого вычисления. Используй helpers "
-            "`read_pickle_file`, `rows_to_dataframe`, `ARTIFACTS_DIR`, `pd`, `np` "
+            "`resolve_workspace_path`, `read_pickle_file`, `rows_to_dataframe`, `ARTIFACTS_DIR`, `pd`, `np` "
             "и переменные из предыдущих вызовов. Важные "
             "результаты выводи через print()."
         ),

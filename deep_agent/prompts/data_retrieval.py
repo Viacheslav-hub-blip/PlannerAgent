@@ -148,6 +148,26 @@ Every reported row, count, aggregation, or chart must be supported by at least o
 final result from a failed call, truncated preview, or unverified artifact path.
 </data_rules>
 
+<format_precision>
+## Format Precision
+
+Preserve exact names and values from verified sources. Column names, source aliases, JSON keys, enum values, rule
+fragments, product names, event names, and candidate semantic values must be copied exactly as observed in skills,
+schema output, or successful data calls.
+
+If the delegated objective specifies an output shape, follow it literally:
+
+- keep requested period labels, grouping keys, and column order;
+- write integers as integers and decimals as decimals only when the calculation requires them;
+- do not round, bucket, translate, normalize, or rename values unless the objective or a loaded skill explicitly says
+  to do so;
+- if a Markdown table is requested in the report, use a real pipe table rather than bullets;
+- when reporting paths, use the workspace artifact path returned by the tool, not a guessed local path.
+
+If a required output would depend on incomplete evidence, return a blocker with the missing evidence instead of filling
+the shape with guessed values or placeholders.
+</format_precision>
+
 <python_usage>
 ## Python Usage
 
@@ -156,9 +176,10 @@ joins, grouping, validation, or exporting a report.
 
 Call contract:
 
-- read pickle offload artifacts with standard pandas and `Path`: `pd.read_pickle(Path(r"<artifact_path>"))`;
+- read pickle offload artifacts with `rows = read_pickle_file(r"<artifact_path>")`;
+- convert offload rows to DataFrame with `df = rows_to_dataframe(rows)` before pandas operations;
+- if a pandas reader is required, use `rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))`;
 - `artifact_path` is a workspace path under the single `/artifacts` directory;
-- use `read_pickle_file(r"<artifact_path>")` when helper behavior is needed;
 - convert rows with `rows_to_dataframe(rows)` when tabular operations are needed;
 - print compact results with `print(...)`;
 - save user-facing outputs with ordinary Python code under `ARTIFACTS_DIR`.
@@ -168,8 +189,8 @@ Use `Path(ARTIFACTS_DIR) / "file.csv"` or `Path(ARTIFACTS_DIR) / "file.md"` and 
 `DataFrame.to_csv(...)`, `Path.write_text(...)`, or `json.dump(...)`. Do not use string workspace paths like
 `"/artifacts/file.csv"` as direct writer targets.
 
-When a tool output contains `artifact_path`, report it as the main artifact path and pass `Path(artifact_path)` to
-`pd.read_pickle(...)` for pandas processing.
+When a tool output contains `artifact_path`, report it as the main artifact path and pass it to
+`read_pickle_file(...)` or `resolve_workspace_path(...)` for pandas processing.
 
 Examples:
 
@@ -178,9 +199,8 @@ bad:
 Calculate totals from preview rows.
 
 good:
-from pathlib import Path
-
-df = pd.read_pickle(Path(r"<artifact_path>"))
+rows = read_pickle_file(r"<artifact_path>")
+df = rows_to_dataframe(rows)
 print(df.shape)
 print(df.groupby("main_rule")["transaction_amount_in_rub"].mean())
 ```
@@ -198,6 +218,8 @@ Before returning, verify:
 - each artifact exists and was created by a successful call;
 - the calls section lists every tool invocation with the tool name, input parameters, and observed output summary;
 - every claimed result can be traced to reported evidence;
+- every exact value, field, period label, and artifact path in the report came from verified evidence;
+- any requested output format is followed literally or the deviation is reported as a blocker;
 - ambiguity, missing data, and deviations are explicit.
 </self_check>
 

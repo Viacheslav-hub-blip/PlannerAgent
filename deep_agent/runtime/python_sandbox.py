@@ -28,6 +28,7 @@ SANDBOX_HELPER_NAMES = frozenset(
         "WORKSPACE_ROOT",
         "read_pickle_file",
         "describe_pickle_file",
+        "resolve_workspace_path",
         "rows_to_dataframe",
     }
 )
@@ -107,10 +108,23 @@ class DeepAgentPythonSandbox:
                 raise FileNotFoundError(f"Файл не найден: {resolved}")
             return resolved
 
+        def resolve_workspace_path(file_path: str | os.PathLike[str]) -> Path:
+            """Преобразует workspace-путь или относительный путь в реальный путь ОС.
+
+            Args:
+                file_path: Путь вида ``/artifacts/file.pkl``, относительный путь внутри
+                    workspace или абсолютный разрешенный путь ОС.
+
+            Returns:
+                Реальный ``Path`` внутри workspace или каталога артефактов.
+            """
+
+            return _resolve_workspace_path(Path(file_path))
+
         def read_pickle_file(file_path: str) -> Any:
             """Читает pickle-файл по абсолютному или относительному пути."""
 
-            path = _assert_readable_path(Path(file_path))
+            path = _assert_readable_path(resolve_workspace_path(file_path))
             with path.open("rb") as file:
                 return pickle.load(file)
 
@@ -119,7 +133,7 @@ class DeepAgentPythonSandbox:
 
             data = read_pickle_file(file_path)
             description: dict[str, Any] = {
-                "file_path": str(_assert_readable_path(Path(file_path))),
+                "file_path": str(_assert_readable_path(resolve_workspace_path(file_path))),
                 "python_type": type(data).__name__,
             }
             if isinstance(data, list):
@@ -197,6 +211,7 @@ class DeepAgentPythonSandbox:
                 "ARTIFACTS_DIR": str(tool_outputs_dir),
                 "PROJECT_ROOT": str(project_root),
                 "WORKSPACE_ROOT": str(project_root),
+                "resolve_workspace_path": resolve_workspace_path,
                 "read_pickle_file": read_pickle_file,
                 "describe_pickle_file": describe_pickle_file,
                 "rows_to_dataframe": rows_to_dataframe,
