@@ -40,6 +40,7 @@ from deep_agent.agent import (
 from deep_agent.runtime.harness import build_analytics_harness_profile
 from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
+from deep_agent.prompts.gigachat import GIGACHAT_AGENT_PRACTICES_PROMPT
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -73,12 +74,14 @@ from deep_agent.middleware.skills_context import (
     discover_skill_context_files,
     select_relevant_skill_paths_with_llm,
 )
-from deep_agent.middleware.tool_loop_guard import (
-    _count_trailing_identical_tool_calls,
-)
 from deep_agent.middleware.tool_context_notice import (
     ToolContextNoticeMiddleware,
     build_tool_context_notice,
+)
+from deep_agent.middleware.gigachat_runtime import (
+    LoopBreakerMiddleware,
+    ShellSafetyMiddleware,
+    ThinkToolMiddleware,
 )
 from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
 from deep_agent.data.query_schema import FilterCondition, ParsedDataQuery
@@ -279,42 +282,6 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertEqual(outcome.selected_paths, [])
         self.assertTrue(outcome.retry_performed)
         self.assertEqual(structured_model.calls, 2)
-
-    def test_tool_loop_normalizes_args_and_allows_correction(self) -> None:
-        """Одинаковые args должны считаться повтором, изменённые — новым вызовом."""
-
-        first_call = {
-            "id": "call-1",
-            "name": "load_data",
-            "args": {"query": "SELECT  *\nFROM hits"},
-        }
-        repeated_call = {
-            "id": "call-2",
-            "name": "load_data",
-            "args": {"query": " SELECT * FROM   hits "},
-        }
-        corrected_call = {
-            "id": "call-3",
-            "name": "load_data",
-            "args": {"query": "SELECT event_id FROM hits"},
-        }
-        state = {
-            "messages": [
-                HumanMessage(content="Покажи данные."),
-                AIMessage(content="", tool_calls=[first_call]),
-                AIMessage(content="", tool_calls=[repeated_call]),
-                AIMessage(content="", tool_calls=[corrected_call]),
-            ]
-        }
-
-        repeated_count = _count_trailing_identical_tool_calls(
-            {"messages": state["messages"][:-1]},
-            repeated_call,
-        )
-        corrected_count = _count_trailing_identical_tool_calls(state, corrected_call)
-
-        self.assertEqual(repeated_count, 2)
-        self.assertEqual(corrected_count, 1)
 
     def test_harness_profile_keeps_default_general_purpose_subagent(self) -> None:
         """HarnessProfile должен сохранять execute и штатный general-purpose."""
@@ -723,6 +690,86 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ModelCallLimitMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, ThinkToolMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, ShellSafetyMiddleware) for item in middleware))
+        self.assertTrue(any(isinstance(item, LoopBreakerMiddleware) for item in middleware))
+
+    def test_shell_safety_blocks_unsafe_python_one_liner(self) -> None:
+        """Проверяет блокировку небезопасного ``python -c`` до запуска shell.
+
+        Returns:
+            ``None``.
+        """
+
+        middleware = ShellSafetyMiddleware()
+        request = SimpleNamespace(
+            tool_call={
+                "id": "call-1",
+                "name": "execute",
+                "args": {"command": 'python -c "x=0; for value in [1]: x += value"'},
+            }
+        )
+
+        def handler(_request: Any) -> ToolMessage:
+            raise AssertionError("unsafe command should be blocked")
+
+        result = middleware.wrap_tool_call(request, handler)
+
+        self.assertEqual(result.name, "execute")
+        self.assertEqual(result.status, "error")
+        self.assertIn("[SHELL-SAFETY]", result.content)
+        self.assertIn("Do not retry", result.content)
+
+    def test_loop_breaker_injects_human_nudge_for_repeated_tool_errors(self) -> None:
+        """Проверяет подсказку сменить стратегию после серии повторяющихся ошибок.
+
+        Returns:
+            ``None``.
+        """
+
+        messages: list[Any] = []
+        for index in range(3):
+            call_id = f"call-{index}"
+            messages.append(
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": call_id,
+                            "name": "execute",
+                            "args": {"command": 'python -c "x=0; for value in [1]: x += value"'},
+                        }
+                    ],
+                )
+            )
+            messages.append(
+                ToolMessage(
+                    content="SyntaxError: invalid syntax",
+                    tool_call_id=call_id,
+                    name="execute",
+                    status="error",
+                )
+            )
+
+        update = LoopBreakerMiddleware().before_model({"messages": messages}, None)
+
+        self.assertIsNotNone(update)
+        assert update is not None
+        self.assertIsInstance(update["messages"][0], HumanMessage)
+        self.assertIn("[LOOP-BREAKER]", update["messages"][0].content)
+        self.assertIn("/artifacts/run.py", update["messages"][0].content)
+
+    def test_gigachat_practices_prompt_keeps_project_path_contract(self) -> None:
+        """Проверяет, что GigaChat prompt-довесок сохраняет namespace workspace ``/``.
+
+        Returns:
+            ``None``.
+        """
+
+        self.assertIn("supplement the project", GIGACHAT_AGENT_PRACTICES_PROMPT)
+        self.assertIn("The workspace root is ``/``", GIGACHAT_AGENT_PRACTICES_PROMPT)
+        self.assertIn("/artifacts/run.py", GIGACHAT_AGENT_PRACTICES_PROMPT)
+        self.assertNotIn("MEMORY.md", GIGACHAT_AGENT_PRACTICES_PROMPT)
 
     def test_tool_output_summary_includes_workspace_artifact_path(self) -> None:
         """Offload summary должен показывать workspace-путь для pandas pickle.

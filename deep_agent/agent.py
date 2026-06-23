@@ -75,9 +75,15 @@ from deep_agent.tools.project_structure import build_get_project_structure_tool
 from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
 from deep_agent.middleware.filesystem_path_contract import FilesystemPathContractMiddleware
+from deep_agent.middleware.gigachat_runtime import (
+    LoopBreakerMiddleware,
+    ShellSafetyMiddleware,
+    ThinkToolMiddleware,
+)
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
 from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
+from deep_agent.prompts.gigachat import build_gigachat_practices_prompt
 from deep_agent.prompts.tool_contracts import TOOL_DESCRIPTION_OVERRIDES
 from deep_agent.prompts.skills import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -310,6 +316,7 @@ def build_analytics_deep_agent(
         resolved_workspace_root,
         session_tool_outputs_dir,
     )
+    gigachat_practices_prompt = build_gigachat_practices_prompt()
     shared_skills_selection: dict[str, Any] = {}
     supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
         skills_root=resolved_skills_root,
@@ -346,7 +353,9 @@ def build_analytics_deep_agent(
         common_middleware=coding_agent_middleware,
         skill_sources=[skills_workspace_dir],
     )
-    coding_agent_spec["system_prompt"] = f"{coding_agent_spec['system_prompt']}\n\n{runtime_context_prompt}"
+    coding_agent_spec["system_prompt"] = (
+        f"{coding_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
+    )
     coding_agent = create_deep_agent(
         **coding_agent_spec,
         backend=workspace_backend,
@@ -375,7 +384,7 @@ def build_analytics_deep_agent(
         skill_sources=[skills_workspace_dir],
     )
     data_retrieval_agent_spec["system_prompt"] = (
-        f"{data_retrieval_agent_spec['system_prompt']}\n\n{runtime_context_prompt}"
+        f"{data_retrieval_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
     )
     data_retrieval_agent = create_deep_agent(
         **data_retrieval_agent_spec,
@@ -390,7 +399,7 @@ def build_analytics_deep_agent(
     )
 
     # Шаг 6. Финальная сборка DeepAgents supervisor.
-    system_prompt = f"{SYSTEM_PROMPT}\n\n{runtime_context_prompt}"
+    system_prompt = f"{SYSTEM_PROMPT}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
     if system_prompt_suffix:
         system_prompt = f"{system_prompt}\n\n{system_prompt_suffix.strip()}"
 
@@ -454,6 +463,9 @@ def _build_native_runtime_middleware(
     )
     middleware: list[Any] = [
         PromptToolDescriptionsMiddleware(TOOL_DESCRIPTION_OVERRIDES),
+        ThinkToolMiddleware(),
+        ShellSafetyMiddleware(),
+        LoopBreakerMiddleware(),
         ModelRetryMiddleware(
             max_retries=settings.max_model_retries,
             retry_on=is_retryable_model_error,

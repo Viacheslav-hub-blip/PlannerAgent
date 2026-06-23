@@ -104,6 +104,7 @@ Input:
 
 Output:
 - the requested text fragment and metadata about the range that was read.
+- content may be displayed with line numbers or service notices; those prefixes are not part of the file content.
 
 Call format:
 - pass the path through `file_path`;
@@ -118,7 +119,8 @@ Use when:
 - source code, configuration, documentation, or another text artifact is needed.
 
 Limitations:
-- the tool is not intended for binary files.
+- the tool is not intended for binary files;
+- when reusing text in `edit_file`, strip display-only line numbers, tabs, and pagination notices from the fragment.
 """.strip(),
     "write_file": """
 write_file
@@ -137,6 +139,7 @@ Output:
 Use when:
 - the result should be saved as a text file;
 - the complete content of an existing text file should be intentionally replaced.
+- the task names an exact output file and the final deliverable must be written to that exact file.
 
 Example:
 ```text
@@ -147,6 +150,8 @@ Limitations:
 - the tool works with text files;
 - the tool overwrites an existing file at the same path; do not create duplicate filenames with suffixes like
   `_final`, `_final_final`, or `_new` after a successful write;
+- do not write a helper script instead of the requested output file; scripts are only intermediate tools;
+- do not leave requested output files empty or filled with placeholders unless the user explicitly asked for that;
 - `/` is the configured user workspace root;
 - user-facing artifacts should be saved in `/artifacts` by default as a single shared artifact folder;
 - `/deep_agent/` is the agent implementation directory, not an output folder;
@@ -183,6 +188,9 @@ edit_file(
 
 Limitations:
 - the fragment to replace must be found unambiguously in the file;
+- strip display-only line-number prefixes copied from `read_file` before filling `old_string` or `new_string`;
+- if the tool reports that the string was not found, change the fragment using verified file content instead of
+  repeating the same failed edit;
 - `/deep_agent/` is the agent implementation directory and should be edited only for explicit agent code, prompt,
   test, or skill changes;
 - the tool is not intended for binary files or generated files that should be updated by a generator.
@@ -224,12 +232,15 @@ Call format:
 - pass the search text through `pattern`;
 - `path` points to a directory;
 - a single file name can be passed through `glob`.
+- pass one search phrase per call; if several alternatives are needed, make separate calls or use a Python scan.
 
 Use when:
 - a symbol, call, configuration key, text, or artifact mention should be found.
 
 Limitations:
-- `pattern` is treated as plain text unless the tool implementation declares another search mode.
+- `pattern` is treated as plain text unless the tool implementation declares another search mode;
+- if repeated searches return no useful matches, change `path`/`glob` from verified context or switch strategy instead
+  of retrying equivalent searches.
 """.strip(),
     "execute": """
 execute
@@ -249,6 +260,7 @@ Output:
 Use when:
 - tests, a linter, formatter, type checker, build, generator, or diagnostic command should be run;
 - command output is needed as a verifiable observation.
+- filesystem operations such as copy, move, remove, or directory creation are needed.
 
 Do not use when:
 - you only need to read or edit a text file;
@@ -275,6 +287,9 @@ Limitations:
 - the command must not require interactive input;
 - the tool must not be used for commands that require secrets or API keys.
 - use filesystem tools for ordinary text read/write/edit operations; use shell for tests, builds, diagnostics,
-  package commands, and copy/move operations.
+  package commands, and copy/move operations;
+- do not embed multi-line content inside a double-quoted shell string;
+- avoid complex `python -c` one-liners with loops, branches, functions, classes, or context managers after semicolons;
+  write a small script under `/artifacts` or use a single-quoted heredoc instead.
 """.strip(),
 }
