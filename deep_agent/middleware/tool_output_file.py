@@ -205,8 +205,7 @@ def _workspace_tool_output_path(*, file_path: Path, workspace_root: Path) -> str
         workspace_root: Корень файлового пространства агента.
 
     Returns:
-        Workspace-путь для файлов внутри workspace или реальный путь ОС для
-        внешних каталогов tool outputs, например ``/runs/...``.
+        Workspace-путь для файлов внутри ``workspace_root``.
     """
 
     resolved_file = file_path.resolve()
@@ -244,16 +243,16 @@ def _build_file_summary(
         f"ВАЖНО: всего в результате (в файле) {len(rows)} строк — это полный объём этого "
         f"запроса; в контексте сейчас лишь {len(preview)} строк для ознакомления.\n"
         f"Файл: {resolved_path.name}\n"
-        f"artifact_path: {resolved_path}\n"
-        f"pandas_read_pickle: pd.read_pickle(r\"{resolved_path}\")\n"
+        f"artifact_path: {workspace_path}\n"
+        f"pandas_read_pickle: pd.read_pickle(Path(r\"{workspace_path}\"))\n"
         f"read_pickle_file: read_pickle_file(r\"{workspace_path}\")\n"
         f"Формат: pickle (list[dict]).\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Чтобы работать со ВСЕМИ строками или с урезанной выборкой из этого набора, используй "
-        "`python` (НЕ новый load_data). `artifact_path` — реальный путь ОС, его можно передавать "
-        "в стандартный `pd.read_pickle(...)`. Пример:\n"
-        f"df = pd.read_pickle(r\"{resolved_path}\")\n"
+        "`python` (НЕ новый load_data). `artifact_path` — workspace-путь внутри единой папки артефактов. Пример:\n"
+        "from pathlib import Path\n"
+        f"df = pd.read_pickle(Path(r\"{workspace_path}\"))\n"
         f"rows = read_pickle_file(r\"{workspace_path}\")\n"
         "При ошибке python читай error/traceback из ответа tool и исправляй код.\n"
         f"Preview первых {len(preview)} строк:\n{preview_text}"
@@ -290,15 +289,16 @@ def _build_inline_saved_file_note(
     return (
         "\n\n[Полный результат сохранён в pickle для переиспользования без повторного load_data]\n"
         f"{query_note}"
-        f"artifact_path: {real_path.resolve()}\n"
-        f"pandas_read_pickle: pd.read_pickle(r\"{real_path.resolve()}\")\n"
+        f"artifact_path: {workspace_path}\n"
+        f"pandas_read_pickle: pd.read_pickle(Path(r\"{workspace_path}\"))\n"
         f"read_pickle_file: read_pickle_file(r\"{workspace_path}\")\n"
         f"Строк в файле: {len(rows)}; колонок: {len(columns)}.\n"
         f"Колонки: {', '.join(map(str, columns))}.\n"
         "Если следующий шаг — урезанная выборка из ЭТОГО же набора (другие фильтры, подмножество "
         "строк, агрегация, уникальные значения), НЕ запускай новый load_data: отфильтруй через "
-        "`python` (`pd.read_pickle` по `artifact_path` или `read_pickle_file` по указанному пути).\n"
-        f"Пример pandas: df = pd.read_pickle(r\"{real_path.resolve()}\")\n"
+        "`python` (`pd.read_pickle` или `read_pickle_file` по указанному workspace-пути).\n"
+        "from pathlib import Path\n"
+        f"Пример pandas: df = pd.read_pickle(Path(r\"{workspace_path}\"))\n"
         f"Пример helper: rows = read_pickle_file(r\"{workspace_path}\")\n"
     )
 

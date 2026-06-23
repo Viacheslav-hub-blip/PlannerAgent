@@ -147,8 +147,8 @@ Limitations:
 - the tool works with text files;
 - the tool overwrites an existing file at the same path; do not create duplicate filenames with suffixes like
   `_final`, `_final_final`, or `_new` after a successful write;
-- `/` is the configured user workspace root and is the default place for user artifacts;
-- user-facing artifacts should be saved in `/` by default, or an explicit user-requested path;
+- `/` is the configured user workspace root;
+- user-facing artifacts should be saved in `/artifacts` by default as a single shared artifact folder;
 - `/deep_agent/` is the agent implementation directory, not an output folder;
 - do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
 - partial changes to an existing file are usually handled through `edit_file`.

@@ -57,7 +57,7 @@ class PythonExecutionResult:
         message: Краткое сообщение о результате выполнения.
         generated_code: Нормализованный Python-код, который был выполнен.
         execution_output: Текст stdout/stderr, полученный при выполнении.
-        artifacts: Созданные артефакты, зарегистрированные helper-функциями.
+        artifacts: Созданные или изменённые файлы в каталоге артефактов.
         error: Краткое описание ошибки.
         traceback_text: Полный traceback ошибки.
         available_variables: Список доступных переменных sandbox.
@@ -124,13 +124,9 @@ python
   преобразования формата или проверки условия, сначала выполни код;
 - используй `print()` для важных результатов;
 - не выводи огромные DataFrame целиком: печатай shape, columns, head, агрегаты;
-- сохраняй пользовательские артефакты в корень workspace `/` или явно заданный путь;
-- сохраняй временные артефакты в `TOOL_OUTPUTS_DIR`;
-- для workspace-путей вида `/file.csv`, `/runs/...` и других файлов пользователя
-  сохраняй DataFrame только через `save_dataframe`, а JSON/текст через `save_json`/`save_text`;
-- не используй прямые `df.to_csv("/runs/...")`, `df.to_excel("/file.xlsx")`,
-  `Path("/runs/...").write_text(...)` для workspace-путей: сторонние библиотеки могут
-  воспринять такой путь как системный корень ОС, а не как workspace;
+- сохраняй все пользовательские и промежуточные артефакты обычным Python-кодом в `ARTIFACTS_DIR`;
+- для записи файлов используй `Path(ARTIFACTS_DIR) / "file.ext"`, а не строковый workspace-путь
+  `"/artifacts/file.ext"`: сторонние библиотеки могут воспринять строку с начальным `/` как системный корень ОС;
 - для обычного редактирования исходников используй filesystem tools, а не Python;
 - для тестов, сборки и package-команд используй shell `execute`, а не Python.
 
@@ -141,19 +137,16 @@ python
 Доступные helpers:
 - `PROJECT_ROOT`: корень текущего workspace;
 - `WORKSPACE_ROOT`: корень текущего workspace из настроек `workspace_root`;
-- `TOOL_OUTPUTS_DIR`: каталог текущей сессии для `.pkl`, offload и временных артефактов;
+- `ARTIFACTS_DIR`: реальный путь ОС к единому каталогу `/artifacts`;
 - `read_pickle_file(path)`: чтение pickle по локальному пути из tool output;
 - `describe_pickle_file(path)`: тип, число строк, колонки и preview;
 - `rows_to_dataframe(rows)`: преобразование `list[dict]` в DataFrame;
-- `save_dataframe(df, path, format=None)`: сохранение DataFrame и регистрация artifact;
-- `save_json(path, data)`: сохранение JSON и регистрация artifact;
-- `save_text(path, content)`: сохранение текста и регистрация artifact;
 - `pd`, `np`: pandas и numpy, если они установлены;
 - пользовательские переменные сохраняются между вызовами в одной сессии.
 
 Видимый результат:
 - результат доступен агенту только если он напечатан через `print(...)`;
-- или если файл сохранён через `save_json`, `save_text`, `save_dataframe` и появился в `artifacts`;
+- или если файл создан/изменён обычным Python-кодом внутри `ARTIFACTS_DIR` и появился в `artifacts`;
 - простое присваивание переменной сохраняет её в REPL-сессии, но не показывает итог агенту.
 
 Плохое решение: присвоить результат без вывода.
@@ -189,48 +182,59 @@ result = chunked([1, 2, 3, 4], 3)
 print(result)
 ```
 
-Хорошее решение: сохранить запрошенный пользовательский артефакт в workspace root.
-```python
-output_path = save_json("/generated_report.json", {"status": "ok"})
-print(output_path)
-```
-
-Хорошее решение: сохранить DataFrame в workspace-файл через helper.
-```python
-output_path = save_dataframe(df, "/export.csv")
-print(output_path)
-```
-
-Плохое решение: прямой pandas path к workspace-корню.
-```python
-df.to_csv("/runs/export.csv", index=False)
-```
-
-Хорошее решение: сохранить временный артефакт в каталог текущей сессии.
+Хорошее решение: сохранить запрошенный пользовательский JSON-артефакт обычным Python-кодом.
 ```python
 from pathlib import Path
-output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"
-print(save_json(str(output_path), {"status": "ok"}))
+import json
+
+output_path = Path(ARTIFACTS_DIR) / "generated_report.json"
+output_path.write_text(json.dumps({"status": "ok"}, ensure_ascii=False, indent=2), encoding="utf-8")
+print(output_path)
 ```
 
-Хорошее решение: обработать полный offload artifact через полный путь ОС.
+Хорошее решение: сохранить DataFrame обычным pandas-кодом в каталог артефактов.
 ```python
-df = pd.read_pickle("/runs/deep_agent_tool_outputs/session_x/load_data_x.pkl")
+from pathlib import Path
+
+output_path = Path(ARTIFACTS_DIR) / "export.csv"
+df.to_csv(output_path, index=False)
+print(output_path)
+```
+
+Плохое решение: строковый workspace-путь с начальным `/`.
+```python
+df.to_csv("/artifacts/export.csv", index=False)
+```
+
+Хорошее решение: сохранить временный артефакт в тот же каталог артефактов.
+```python
+from pathlib import Path
+import json
+
+output_path = Path(ARTIFACTS_DIR) / "scratch.json"
+output_path.write_text(json.dumps({"status": "ok"}, ensure_ascii=False), encoding="utf-8")
+print(output_path)
+```
+
+Хорошее решение: обработать полный offload artifact через workspace-путь.
+```python
+from pathlib import Path
+
+df = pd.read_pickle(Path("/artifacts/load_data_x.pkl"))
 print(df.shape)
 print(df.columns.tolist())
 stats = df.groupby("main_rule")["transaction_amount_in_rub"].agg(["count", "mean"])
-output_path = save_dataframe(stats.reset_index(), "/rule_stats.csv")
+output_path = Path(ARTIFACTS_DIR) / "rule_stats.csv"
+stats.reset_index().to_csv(output_path, index=False)
 print(output_path)
 ```
 
 Работа с путями:
-- для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`;
-- для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`;
-- для сохранения пользовательского DataFrame в workspace используй `save_dataframe(df, "/file.csv")`,
-  а не прямой `df.to_csv(...)`;
-- при работе с pickle через pandas бери `artifact_path` / полный путь ОС из результата tool;
-- на Linux `artifact_path` может быть `/runs/...`, его можно передавать в стандартный `pd.read_pickle(...)`;
-- `read_pickle_file(r"<artifact_path>")` используй только когда нужен helper.
+- для всех артефактов используй `Path(ARTIFACTS_DIR) / "file.ext"`;
+- для сохранения DataFrame используй обычный pandas writer с `Path`-объектом внутри `ARTIFACTS_DIR`;
+- при работе с pickle через pandas бери `artifact_path` из результата tool;
+- `artifact_path` должен быть workspace-путем внутри `/artifacts`;
+- `read_pickle_file(r"<artifact_path>")` используй когда нужен helper.
 
 Обработка ошибок:
 - если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
@@ -246,8 +250,8 @@ class PythonInput(BaseModel):
     code: str = Field(
         description=(
             "Python-код для точного и воспроизводимого вычисления. Используй helpers "
-            "`read_pickle_file`, `rows_to_dataframe`, `save_dataframe`, `save_json`, "
-            "`save_text`, `pd`, `np` и переменные из предыдущих вызовов. Важные "
+            "`read_pickle_file`, `rows_to_dataframe`, `ARTIFACTS_DIR`, `pd`, `np` "
+            "и переменные из предыдущих вызовов. Важные "
             "результаты выводи через print()."
         ),
     )
@@ -415,7 +419,7 @@ def _execute_python_repl(
 
     stdout = io.StringIO()
     stderr = io.StringIO()
-    sandbox.artifacts.clear()
+    artifact_snapshot = _artifact_file_snapshot(sandbox.tool_outputs_dir)
     try:
         with (
             _working_directory_context(sandbox.working_directory),
@@ -429,7 +433,10 @@ def _execute_python_repl(
             message="Python code execution failed. Fix generated_code and retry.",
             generated_code=generated_code,
             execution_output=_combined_stdio(stdout, stderr),
-            artifacts=list(sandbox.artifacts),
+            artifacts=_changed_artifacts(
+                sandbox=sandbox,
+                before=artifact_snapshot,
+            ),
             error=f"{exc.__class__.__name__}: {exc}",
             traceback_text=_limit_text(traceback.format_exc(), max_chars=MAX_STDIO_CHARS),
             available_variables=_visible_variable_names(sandbox.globals),
@@ -445,9 +452,101 @@ def _execute_python_repl(
         message=f"Python code executed successfully.{purpose}",
         generated_code=generated_code,
         execution_output=execution_output,
-        artifacts=list(sandbox.artifacts),
+        artifacts=_changed_artifacts(
+            sandbox=sandbox,
+            before=artifact_snapshot,
+        ),
         available_variables=_visible_variable_names(sandbox.globals),
     )
+
+
+def _artifact_file_snapshot(root: Path) -> dict[Path, tuple[int, int]]:
+    """Снимает компактный снимок файлов в каталоге артефактов.
+
+    Args:
+        root: Каталог артефактов, внутри которого нужно отслеживать изменения.
+
+    Returns:
+        Словарь ``путь -> (размер, mtime_ns)`` для существующих файлов.
+    """
+
+    if not root.exists():
+        return {}
+    result: dict[Path, tuple[int, int]] = {}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        result[path.resolve()] = (stat.st_size, stat.st_mtime_ns)
+    return result
+
+
+def _changed_artifacts(
+    *,
+    sandbox: DeepAgentPythonSandbox,
+    before: dict[Path, tuple[int, int]],
+) -> list[dict[str, str]]:
+    """Возвращает файлы, созданные или изменённые в каталоге артефактов после выполнения кода.
+
+    Args:
+        sandbox: Sandbox с путями workspace и artifacts.
+        before: Снимок файлов до выполнения кода.
+
+    Returns:
+        Список metadata с workspace-путём, типом файла и пустым описанием.
+    """
+
+    after = _artifact_file_snapshot(sandbox.tool_outputs_dir)
+    artifacts: list[dict[str, str]] = []
+    for path, signature in sorted(after.items(), key=lambda item: item[0].as_posix()):
+        if before.get(path) == signature:
+            continue
+        artifacts.append(
+            {
+                "path": _workspace_artifact_path(path, sandbox.working_directory),
+                "type": _artifact_type(path),
+                "description": "",
+            }
+        )
+    return artifacts
+
+
+def _workspace_artifact_path(path: Path, workspace_root: Path) -> str:
+    """Преобразует реальный путь артефакта в workspace-путь для ответа tool.
+
+    Args:
+        path: Реальный путь файла.
+        workspace_root: Корень workspace.
+
+    Returns:
+        Путь вида ``/artifacts/file.ext`` или реальный путь, если файл вне workspace.
+    """
+
+    try:
+        from deep_agent.settings import workspace_tool_path
+
+        return workspace_tool_path(path.resolve(), workspace_root.resolve())
+    except ValueError:
+        return str(path.resolve())
+
+
+def _artifact_type(path: Path) -> str:
+    """Определяет тип артефакта по расширению файла.
+
+    Args:
+        path: Путь файла.
+
+    Returns:
+        Короткий тип файла для JSON-ответа инструмента.
+    """
+
+    suffix = path.suffix.lower().lstrip(".")
+    if suffix in {"csv", "json", "pkl", "pickle", "md", "txt", "xlsx", "html", "png", "jpg", "jpeg"}:
+        return "pickle" if suffix == "pkl" else suffix
+    return "file"
 
 
 def _validate_code_policy(code: str) -> None:
@@ -561,7 +660,7 @@ def _python_error_solution_options(exc: Exception) -> list[str]:
         "Проверь available_variables и используй только существующие имена переменных.",
         "Исправь generated_code с учетом traceback и повтори python.",
         "Выведи важные результаты через print().",
-        "Для файловых результатов используй save_text, save_json или save_dataframe.",
+        "Для файловых результатов создай файл обычным Python-кодом внутри Path(ARTIFACTS_DIR).",
     ]
     if isinstance(exc, SyntaxError):
         options.insert(0, "Исправь синтаксис Python-кода перед повторным запуском.")

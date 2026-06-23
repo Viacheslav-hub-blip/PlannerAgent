@@ -73,11 +73,11 @@ class FilesystemPathContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir).resolve()
-            report_path = workspace / "reports" / "result.md"
+            report_path = workspace / "artifacts" / "result.md"
 
             normalized = normalize_filesystem_tool_path(str(report_path), workspace)
 
-        self.assertEqual(normalized, "/reports/result.md")
+        self.assertEqual(normalized, "/artifacts/result.md")
 
     def test_normalizes_relative_path_to_workspace_posix_path(self) -> None:
         """Преобразует относительный путь в путь от корня workspace.
@@ -89,9 +89,9 @@ class FilesystemPathContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir).resolve()
 
-            normalized = normalize_filesystem_tool_path("reports/result.md", workspace)
+            normalized = normalize_filesystem_tool_path("artifacts/result.md", workspace)
 
-        self.assertEqual(normalized, "/reports/result.md")
+        self.assertEqual(normalized, "/artifacts/result.md")
 
     def test_write_file_result_is_verified_after_handler(self) -> None:
         """Добавляет подтверждение, если файл читается после записи.
@@ -112,7 +112,7 @@ class FilesystemPathContractTests(unittest.TestCase):
                     "id": "call-write",
                     "name": "write_file",
                     "args": {
-                        "file_path": "reports/result.md",
+                        "file_path": "artifacts/result.md",
                         "content": "ok\n",
                     },
                 },
@@ -144,7 +144,7 @@ class FilesystemPathContractTests(unittest.TestCase):
 
         self.assertEqual(result.status, "success")
         self.assertIn("FilesystemVerification", result.content)
-        self.assertIn("/reports/result.md", result.content)
+        self.assertIn("/artifacts/result.md", result.content)
 
     def test_write_file_result_becomes_error_when_readback_differs(self) -> None:
         """Возвращает ошибку, если проверочное чтение не совпало с записанным текстом.
@@ -155,7 +155,7 @@ class FilesystemPathContractTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir).resolve()
-            backend = FakeBackend({"/reports/result.md": "different\n"})
+            backend = FakeBackend({"/artifacts/result.md": "different\n"})
             middleware = FilesystemPathContractMiddleware(
                 workspace_root=workspace,
                 backend=backend,
@@ -165,7 +165,7 @@ class FilesystemPathContractTests(unittest.TestCase):
                     "id": "call-write",
                     "name": "write_file",
                     "args": {
-                        "file_path": "/reports/result.md",
+                        "file_path": "/artifacts/result.md",
                         "content": "ok\n",
                     },
                 },

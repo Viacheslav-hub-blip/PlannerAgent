@@ -52,19 +52,19 @@ class PythonToolTests(unittest.TestCase):
         """
 
         self.assertIn(
-            'output_path = save_json("/reports/generated_report.json", {"status": "ok"})',
+            'output_path = Path(ARTIFACTS_DIR) / "generated_report.json"',
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            'output_path = Path(TOOL_OUTPUTS_DIR) / "scratch.json"',
+            'output_path = Path(ARTIFACTS_DIR) / "scratch.json"',
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "для запрошенных пользовательских файлов используй явный путь пользователя или `Path(WORKSPACE_ROOT)`",
+            "сохраняй все пользовательские и промежуточные артефакты обычным Python-кодом в `ARTIFACTS_DIR`",
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "для временных, промежуточных и offload-артефактов используй `Path(TOOL_OUTPUTS_DIR)`",
+            "`Path(ARTIFACTS_DIR) / \"file.ext\"`",
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
@@ -72,15 +72,15 @@ class PythonToolTests(unittest.TestCase):
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            'save_dataframe(df, "/reports/export.csv")',
+            'df.to_csv(output_path, index=False)',
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            'df.to_csv("/runs/export.csv", index=False)',
+            'df.to_csv("/artifacts/export.csv", index=False)',
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "а не прямой `df.to_csv(...)`",
+            "для сохранения DataFrame используй обычный pandas writer",
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
@@ -97,10 +97,11 @@ class PythonToolTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            artifacts_dir = root / "artifacts"
             sandbox = DeepAgentPythonSandbox(
                 working_directory=root,
-                readable_roots=(root,),
-                tool_outputs_dir=root,
+                readable_roots=(root, artifacts_dir),
+                tool_outputs_dir=artifacts_dir,
             )
             tool = build_python_tool(sandbox)
 
@@ -146,11 +147,11 @@ class PythonToolTests(unittest.TestCase):
         self.assertNotIn("target_variable", payload)
         self.assertNotIn("variable_preview", payload)
 
-    def test_open_uses_configured_tool_outputs_dir(self) -> None:
+    def test_open_uses_configured_artifacts_dir(self) -> None:
         """Проверяет запись файла в каталог артефактов из настроек sandbox.
 
         Returns:
-            ``None``; тест подтверждает использование ``TOOL_OUTPUTS_DIR``.
+            ``None``; тест подтверждает использование ``ARTIFACTS_DIR``.
         """
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -169,7 +170,7 @@ class PythonToolTests(unittest.TestCase):
                     {
                         "code": (
                             "from pathlib import Path\n"
-                            "output_path = Path(TOOL_OUTPUTS_DIR) / 'my_notebook.ipynb'\n"
+                            "output_path = Path(ARTIFACTS_DIR) / 'my_notebook.ipynb'\n"
                             "with open(output_path, 'w', encoding='utf-8') as file:\n"
                             "    file.write('{}')\n"
                             "print(str(output_path))"
@@ -192,10 +193,11 @@ class PythonToolTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            artifacts_dir = root / "artifacts"
             sandbox = DeepAgentPythonSandbox(
                 working_directory=root,
-                readable_roots=(root,),
-                tool_outputs_dir=root,
+                readable_roots=(root, artifacts_dir),
+                tool_outputs_dir=artifacts_dir,
             )
             tool = build_python_tool(sandbox)
 
@@ -218,8 +220,8 @@ class PythonToolTests(unittest.TestCase):
         self.assertEqual(payload["artifacts"], [])
         self.assertTrue(side_effect_exists)
 
-    def test_save_json_registers_artifact(self) -> None:
-        """Проверяет сохранение JSON и возврат artifact metadata.
+    def test_plain_python_write_registers_artifact(self) -> None:
+        """Проверяет сохранение JSON обычным Python-кодом и возврат artifact metadata.
 
         Returns:
             ``None``. Тест подтверждает, что helper регистрирует созданный файл.
@@ -227,10 +229,11 @@ class PythonToolTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            artifacts_dir = root / "artifacts"
             sandbox = DeepAgentPythonSandbox(
                 working_directory=root,
-                readable_roots=(root,),
-                tool_outputs_dir=root,
+                readable_roots=(root, artifacts_dir),
+                tool_outputs_dir=artifacts_dir,
             )
             tool = build_python_tool(sandbox)
 
@@ -238,21 +241,24 @@ class PythonToolTests(unittest.TestCase):
                 tool.invoke(
                     {
                         "code": (
-                            "path = save_json('/reports/result.json', {'ok': True})\n"
+                            "from pathlib import Path\n"
+                            "import json\n"
+                            "path = Path(ARTIFACTS_DIR) / 'result.json'\n"
+                            "path.write_text(json.dumps({'ok': True}), encoding='utf-8')\n"
                             "print(path)"
                         ),
                     }
                 )
             )
 
-            report_path = root / "reports" / "result.json"
+            report_path = artifacts_dir / "result.json"
             report_exists = report_path.exists()
 
         self.assertTrue(payload["success"])
         self.assertTrue(report_exists)
-        self.assertEqual(payload["artifacts"][0]["path"], "/reports/result.json")
+        self.assertEqual(payload["artifacts"][0]["path"], "/artifacts/result.json")
         self.assertEqual(payload["artifacts"][0]["type"], "json")
-        self.assertIn("/reports/result.json", payload["execution_output"])
+        self.assertIn("result.json", payload["execution_output"])
 
     """Проверяет импорт sandbox helpers и компактный формат ошибок инструмента."""
 

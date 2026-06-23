@@ -34,8 +34,8 @@ DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "defaults.json"
 CONFIG_ENV_VAR = "DEEP_AGENT_CONFIG_PATH"
 DEFAULT_AGENTS_FILE_NAME = "AGENTS.md"
 DEFAULT_SKILLS_RELATIVE_PATH = "deep_agent/skills"
-DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH = "runs/deep_agent_tool_outputs"
-DEFAULT_TRACE_LOG_RELATIVE_PATH = "runs/deep_agent_traces"
+DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH = "artifacts"
+DEFAULT_TRACE_LOG_RELATIVE_PATH = "artifacts"
 REQUIRED_CONFIG_KEYS = (
     "harness_profile_key",
     "thread_id",
@@ -255,15 +255,11 @@ def _tool_outputs_path_from_config(
         workspace_root: Корень пользовательского workspace.
 
     Returns:
-        Абсолютный путь. Относительные значения остаются внутри ``workspace_root``,
-        а абсолютные значения разрешены как реальные пути ОС, например ``/runs/...``.
+        Абсолютный путь внутри ``workspace_root``.
     """
 
     raw_value = _optional_config_value(payload, key, default_relative_path)
-    path = Path(str(raw_value))
-    if path.is_absolute():
-        return path.expanduser().resolve()
-    return _resolve_workspace_path(path, workspace_root)
+    return _resolve_workspace_path(raw_value, workspace_root)
 
 
 def _resolve_project_path(value: Any, project_root: Path) -> Path:

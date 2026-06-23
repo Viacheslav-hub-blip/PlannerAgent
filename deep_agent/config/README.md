@@ -8,8 +8,7 @@
 
 - `AGENTS.md` для project memory;
 - `deep_agent/skills` для skills агента;
-- `runs/deep_agent_tool_outputs` для session artifacts;
-- `runs/deep_agent_traces` для trace-файлов.
+- `artifacts` для session artifacts, пользовательских файлов, промежуточных файлов и trace-файлов.
 
 Старые ключи `agents_file_name`, `skills_root`, `tool_outputs_dir` и
 `trace_log_dir` всё ещё принимаются как совместимый override, но не нужны в

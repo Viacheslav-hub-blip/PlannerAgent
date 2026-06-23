@@ -156,19 +156,19 @@ joins, grouping, validation, or exporting a report.
 
 Call contract:
 
-- read pickle offload artifacts with standard pandas: `pd.read_pickle(r"<artifact_path>")`;
-- `artifact_path` is a real operating-system path; on Linux it can be `/runs/...`;
-- use `read_pickle_file(r"<artifact_path>")` only when helper behavior is needed;
+- read pickle offload artifacts with standard pandas and `Path`: `pd.read_pickle(Path(r"<artifact_path>"))`;
+- `artifact_path` is a workspace path under the single `/artifacts` directory;
+- use `read_pickle_file(r"<artifact_path>")` when helper behavior is needed;
 - convert rows with `rows_to_dataframe(rows)` when tabular operations are needed;
 - print compact results with `print(...)`;
-- save user-facing outputs with `save_json`, `save_text`, or `save_dataframe`.
+- save user-facing outputs with ordinary Python code under `ARTIFACTS_DIR`.
 
-When saving user-facing workspace artifacts from Python, use the helper functions. For DataFrame exports to the
-workspace root or another workspace path, call `save_dataframe(df, "/file.csv")`. Do not call direct pandas writers
-for workspace-style output paths. This save rule does not apply to reading offload `artifact_path` values: those are
-real operating-system paths and may be passed directly to `pd.read_pickle(...)`.
+When saving user-facing workspace artifacts from Python, create files under `ARTIFACTS_DIR` with ordinary Python code.
+Use `Path(ARTIFACTS_DIR) / "file.csv"` or `Path(ARTIFACTS_DIR) / "file.md"` and standard writers such as
+`DataFrame.to_csv(...)`, `Path.write_text(...)`, or `json.dump(...)`. Do not use string workspace paths like
+`"/artifacts/file.csv"` as direct writer targets.
 
-When a tool output contains `artifact_path`, report it as the main artifact path and pass it directly to
+When a tool output contains `artifact_path`, report it as the main artifact path and pass `Path(artifact_path)` to
 `pd.read_pickle(...)` for pandas processing.
 
 Examples:
@@ -178,7 +178,9 @@ bad:
 Calculate totals from preview rows.
 
 good:
-df = pd.read_pickle(r"<artifact_path>")
+from pathlib import Path
+
+df = pd.read_pickle(Path(r"<artifact_path>"))
 print(df.shape)
 print(df.groupby("main_rule")["transaction_amount_in_rub"].mean())
 ```

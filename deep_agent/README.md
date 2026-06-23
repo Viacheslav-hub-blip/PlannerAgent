@@ -62,7 +62,7 @@
 8. Offload больших таблиц.
 
    Если tool возвращает много строк или слишком большой текст, результат сохраняется в
-   pickle в `runs/deep_agent_tool_outputs`. В контекст агента попадает короткое описание,
+   pickle в `artifacts`. В контекст агента попадает короткое описание,
    путь к файлу и preview. Полный файл можно читать через `python`.
 
 9. Полный Python runtime.
@@ -71,7 +71,7 @@
    join, фильтрации, подготовки итоговых таблиц, файловых операций и subprocess-задач
    внутри настроенного workspace. Tool сохраняет переменные между вызовами, маппит
    полные workspace-пути на фактический корень текущего запуска и регистрирует
-   артефакты через `save_json`, `save_text` и `save_dataframe`.
+   артефакты обычным Python-кодом в `ARTIFACTS_DIR`.
 
 10. Встроенные ограничения выполнения.
 
@@ -240,8 +240,7 @@ deep_agent/config/defaults.json
 
 - `workspace_root` - корень coding workspace и рабочая директория terminal.
 - Остальные файловые пути строятся от `workspace_root` в коде:
-  `AGENTS.md`, `deep_agent/skills`, `runs/deep_agent_tool_outputs`,
-  `runs/deep_agent_traces`.
+  `AGENTS.md`, `deep_agent/skills`, `artifacts`.
 - `agents_file_name`, `skills_root`, `tool_outputs_dir`, `trace_log_dir` можно
   передать в override-конфиге для совместимости, но базовый config их не требует.
 - `terminal_timeout` - timeout terminal-команды.

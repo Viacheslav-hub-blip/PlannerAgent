@@ -35,6 +35,7 @@ from deep_agent.agent import (
     build_conversation_checkpointer,
     build_skills_backend,
     build_supervisor_backend,
+    create_session_tool_outputs_dir,
 )
 from deep_agent.runtime.harness import build_analytics_harness_profile
 from deep_agent.prompts.coding import CODING_AGENT_PROMPT
@@ -473,15 +474,15 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertEqual(settings.skills_root, workspace / "deep_agent" / "skills")
         self.assertEqual(
             settings.tool_outputs_dir,
-            workspace / "runs" / "deep_agent_tool_outputs",
+            workspace / "artifacts",
         )
         self.assertEqual(
             settings.trace_log_dir,
-            workspace / "runs" / "deep_agent_traces",
+            workspace / "artifacts",
         )
 
-    def test_settings_allow_external_tool_outputs_dir(self) -> None:
-        """Проверяет, что tool outputs можно вынести за пределы workspace.
+    def test_settings_reject_external_tool_outputs_dir(self) -> None:
+        """Проверяет, что tool outputs остаются внутри workspace.
 
         Returns:
             ``None``.
@@ -514,9 +515,8 @@ class ReliableExecutionTests(unittest.TestCase):
                 "graph_recursion_limit": 100,
             }
 
-            settings = DeepAgentSettings.from_mapping(payload)
-
-        self.assertEqual(settings.tool_outputs_dir, external_outputs.resolve())
+            with self.assertRaisesRegex(ValueError, "workspace_root"):
+                DeepAgentSettings.from_mapping(payload)
 
     def test_default_config_keeps_only_workspace_root_as_path_setting(self) -> None:
         """Проверяет, что базовый config не хранит производные path-настройки.
@@ -724,8 +724,8 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ToolContextNoticeMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, PromptToolDescriptionsMiddleware) for item in middleware))
 
-    def test_tool_output_summary_includes_real_pickle_path(self) -> None:
-        """Offload summary должен показывать реальный путь для pandas pickle.
+    def test_tool_output_summary_includes_workspace_artifact_path(self) -> None:
+        """Offload summary должен показывать workspace-путь для pandas pickle.
 
         Returns:
             ``None``.
@@ -733,7 +733,7 @@ class ReliableExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            outputs_dir = workspace / "runs" / "deep_agent_tool_outputs" / "session_1"
+            outputs_dir = workspace / "artifacts"
             middleware = ToolOutputFileMiddleware(
                 output_dir=outputs_dir,
                 workspace_root=workspace,
@@ -753,40 +753,23 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("artifact_path:", result.content)
         self.assertIn("pandas_read_pickle: pd.read_pickle", result.content)
         self.assertIn("read_pickle_file: read_pickle_file", result.content)
-        self.assertIn(str(outputs_dir), result.content)
-        self.assertEqual(result.artifact["workspace_file"].split("/")[1], "runs")
+        self.assertIn("/artifacts/", result.content)
+        self.assertEqual(result.artifact["workspace_file"].split("/")[1], "artifacts")
         self.assertTrue(absolute_file_exists)
 
-    def test_tool_output_summary_supports_external_runs_path(self) -> None:
-        """Offload summary не требует, чтобы tool outputs находились внутри workspace.
+    def test_create_session_tool_outputs_dir_uses_single_artifacts_folder(self) -> None:
+        """Проверяет, что session outputs не создают дополнительный подкаталог.
 
         Returns:
             ``None``.
         """
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            workspace = root / "workspace"
-            outputs_dir = root / "runs" / "deep_agent_tool_outputs" / "session_1"
-            workspace.mkdir()
-            middleware = ToolOutputFileMiddleware(
-                output_dir=outputs_dir,
-                workspace_root=workspace,
-                min_rows_to_save=1,
-            )
-            result = middleware._process_tool_message(
-                result=ToolMessage(
-                    content="[]",
-                    artifact=[{"event_id": "1"}, {"event_id": "2"}],
-                    tool_call_id="call-1",
-                    name="load_data",
-                ),
-                tool_name="load_data",
-            )
+            artifacts_dir = Path(temp_dir) / "artifacts"
+            result = create_session_tool_outputs_dir(artifacts_dir)
 
-        self.assertIn(f"artifact_path: {outputs_dir}", result.content)
-        self.assertIn(f'pd.read_pickle(r"{outputs_dir}', result.content)
-        self.assertTrue(str(result.artifact["workspace_file"]).startswith(str(outputs_dir)))
+            self.assertEqual(result, artifacts_dir.resolve())
+            self.assertTrue(artifacts_dir.exists())
 
     def test_agent_builder_does_not_add_permissions_or_interrupt_fallback(self) -> None:
         """Сборка агента не должна содержать permission rules или HITL fallback.
@@ -812,18 +795,18 @@ class ReliableExecutionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
-            outputs_dir = workspace / "runs" / "deep_agent_tool_outputs" / "session_1"
+            outputs_dir = workspace / "artifacts"
             outputs_dir.mkdir(parents=True)
             prompt = _build_runtime_context_prompt(workspace, outputs_dir)
 
         self.assertIn("Current date:", prompt)
         self.assertIn("Workspace root:", prompt)
-        self.assertIn("Session tool outputs:", prompt)
+        self.assertIn("Artifacts directory:", prompt)
         self.assertIn("last 2 days", prompt)
         self.assertIn("Never take", prompt)
         self.assertIn("examples", prompt)
         self.assertIn("demo data", prompt)
-        self.assertIn("save a user-facing artifact to `/`", prompt)
+        self.assertIn("single artifacts directory", prompt)
 
     def test_agent_builder_keeps_session_tool_outputs_persistent(self) -> None:
         """Сборка агента не должна удалять session tool outputs при закрытии графа.
@@ -945,7 +928,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
         self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
         self.assertIn("среди этих", SYSTEM_PROMPT)
-        self.assertIn("pd.read_pickle(artifact_path)", SYSTEM_PROMPT)
+        self.assertIn("pd.read_pickle(Path(artifact_path))", SYSTEM_PROMPT)
         self.assertIn("read_pickle_file(artifact_path)", SYSTEM_PROMPT)
         self.assertIn("Do not delegate a new `load_data`", SYSTEM_PROMPT)
         self.assertIn("good plan for analytics over retrieved data", SYSTEM_PROMPT)
@@ -962,8 +945,8 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("observed result", CODING_AGENT_PROMPT)
         self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
         self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
-        self.assertIn('save_dataframe(df, "/file.csv")', DATA_RETRIEVAL_PROMPT)
-        self.assertIn("real operating-system paths", DATA_RETRIEVAL_PROMPT)
+        self.assertIn('Path(ARTIFACTS_DIR) / "file.csv"', DATA_RETRIEVAL_PROMPT)
+        self.assertIn("workspace path under the single `/artifacts` directory", DATA_RETRIEVAL_PROMPT)
         self.assertIn("pd.read_pickle(...)", DATA_RETRIEVAL_PROMPT)
         self.assertIn("Comparison and change requests require separate comparable populations", DATA_RETRIEVAL_PROMPT)
         self.assertIn("two adjacent 7-day windows", DATA_RETRIEVAL_PROMPT)

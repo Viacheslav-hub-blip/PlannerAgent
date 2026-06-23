@@ -146,7 +146,7 @@ def normalize_filesystem_tool_path(value: str, workspace_root: Path) -> str:
         workspace_root: Фактический корень workspace текущего запуска.
 
     Returns:
-        Абсолютный POSIX-путь вида ``/reports/file.md``.
+        Абсолютный POSIX-путь вида ``/artifacts/file.md``.
 
     Raises:
         ValueError: Путь пустой или абсолютный OS-путь указывает вне workspace.

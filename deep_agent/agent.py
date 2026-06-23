@@ -38,8 +38,6 @@ from __future__ import annotations
 import atexit
 import importlib
 import os
-import shutil
-import uuid
 import weakref
 from collections.abc import Callable
 from datetime import date
@@ -774,15 +772,15 @@ def _build_runtime_context_prompt(workspace_root: Path, tool_outputs_dir: Path) 
 
 Current date: {today}.
 Workspace root: {workspace_tool_root(workspace_root)} maps to real path {workspace_root.resolve()}.
-Session tool outputs: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
+Artifacts directory: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
 
 For relative dates in user requests, calculate the period from Current date. For example, "last 2 days" means the
 two calendar days ending on Current date unless the user explicitly defines another business convention. Never take
 relative dates from examples, validation cases, demo data, or visible table partitions.
 
-When reporting saved files, include the workspace path and, when available, the real path under Workspace root. If the
-user asked to see or download a result, save a user-facing artifact to `/` or the explicit path requested by the user,
-not only to session tool outputs.
+When reporting saved files, include the workspace path under `/artifacts`. If the user asked to see or download a
+result, save it to the single artifacts directory. Do not create extra artifact folders unless the user explicitly
+asks for a different repository file.
 </runtime_context>
 """.strip()
 
@@ -810,19 +808,17 @@ def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:
 
 
 def create_session_tool_outputs_dir(base_dir: Path) -> Path:
-    """Создаёт отдельную папку tool outputs для одного запуска агента.
+    """Создаёт единый каталог tool outputs для артефактов агента.
 
     Args:
-        base_dir: Базовая директория, внутри которой создаётся session-подкаталог.
+        base_dir: Базовая директория артефактов.
 
     Returns:
-        Абсолютный путь к созданной папке текущего запуска.
+        Абсолютный путь к единому каталогу артефактов.
     """
 
     base_dir.mkdir(parents=True, exist_ok=True)
-    session_dir = base_dir / f"session_{uuid.uuid4().hex}"
-    session_dir.mkdir(parents=True, exist_ok=False)
-    return session_dir.resolve()
+    return base_dir.resolve()
 
 
 def register_session_tool_outputs_cleanup(agent: Any, session_dir: Path) -> None:
@@ -844,19 +840,16 @@ def register_session_tool_outputs_cleanup(agent: Any, session_dir: Path) -> None
 
 
 def cleanup_session_tool_outputs_dir(session_dir: Path) -> None:
-    """Удаляет папку tool outputs одного запуска.
+    """Сохраняет единый каталог артефактов и ничего не удаляет.
 
     Args:
-        session_dir: Папка текущего запуска, имя которой должно начинаться с ``session_``.
+        session_dir: Единый каталог артефактов.
 
     Returns:
-        ``None``. Если путь не похож на session-папку, функция ничего не удаляет.
+        ``None``. Каталог артефактов является пользовательским результатом и не очищается автоматически.
     """
 
-    resolved = session_dir.resolve()
-    if not resolved.name.startswith("session_"):
-        return
-    shutil.rmtree(resolved, ignore_errors=True)
+    return None
 
 
 __all__ = [

@@ -237,7 +237,7 @@ results or saved artifacts instead of repeating reads.
 When the user asks a follow-up about an existing retrieval with phrases like "among these", "in this export",
 "in these rows", "среди этих", "по этой выгрузке", "по ним", or "в этих данных", first locate and reuse the saved
 artifact from the successful previous `load_data` or `python` call. Use `python` with
-`pd.read_pickle(artifact_path)`, `read_pickle_file(artifact_path)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
+`pd.read_pickle(Path(artifact_path))`, `read_pickle_file(artifact_path)`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
 to filter, aggregate, visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
 missing, unreadable, or does not cover the requested source, period, fields, or population. If a new read is required,
 state exactly which coverage condition is missing.
@@ -262,8 +262,9 @@ conclusion.
 <filesystem_principles>
 ## Filesystem Principles
 
-Treat `/` in filesystem tools as the configured user workspace root. Save user-facing artifacts at the workspace root
-(`/`) by default, or at a path explicitly requested by the user.
+Treat `/` in filesystem tools as the configured user workspace root. Save user-facing artifacts in the single shared
+folder `/artifacts` by default. Do not create extra category folders unless the user explicitly asks for a repository
+file at that path.
 
 Treat `/deep_agent/` as the agent implementation directory. Read it when code, skills, prompts, or agent internals are
 relevant, but do not create, overwrite, or edit files under `/deep_agent/` unless the user explicitly asks to change
