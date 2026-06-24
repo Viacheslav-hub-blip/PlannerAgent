@@ -25,6 +25,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
+- _build_load_data_hitl_middleware: штатный HITL middleware для подтверждения ``load_data``.
 - _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - _require_workspace_path: проверка принадлежности пути workspace.
@@ -49,6 +50,7 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
+    HumanInTheLoopMiddleware,
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
@@ -73,6 +75,7 @@ from deep_agent.tools.jupyter_notebook import build_convert_jupyter_notebook_too
 from deep_agent.tools.python_execution import build_python_tool
 from deep_agent.tools.project_structure import build_get_project_structure_tool
 from deep_agent.tools.skill_loader import build_load_skills_tool
+from deep_agent.tools.spark_data import build_load_data_approval_description
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
 from deep_agent.middleware.filesystem_path_contract import FilesystemPathContractMiddleware
 from deep_agent.middleware.gigachat_runtime import (
@@ -369,6 +372,11 @@ def build_analytics_deep_agent(
     )
     data_retrieval_agent_middleware = [
         subagent_skills_middleware,
+        _build_load_data_hitl_middleware(
+            query_parser_model=model,
+            workspace_root=resolved_workspace_root,
+            output_dir=resolved_tool_outputs_root,
+        ),
         *_build_native_runtime_middleware(
             settings,
             tool_output_file_middleware,
@@ -440,6 +448,55 @@ def build_analytics_deep_agent(
         ),
     )
     return agent
+
+
+def _build_load_data_hitl_middleware(
+    *,
+    query_parser_model: Any,
+    workspace_root: Path,
+    output_dir: Path,
+) -> HumanInTheLoopMiddleware:
+    """Создаёт штатный LangChain HITL middleware для подтверждения ``load_data``.
+
+    Args:
+        query_parser_model: Модель, которой строится структурированный разбор SQL-подобного ``query``.
+        workspace_root: Корень workspace для человекочитаемого artifact path.
+        output_dir: Каталог, куда Spark ``load_data`` сохранит JSONL artifact после approval.
+
+    Returns:
+        ``HumanInTheLoopMiddleware``, который останавливает graph до выполнения ``load_data`` и
+        показывает пользователю реальный PySpark-код с подставленными значениями.
+    """
+
+    def describe_load_data(tool_call: Any, _state: Any, _runtime: Any) -> str:
+        """Формирует текст approval request для конкретного tool call ``load_data``.
+
+        Args:
+            tool_call: Tool call LangChain с аргументом ``query``.
+            _state: Текущее состояние агента; не используется.
+            _runtime: Runtime LangGraph; не используется.
+
+        Returns:
+            Описание с исходным запросом, artifact path и реальным PySpark-кодом.
+        """
+
+        args = tool_call.get("args") if isinstance(tool_call, dict) else {}
+        query = str((args or {}).get("query") or "").strip()
+        return build_load_data_approval_description(
+            query=query,
+            query_parser_model=query_parser_model,
+            output_dir=output_dir,
+            workspace_root=workspace_root,
+        )
+
+    return HumanInTheLoopMiddleware(
+        interrupt_on={
+            "load_data": {
+                "allowed_decisions": ["approve", "reject"],
+                "description": describe_load_data,
+            }
+        }
+    )
 
 
 def _build_native_runtime_middleware(

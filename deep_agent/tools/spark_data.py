@@ -124,7 +124,7 @@ def build_spark_data_tools(
     output_dir: str | Path = DEFAULT_SPARK_OUTPUT_DIR,
     workspace_root: str | Path | None = None,
     preview_rows: int = DEFAULT_SPARK_PREVIEW_ROWS,
-    require_approval: bool = True,
+    require_approval: bool = False,
 ) -> list[BaseTool]:
     """Создает инструмент ``load_data`` поверх готовой Spark session.
 
@@ -385,6 +385,75 @@ def _request_spark_query_approval(
         return ""
     message = decision.get("message") or "Пользователь отклонил выполнение Spark-запроса."
     return f"Запрос load_data отклонён до выполнения Spark action: {message}"
+
+
+def build_load_data_approval_description(
+    *,
+    query: str,
+    query_parser_model: Any | None,
+    output_dir: str | Path = DEFAULT_SPARK_OUTPUT_DIR,
+    workspace_root: str | Path | None = None,
+) -> str:
+    """Строит описание HITL-подтверждения ``load_data`` без выполнения Spark action.
+
+    Args:
+        query: SQL-подобный запрос из аргументов tool call ``load_data``.
+        query_parser_model: Chat-модель для разбора ``query`` в структурированные аргументы.
+        output_dir: Каталог будущего JSONL artifact.
+        workspace_root: Корень workspace для абсолютного пути artifact.
+
+    Returns:
+        Текст approval request с исходным запросом, artifact path и реальным PySpark-кодом.
+    """
+
+    try:
+        parsed = _extract_query_args_with_llm(query=query, query_parser_model=query_parser_model)
+        resolved_workspace_root = Path(workspace_root or Path.cwd()).resolve()
+        resolved_output_dir = _resolve_output_dir(
+            output_dir=output_dir,
+            workspace_root=resolved_workspace_root,
+        )
+        table_alias = str(parsed["table_name"]).strip()
+        resolved_table_name = _resolve_table_name(table_alias)
+        export_path = _build_export_file_path(
+            output_dir=resolved_output_dir,
+            table_alias=table_alias,
+            select_columns=parsed["select_columns"],
+            filters=parsed["filters"],
+            derived_columns=parsed["derived_columns"],
+            group_by=parsed["group_by"],
+            aggregations=parsed["aggregations"],
+            order_by=parsed["order_by"],
+            max_rows=parsed["max_rows"],
+        )
+        temp_output_dir = export_path.with_suffix(export_path.suffix + ".tmp")
+        query_code = _build_pyspark_query_code(
+            resolved_table_name=resolved_table_name,
+            select_columns=parsed["select_columns"],
+            filters=parsed["filters"],
+            derived_columns=parsed["derived_columns"],
+            group_by=parsed["group_by"],
+            aggregations=parsed["aggregations"],
+            order_by=parsed["order_by"],
+            max_rows=parsed["max_rows"],
+            output_path=temp_output_dir,
+            final_output_path=export_path,
+        )
+        return (
+            "Подтвердите выполнение Spark-запроса.\n\n"
+            f"Источник: {table_alias}\n"
+            f"Artifact: {export_path.resolve()}\n\n"
+            f"Исходный SQL-подобный запрос:\n{query.strip()}\n\n"
+            "Реальный PySpark-код с подставленными значениями:\n"
+            f"```python\n{query_code}\n```"
+        )
+    except Exception as exc:
+        return (
+            "Подтвердите выполнение `load_data`.\n\n"
+            "Не удалось заранее построить PySpark preview для approval request.\n"
+            f"Причина: {exc}\n\n"
+            f"Аргумент query:\n{query.strip()}"
+        )
 
 
 def _write_result_to_jsonl(
@@ -1202,5 +1271,6 @@ def _strip_outer_quotes(value: Any) -> str:
 __all__ = [
     "READ_TABLE_DESCRIPTION",
     "TABLE_ALIASES",
+    "build_load_data_approval_description",
     "build_spark_data_tools",
 ]

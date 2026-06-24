@@ -52,7 +52,12 @@ from deep_agent.prompts.tool_contracts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
-from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION, _build_pyspark_query_code
+from deep_agent.tools.spark_data import (
+    READ_TABLE_DESCRIPTION,
+    _build_pyspark_query_code,
+    build_load_data_approval_description,
+    build_spark_data_tools,
+)
 from deep_agent.settings import (
     DEFAULT_CONFIG_PATH,
     DeepAgentSettings,
@@ -886,6 +891,64 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn(".write.mode('overwrite').json(", query_code)
         self.assertNotIn("pdf = result.toPandas()", query_code)
 
+    def test_load_data_hitl_description_contains_real_pyspark_code(self) -> None:
+        """Проверяет описание штатного HITL approval для ``load_data`` без Spark action.
+
+        Returns:
+            ``None``.
+        """
+
+        parsed = ParsedDataQuery(
+            status="ready",
+            table_name="hits",
+            select_columns=["event_id", "event_dt", "epk_id"],
+            filters=[
+                FilterCondition(
+                    column="event_dt",
+                    operator="between",
+                    values=["20260324", "20260624"],
+                ),
+                FilterCondition(
+                    column="epk_id",
+                    operator="eq",
+                    value="1129335958569578699",
+                ),
+            ],
+        )
+        model = SequencedStructuredModel(
+            [AIMessage(content=json.dumps(parsed.model_dump()))]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            description = build_load_data_approval_description(
+                query=(
+                    "LOAD hits SELECT event_id, event_dt, epk_id "
+                    "WHERE epk_id = '1129335958569578699' "
+                    "PERIOD event_dt FROM '20260324' TO '20260624'"
+                ),
+                query_parser_model=model,
+                output_dir=workspace / "artifacts",
+                workspace_root=workspace,
+            )
+
+        self.assertIn("Подтвердите выполнение Spark-запроса.", description)
+        self.assertIn("Источник: hits", description)
+        self.assertIn("```python", description)
+        self.assertIn("df = spark.table(", description)
+        self.assertIn("F.col('epk_id') == '1129335958569578699'", description)
+        self.assertIn("row_count = result.count()", description)
+
+    def test_spark_data_tool_disables_internal_approval_by_default(self) -> None:
+        """Проверяет, что approval ``load_data`` теперь выполняется middleware, а не самим tool.
+
+        Returns:
+            ``None``.
+        """
+
+        parameter = signature(build_spark_data_tools).parameters["require_approval"]
+
+        self.assertIs(parameter.default, False)
+
     def test_create_session_tool_outputs_dir_uses_single_artifacts_folder(self) -> None:
         """Проверяет, что session outputs не создают дополнительный подкаталог.
 
@@ -900,8 +963,8 @@ class ReliableExecutionTests(unittest.TestCase):
             self.assertEqual(result, artifacts_dir.resolve())
             self.assertTrue(artifacts_dir.exists())
 
-    def test_agent_builder_does_not_add_permissions_or_interrupt_fallback(self) -> None:
-        """Сборка агента не должна содержать permission rules или HITL fallback.
+    def test_agent_builder_uses_native_hitl_for_load_data(self) -> None:
+        """Сборка агента должна использовать штатный HITL middleware для ``load_data``.
 
         Returns:
             ``None``.
@@ -911,8 +974,9 @@ class ReliableExecutionTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn("HumanInTheLoopMiddleware", source)
+        self.assertIn('"load_data"', source)
         self.assertNotIn("permissions=", source)
-        self.assertNotIn("interrupt_on=", source)
         self.assertNotIn("FilesystemPermission", source)
 
     def test_runtime_context_prompt_defines_current_date_and_artifact_paths(self) -> None:
