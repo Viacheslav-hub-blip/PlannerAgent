@@ -25,7 +25,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
-- _build_load_data_hitl_middleware: штатный HITL middleware для подтверждения ``load_data``.
+- _build_load_data_interrupt_on: штатный HITL config для подтверждения ``load_data``.
 - _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - _require_workspace_path: проверка принадлежности пути workspace.
@@ -50,7 +50,6 @@ from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
-    HumanInTheLoopMiddleware,
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
@@ -372,11 +371,6 @@ def build_analytics_deep_agent(
     )
     data_retrieval_agent_middleware = [
         subagent_skills_middleware,
-        _build_load_data_hitl_middleware(
-            query_parser_model=model,
-            workspace_root=resolved_workspace_root,
-            output_dir=resolved_tool_outputs_root,
-        ),
         *_build_native_runtime_middleware(
             settings,
             tool_output_file_middleware,
@@ -397,6 +391,11 @@ def build_analytics_deep_agent(
         common_middleware=data_retrieval_agent_middleware,
         skill_sources=[skills_workspace_dir],
     )
+    data_retrieval_interrupt_on = _build_load_data_interrupt_on(
+        query_parser_model=model,
+        workspace_root=resolved_workspace_root,
+        output_dir=resolved_tool_outputs_root,
+    )
     data_retrieval_agent_spec["system_prompt"] = (
         f"{data_retrieval_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
     )
@@ -404,6 +403,8 @@ def build_analytics_deep_agent(
         **data_retrieval_agent_spec,
         backend=data_backend,
         memory=[agents_memory_path],
+        interrupt_on=data_retrieval_interrupt_on,
+        checkpointer=InMemorySaver(),
     )
 
     # Шаг 4. Сборка изолированных compiled subagents.
@@ -450,13 +451,13 @@ def build_analytics_deep_agent(
     return agent
 
 
-def _build_load_data_hitl_middleware(
+def _build_load_data_interrupt_on(
     *,
     query_parser_model: Any,
     workspace_root: Path,
     output_dir: Path,
-) -> HumanInTheLoopMiddleware:
-    """Создаёт штатный LangChain HITL middleware для подтверждения ``load_data``.
+) -> dict[str, Any]:
+    """Создаёт штатный LangChain HITL config для подтверждения ``load_data``.
 
     Args:
         query_parser_model: Модель, которой строится структурированный разбор SQL-подобного ``query``.
@@ -464,8 +465,9 @@ def _build_load_data_hitl_middleware(
         output_dir: Каталог, куда Spark ``load_data`` сохранит JSONL artifact после approval.
 
     Returns:
-        ``HumanInTheLoopMiddleware``, который останавливает graph до выполнения ``load_data`` и
-        показывает пользователю реальный PySpark-код с подставленными значениями.
+        Конфиг ``interrupt_on`` для ``create_deep_agent``, который останавливает graph до
+        выполнения ``load_data`` и показывает пользователю реальный PySpark-код с
+        подставленными значениями.
     """
 
     def describe_load_data(tool_call: Any, _state: Any, _runtime: Any) -> str:
@@ -489,14 +491,12 @@ def _build_load_data_hitl_middleware(
             workspace_root=workspace_root,
         )
 
-    return HumanInTheLoopMiddleware(
-        interrupt_on={
-            "load_data": {
-                "allowed_decisions": ["approve", "reject"],
-                "description": describe_load_data,
-            }
+    return {
+        "load_data": {
+            "allowed_decisions": ["approve", "reject"],
+            "description": describe_load_data,
         }
-    )
+    }
 
 
 def _build_native_runtime_middleware(

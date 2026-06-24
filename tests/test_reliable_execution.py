@@ -964,7 +964,7 @@ class ReliableExecutionTests(unittest.TestCase):
             self.assertTrue(artifacts_dir.exists())
 
     def test_agent_builder_uses_native_hitl_for_load_data(self) -> None:
-        """Сборка агента должна использовать штатный HITL middleware для ``load_data``.
+        """Сборка агента должна использовать штатный ``interrupt_on`` для ``load_data``.
 
         Returns:
             ``None``.
@@ -974,7 +974,9 @@ class ReliableExecutionTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("HumanInTheLoopMiddleware", source)
+        self.assertIn("_build_load_data_interrupt_on", source)
+        self.assertIn("interrupt_on=data_retrieval_interrupt_on", source)
+        self.assertIn("checkpointer=InMemorySaver()", source)
         self.assertIn('"load_data"', source)
         self.assertNotIn("permissions=", source)
         self.assertNotIn("FilesystemPermission", source)
