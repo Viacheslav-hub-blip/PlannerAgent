@@ -269,7 +269,7 @@ def _extract_query_metadata(artifact: Any) -> dict[str, Any] | None:
 
     if not isinstance(artifact, dict):
         return None
-    keys = ("query_code", "is_aggregation")
+    keys = ("query_code", "query_language", "original_query", "is_aggregation")
     metadata = {key: artifact[key] for key in keys if key in artifact}
     return metadata or None
 
@@ -309,7 +309,10 @@ def _format_query_metadata(query_metadata: dict[str, Any] | None) -> str:
     query_code = query_metadata.get("query_code")
     if not query_code:
         return ""
-    return f"Сгенерированный SQL-подобный запрос:\n{query_code}\n"
+    query_language = query_metadata.get("query_language") or "pyspark"
+    original_query = query_metadata.get("original_query")
+    original_query_note = f"Исходный SQL-подобный запрос:\n{original_query}\n" if original_query else ""
+    return f"Реальный код запроса ({query_language}):\n{query_code}\n{original_query_note}"
 
 
 def _safe_filename_part(value: str) -> str:

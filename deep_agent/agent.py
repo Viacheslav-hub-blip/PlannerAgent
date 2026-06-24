@@ -82,6 +82,7 @@ from deep_agent.middleware.gigachat_runtime import (
 )
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
 from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
+from deep_agent.middleware.todo_reset import TodoResetMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
 from deep_agent.prompts.gigachat import build_gigachat_practices_prompt
 from deep_agent.prompts.tool_contracts import TOOL_DESCRIPTION_OVERRIDES
@@ -415,6 +416,7 @@ def build_analytics_deep_agent(
         skills=[skills_workspace_dir],
         backend=supervisor_backend,
         middleware=[
+            TodoResetMiddleware(),
             supervisor_skills_middleware,
             *_build_native_runtime_middleware(
                 settings,

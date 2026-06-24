@@ -12,8 +12,15 @@ from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
 
 DATA_RETRIEVAL_AGENT_NAME = "data-retrieval-agent"
 DATA_RETRIEVAL_AGENT_DESCRIPTION = (
-    "Читает табличные данные через load_data и возвращает supervisor компактный проверяемый отчёт "
-    "по полям, фильтрам, ключам и периоду без доступа к shell."
+    "Use only for bounded table data retrieval with load_data. Good tasks: inspect confirmed table fields, load raw "
+    "rows for a known source/period/filter, fetch unique values of one column for later semantic classification, "
+    "retrieve rows matching exact identifiers or exact candidate values, and return auditable evidence about source, "
+    "fields, period, filters, row count, preview/offload artifact, and limitations. Provide a precise retrieval "
+    "objective, source or skill path, required fields, exact period when known, confirmed filters, expected evidence, "
+    "and stopping condition. Do not use for calculations, aggregations, grouping, joins after retrieval, semantic "
+    "classification decisions, dataframe transformations, chart/report generation, exports, or saving user-facing "
+    "artifacts; delegate those follow-up tasks to coding-agent. Bad tasks: calculate totals or averages, transform a "
+    "pickle into CSV, classify text values, build a report, or validate a generated file."
 )
 
 

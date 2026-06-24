@@ -7,10 +7,10 @@
   полный справочник.
 
 Что делает обёртка для каждого data-tool (например ``load_data``):
-1. строит человекочитаемый SQL-подобный код фактического запроса из аргументов вызова;
+1. берет реальный PySpark-код фактического запроса из результата data-tool либо строит fallback-описание из аргументов вызова;
 2. вызывает исходный инструмент;
 3. при табличном результате возвращает агенту вместе с данными:
-   - сгенерированный код запроса (строкой);
+   - реальный PySpark-код запроса (строкой);
    - счётчики строк: всего в таблице / подошло под фильтры / возвращено;
    - данные в виде JSON-записей (для офлоада большие результаты заменяются ссылкой на pkl).
 
@@ -30,7 +30,7 @@
 - _build_success_content: строит текст успешного результата.
 - _dataframe_to_rows: преобразует DataFrame в JSON-записи.
 - _clean_scalar: приводит pandas/numpy scalar к JSON-совместимому значению.
-- _build_query_code: строит человекочитаемый SQL-подобный код запроса.
+- _build_query_code: строит человекочитаемый SQL-подобный fallback-код запроса.
 - _build_where_clause: преобразует фильтры в SQL-подобный WHERE.
 - _build_predicate: строит один SQL-подобный предикат фильтра.
 - _format_derived_columns: форматирует вычисляемые колонки.
@@ -141,8 +141,8 @@ async def _call_base_tool_async(*, tool: BaseTool, kwargs: dict[str, Any]) -> An
 
 
 _TRANSPARENCY_NOTE = (
-    "Прозрачность результата: вместе с данными инструмент возвращает сгенерированный "
-    "SQL-подобный код фактического запроса и число строк результата. Инструмент возвращает "
+    "Прозрачность результата: вместе с данными инструмент возвращает реальный "
+    "PySpark-код фактического запроса и число строк результата. Инструмент возвращает "
     "ВСЕ строки, попавшие под запрос: полный набор всегда сохраняется в pickle для "
     "переиспользования без повторного load_data; если результат помещается в контекст, "
     "он также приходит inline, если большой — в контекст только preview, а полный набор в "
@@ -157,12 +157,16 @@ def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
 
     if pd is not None and isinstance(raw, pd.DataFrame):
         query_code = str(raw.attrs.get("spark_query_code") or _build_query_code(kwargs))
+        query_language = str(raw.attrs.get("spark_query_language") or "pyspark")
+        original_query = str(raw.attrs.get("spark_original_query") or _get(kwargs, "query") or "").strip()
         rows = _dataframe_to_rows(raw)
         returned_rows = len(raw)
         columns = [str(column) for column in raw.columns]
         is_aggregation = bool(raw.attrs.get("spark_is_aggregation")) or bool(_split_instruction_text(_get(kwargs, "aggregations")))
         content = _build_success_content(
             query_code=query_code,
+            query_language=query_language,
+            original_query=original_query,
             returned_rows=returned_rows,
             columns=columns,
             rows=rows,
@@ -171,6 +175,8 @@ def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
         artifact = {
             "rows": rows,
             "query_code": query_code,
+            "query_language": query_language,
+            "original_query": original_query,
             "returned_rows": returned_rows,
             "columns": columns,
             "is_aggregation": is_aggregation,
@@ -179,13 +185,15 @@ def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
 
     # Ошибка или текстовый результат базового инструмента: показываем, что пытались выполнить.
     query_code = _build_query_code(kwargs)
-    content = f"Сгенерированный SQL-подобный запрос:\n{query_code}\n\nРезультат инструмента:\n{raw}"
+    content = f"Исходный запрос к инструменту:\n{query_code}\n\nРезультат инструмента:\n{raw}"
     return content, None
 
 
 def _build_success_content(
     *,
     query_code: str,
+    query_language: str,
+    original_query: str = "",
     returned_rows: int,
     columns: list[str],
     rows: list[dict[str, Any]],
@@ -210,13 +218,15 @@ def _build_success_content(
             "все строки результата переданы здесь целиком."
         )
     rows_json = json.dumps(rows, ensure_ascii=False, default=str)
+    original_query_block = f"\n\nИсходный SQL-подобный запрос:\n{original_query}" if original_query else ""
     return (
-        "Сгенерированный SQL-подобный запрос:\n"
+        f"Реальный код запроса ({query_language}):\n"
         f"{query_code}\n\n"
         f"{status_line}\n"
         f"Колонки результата ({len(columns)}): {', '.join(columns)}.\n"
         "Данные (JSON records):\n"
         f"{rows_json}"
+        f"{original_query_block}"
     )
 
 

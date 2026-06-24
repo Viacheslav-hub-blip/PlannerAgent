@@ -123,8 +123,8 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 локальном диске, а UI показывает путь к ним в tool result.
 
 Локальный patch обновляет frontend SDK, синхронизирует переключение threads через
-`switchThread`, включает `fetchStateHistory`, связывает `task` с
-`stream.getSubagentsByMessage(message.id)` и строит approval UI по `stream.interrupts`.
+`switchThread`, включает `fetchStateHistory`, `filterSubagentMessages`, связывает `task` с
+`stream.subagents` по `tool_call.id` и строит approval UI по `stream.interrupts`.
 Поэтому карточка subagent обновляется во время выполнения, показывает задачу,
 lifecycle-статус, сообщения, вложенные tool calls, итоговый результат и approval для
 `write_file`/`edit_file` внутри subagent.

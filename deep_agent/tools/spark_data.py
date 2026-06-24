@@ -12,6 +12,13 @@
 - _apply_aggregations: применение агрегаций;
 - _build_aggregation_expression: построение Spark-агрегата;
 - _apply_order_by: сортировка результата.
+- _build_pyspark_query_code: построение воспроизводимого PySpark-кода запроса.
+- _format_pyspark_derived_expression: форматирование PySpark-выражения вычисляемой колонки.
+- _format_pyspark_filter_expression: форматирование PySpark-предиката.
+- _format_pyspark_aggregation_expression: форматирование PySpark-агрегата.
+- _format_pyspark_order_expression: форматирование PySpark-сортировки.
+- _pyspark_literal: форматирование Python-литерала для PySpark-кода.
+- _strip_outer_quotes: удаление внешних кавычек из строкового значения фильтра.
 """
 
 from __future__ import annotations
@@ -123,7 +130,8 @@ def build_spark_data_tools(spark: Any, query_parser_model: Any | None = None) ->
             **parsed,
         )
         if hasattr(result, "attrs"):
-            result.attrs["spark_query_code"] = query.strip()
+            result.attrs["spark_original_query"] = query.strip()
+            result.attrs["spark_query_language"] = "pyspark"
             result.attrs["spark_is_aggregation"] = bool(parsed["aggregations"])
         return result
 
@@ -170,6 +178,16 @@ def _read_table(
     try:
         table_alias = table_name.strip()
         resolved_table_name = _resolve_table_name(table_alias)
+        query_code = _build_pyspark_query_code(
+            resolved_table_name=resolved_table_name,
+            select_columns=select_columns,
+            filters=filters,
+            derived_columns=derived_columns,
+            group_by=group_by,
+            aggregations=aggregations,
+            order_by=order_by,
+            max_rows=max_rows,
+        )
         table = spark.table(resolved_table_name)
         total_rows = table.count()
         table = _apply_derived_columns(table=table, derived_columns=derived_columns)
@@ -205,6 +223,8 @@ def _read_table(
         frame.attrs["spark_table_name"] = table_alias
         frame.attrs["spark_resolved_table_name"] = resolved_table_name
         frame.attrs["spark_source_file"] = table_alias
+        frame.attrs["spark_query_code"] = query_code
+        frame.attrs["spark_query_language"] = "pyspark"
         frame.attrs["spark_total_rows"] = int(total_rows)
         frame.attrs["spark_matched_rows"] = int(matched_rows)
         return frame
@@ -470,6 +490,228 @@ def _apply_order_by(*, table: Any, order_by: list[Any]) -> Any:
         expression = functions.col(column).asc() if direction == "asc" else functions.col(column).desc()
         expressions.append(expression)
     return table.orderBy(*expressions)
+
+
+def _build_pyspark_query_code(
+    *,
+    resolved_table_name: str,
+    select_columns: Any,
+    filters: Any,
+    derived_columns: Any,
+    group_by: Any,
+    aggregations: Any,
+    order_by: Any,
+    max_rows: int | None,
+) -> str:
+    """Строит воспроизводимый PySpark-код фактической выборки.
+
+    Args:
+        resolved_table_name: Полное имя Spark-таблицы, переданное в ``spark.table``.
+        select_columns: Поля результата списком или строкой.
+        filters: Фильтры списком объектов или строкой.
+        derived_columns: Вычисляемые колонки списком объектов или строкой.
+        group_by: Поля группировки списком или строкой.
+        aggregations: Агрегаты списком объектов или строкой.
+        order_by: Сортировка списком объектов или строкой.
+        max_rows: Максимальное число строк результата.
+
+    Returns:
+        Многострочный PySpark-код, эквивалентный выполненному запросу.
+    """
+
+    lines = [
+        "from pyspark.sql import functions as F",
+        "",
+        f'df = spark.table({_pyspark_literal(resolved_table_name)})',
+    ]
+    for item in _split_items(derived_columns):
+        name, source_column, operation = _parse_derived_item(item)
+        expression = _format_pyspark_derived_expression(
+            source_column=source_column,
+            operation=operation,
+        )
+        lines.append(f'df = df.withColumn({_pyspark_literal(name)}, {expression})')
+    for item in _split_items(filters):
+        lines.append(f"df = df.filter({_format_pyspark_filter_expression(item)})")
+
+    group_columns = _parse_columns(group_by)
+    aggregation_items = _split_items(aggregations)
+    if aggregation_items:
+        aggregations_code = ", ".join(_format_pyspark_aggregation_expression(item) for item in aggregation_items)
+        if group_columns:
+            group_code = ", ".join(_pyspark_literal(column) for column in group_columns)
+            lines.append(f"result = df.groupBy({group_code}).agg({aggregations_code})")
+        else:
+            lines.append(f"result = df.agg({aggregations_code})")
+    else:
+        columns = _parse_columns(select_columns)
+        columns_code = ", ".join(_pyspark_literal(column) for column in columns)
+        lines.append(f"result = df.select({columns_code})")
+
+    for item in _split_items(order_by):
+        lines.append(f"result = result.orderBy({_format_pyspark_order_expression(item)})")
+    if max_rows is not None:
+        lines.append(f"result = result.limit({max(0, int(max_rows))})")
+    lines.append("pdf = result.toPandas()")
+    return "\n".join(lines)
+
+
+def _format_pyspark_derived_expression(*, source_column: str, operation: str) -> str:
+    """Форматирует PySpark-выражение вычисляемой колонки.
+
+    Args:
+        source_column: Исходная колонка.
+        operation: Имя операции вычисления.
+
+    Returns:
+        Строка PySpark-кода для ``withColumn``.
+    """
+
+    column = f"F.col({_pyspark_literal(source_column)})"
+    if operation == "lower":
+        return f"F.lower({column}.cast('string'))"
+    if operation == "upper":
+        return f"F.upper({column}.cast('string'))"
+    if operation == "length":
+        return f"F.length({column}.cast('string'))"
+    if operation == "abs":
+        return f"F.abs({column}.cast('double'))"
+    digits = f"F.regexp_replace({column}.cast('string'), r'\\D', '')"
+    if operation == "year":
+        return f"{digits}.substr(1, 4)"
+    if operation == "month":
+        return f"{digits}.substr(5, 2)"
+    if operation == "year_month":
+        return f"{digits}.substr(1, 6)"
+    if operation == "date":
+        return f"{digits}.substr(1, 8)"
+    raise ValueError(f"Неподдерживаемая операция вычисляемой колонки: {operation}")
+
+
+def _format_pyspark_filter_expression(item: Any) -> str:
+    """Форматирует один фильтр в PySpark Column-предикат.
+
+    Args:
+        item: Фильтр в структурированном или строковом формате.
+
+    Returns:
+        Строка PySpark-кода для ``DataFrame.filter``.
+    """
+
+    column, operator, raw_value = _parse_filter_item(item)
+    spark_column = f"F.col({_pyspark_literal(column)})"
+    if operator == "is_null":
+        return f"{spark_column}.isNull()"
+    if operator == "not_null":
+        return f"{spark_column}.isNotNull()"
+    if operator == "contains":
+        return f"{spark_column}.cast('string').contains({_pyspark_literal(_strip_outer_quotes(raw_value))})"
+    if operator == "contains_any":
+        parts = [
+            f"{spark_column}.cast('string').contains({_pyspark_literal(_strip_outer_quotes(value))})"
+            for value in _parse_filter_values(raw_value)
+        ]
+        return " | ".join(f"({part})" for part in parts)
+    if operator == "in":
+        values = [
+            _parse_scalar(_normalize_filter_scalar(column, value))
+            for value in _parse_filter_values(raw_value)
+        ]
+        values_code = ", ".join(_pyspark_literal(value) for value in values)
+        return f"{spark_column}.isin([{values_code}])"
+    if operator == "between":
+        values = [
+            _parse_scalar(_normalize_filter_scalar(column, value))
+            for value in _parse_filter_values(raw_value)
+        ]
+        if len(values) != 2:
+            raise ValueError("Для оператора between нужны два значения.")
+        return f"{spark_column}.between({_pyspark_literal(values[0])}, {_pyspark_literal(values[1])})"
+
+    value = _parse_scalar(_normalize_filter_scalar(column, raw_value))
+    operator_map = {
+        "eq": "==",
+        "ne": "!=",
+        "gt": ">",
+        "gte": ">=",
+        "lt": "<",
+        "lte": "<=",
+    }
+    if operator not in operator_map:
+        raise ValueError(f"Неподдерживаемый оператор фильтра: {operator}")
+    return f"{spark_column} {operator_map[operator]} {_pyspark_literal(value)}"
+
+
+def _format_pyspark_aggregation_expression(item: Any) -> str:
+    """Форматирует один агрегат в PySpark Column-выражение.
+
+    Args:
+        item: Агрегат в структурированном или строковом формате.
+
+    Returns:
+        Строка PySpark-кода для ``agg``.
+    """
+
+    function, column, alias = _parse_aggregation_item(item)
+    if function == "count":
+        expression = "F.count('*')" if column == "*" else f"F.count(F.col({_pyspark_literal(column)}))"
+    elif function == "count_distinct":
+        expression = f"F.countDistinct(F.col({_pyspark_literal(column)}))"
+    elif function == "min":
+        expression = f"F.min(F.col({_pyspark_literal(column)}))"
+    elif function == "max":
+        expression = f"F.max(F.col({_pyspark_literal(column)}))"
+    elif function == "sum":
+        expression = f"F.sum(F.col({_pyspark_literal(column)}))"
+    elif function == "mean":
+        expression = f"F.avg(F.col({_pyspark_literal(column)}))"
+    else:
+        raise ValueError(f"Неподдерживаемая агрегатная функция: {function}")
+    return f"{expression}.alias({_pyspark_literal(alias or f'{function}_{column}')})"
+
+
+def _format_pyspark_order_expression(item: Any) -> str:
+    """Форматирует одно правило сортировки в PySpark Column-выражение.
+
+    Args:
+        item: Правило сортировки в структурированном или строковом формате.
+
+    Returns:
+        Строка PySpark-кода для ``orderBy``.
+    """
+
+    column, direction = _parse_order_item(item)
+    method = "asc" if direction == "asc" else "desc"
+    return f"F.col({_pyspark_literal(column)}).{method}()"
+
+
+def _pyspark_literal(value: Any) -> str:
+    """Форматирует Python-литерал для вставки в PySpark-код.
+
+    Args:
+        value: Значение аргумента PySpark-вызова.
+
+    Returns:
+        Строковое представление литерала Python.
+    """
+
+    return repr(value)
+
+
+def _strip_outer_quotes(value: Any) -> str:
+    """Удаляет внешние одинарные или двойные кавычки из значения фильтра.
+
+    Args:
+        value: Значение фильтра в строковом или произвольном формате.
+
+    Returns:
+        Строка без пары внешних кавычек.
+    """
+
+    text = str(value).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        return text[1:-1]
+    return text
 
 
 __all__ = [

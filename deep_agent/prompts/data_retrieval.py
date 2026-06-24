@@ -233,7 +233,7 @@ Return one detailed report to the supervisor in Russian with:
    data reads, and Python calls. This section must be present even when there was only one call or the result is empty:
    - exact tool name;
    - exact material parameters / input parameters, including query text, source, selected fields, period, filters, grouping,
-     artifact path, or code purpose;
+     artifact path, real `pyspark_code` returned by `load_data`, or code purpose;
    - concise result: status, row count, columns, calculated value, artifact, or error;
    - correction made after an error, if any.
 3. A data-and-evidence section with sources, filters, joins, key rows, counts, calculations, and artifact paths used.
@@ -262,6 +262,8 @@ Calls section template:
      period: <date field and exact from/to>
      fields: <selected fields or aggregations>
      filters/grouping: <material filters and group keys>
+     pyspark_code: |
+       <real PySpark code returned by load_data, not a paraphrase>
    result: <success/error, row count, columns, artifact_path if any>
    correction: <only if this call corrected a previous failure>
 

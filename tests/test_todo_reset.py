@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import unittest
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from deep_agent.middleware.todo_reset import TodoResetMiddleware
 
@@ -77,6 +77,54 @@ class TodoResetMiddlewareTests(unittest.TestCase):
             update,
             {"todos": [], "todos_user_turn_key": "user-2"},
         )
+
+    def test_after_agent_clears_todos_after_final_ai_message(self) -> None:
+        """Проверяет очистку плана после финального ответа агента без tool calls.
+
+        Returns:
+            ``None``.
+        """
+
+        middleware = TodoResetMiddleware()
+        update = middleware.after_agent(
+            {
+                "messages": [AIMessage(content="Готово", id="ai-1")],
+                "todos": [{"content": "Завершить ответ", "status": "in_progress"}],
+            },
+            None,  # type: ignore[arg-type]
+        )
+
+        self.assertEqual(update, {"todos": []})
+
+    def test_after_agent_keeps_todos_while_ai_waits_for_tool(self) -> None:
+        """Проверяет сохранение плана, если последнее AI-сообщение содержит tool calls.
+
+        Returns:
+            ``None``.
+        """
+
+        middleware = TodoResetMiddleware()
+        update = middleware.after_agent(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        id="ai-1",
+                        tool_calls=[
+                            {
+                                "id": "call-1",
+                                "name": "task",
+                                "args": {"description": "Проверить данные"},
+                            }
+                        ],
+                    )
+                ],
+                "todos": [{"content": "Дождаться subagent", "status": "in_progress"}],
+            },
+            None,  # type: ignore[arg-type]
+        )
+
+        self.assertIsNone(update)
 
 
 if __name__ == "__main__":

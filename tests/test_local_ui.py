@@ -114,7 +114,8 @@ class LocalUiIntegrationTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn('"@langchain/langgraph-sdk": "1.9.21"', patch_text)
-        self.assertIn("getSubagentsByMessage", patch_text)
+        self.assertIn("stream.subagents", patch_text)
+        self.assertIn("filterSubagentMessages: true", patch_text)
         self.assertIn("streamSubgraphs: true", patch_text)
         self.assertIn("subAgent.toolCalls", patch_text)
         self.assertIn("subAgent.messages", patch_text)

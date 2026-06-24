@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pandas as pd
 from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.messages import ToolMessage
@@ -37,6 +38,7 @@ from deep_agent.agent import (
     build_supervisor_backend,
     create_session_tool_outputs_dir,
 )
+from deep_agent.data.result_wrapper import _format_result
 from deep_agent.runtime.harness import build_analytics_harness_profile
 from deep_agent.prompts.coding import CODING_AGENT_PROMPT
 from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
@@ -803,6 +805,32 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("/artifacts/", result.content)
         self.assertEqual(result.artifact["workspace_file"].split("/")[1], "artifacts")
         self.assertTrue(absolute_file_exists)
+
+    def test_data_tool_wrapper_returns_real_pyspark_code(self) -> None:
+        """Проверяет, что обертка ``load_data`` возвращает реальный PySpark-код из результата.
+
+        Returns:
+            ``None``.
+        """
+
+        query = "LOAD hits SELECT event_id"
+        frame = pd.DataFrame([{"event_id": "1"}])
+        frame.attrs["spark_query_code"] = (
+            "from pyspark.sql import functions as F\n\n"
+            "df = spark.table('prod.hits')\n"
+            "result = df.select('event_id')\n"
+            "pdf = result.toPandas()"
+        )
+        frame.attrs["spark_query_language"] = "pyspark"
+        frame.attrs["spark_original_query"] = query
+
+        content, artifact = _format_result({"query": query}, frame)
+
+        self.assertIn("Реальный код запроса (pyspark):", content)
+        self.assertIn("df = spark.table('prod.hits')", content)
+        self.assertIn("Исходный SQL-подобный запрос:", content)
+        self.assertEqual(artifact["query_language"], "pyspark")
+        self.assertIn("result = df.select('event_id')", artifact["query_code"])
 
     def test_create_session_tool_outputs_dir_uses_single_artifacts_folder(self) -> None:
         """Проверяет, что session outputs не создают дополнительный подкаталог.

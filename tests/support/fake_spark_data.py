@@ -42,7 +42,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 
 from deep_agent.data.query_schema import ReadTableInput, normalize_filter_operator
 from deep_agent.data.query_parser import _extract_query_args_with_llm
-from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION
+from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION, _build_pyspark_query_code
 
 FAKE_DATA_ROOT = Path(__file__).resolve().parents[2] / "data"
 FAKE_TABLE_FILES: dict[str, str] = {
@@ -135,7 +135,8 @@ def build_fake_spark_data_tools(query_parser_model: Any | None = None) -> list[B
 
         result = _fake_read_table(**parsed)
         if hasattr(result, "attrs"):
-            result.attrs["spark_query_code"] = query.strip()
+            result.attrs["spark_original_query"] = query.strip()
+            result.attrs["spark_query_language"] = "pyspark"
             result.attrs["spark_is_aggregation"] = bool(parsed["aggregations"])
         return result
 
@@ -179,6 +180,16 @@ def _fake_read_table(
     try:
         table_alias = table_name.strip()
         resolved_table_name = _resolve_table_name(table_alias)
+        query_code = _build_pyspark_query_code(
+            resolved_table_name=resolved_table_name,
+            select_columns=select_columns,
+            filters=filters,
+            derived_columns=derived_columns,
+            group_by=group_by,
+            aggregations=aggregations,
+            order_by=order_by,
+            max_rows=max_rows,
+        )
         table = _load_table_frame(resolved_table_name)
         total_rows = len(table)
         table = _apply_derived_columns(table=table, derived_columns=derived_columns)
@@ -213,6 +224,8 @@ def _fake_read_table(
         result.attrs["spark_table_name"] = table_alias
         result.attrs["spark_resolved_table_name"] = resolved_table_name
         result.attrs["spark_source_file"] = table_alias
+        result.attrs["spark_query_code"] = query_code
+        result.attrs["spark_query_language"] = "pyspark"
         result.attrs["spark_total_rows"] = int(total_rows)
         result.attrs["spark_matched_rows"] = int(matched_rows)
         return result.reset_index(drop=True)

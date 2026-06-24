@@ -56,6 +56,39 @@ class FakeSparkDataTests(unittest.TestCase):
         self.assertGreater(len(result), 0)
         self.assertLessEqual(len(result), 2)
 
+    def test_fake_read_table_returns_pyspark_query_metadata(self) -> None:
+        """Проверяет, что fake ``load_data`` возвращает тот же PySpark query-code контракт.
+
+        Returns:
+            ``None``. Проверка завершается успешно, если DataFrame содержит воспроизводимый
+            PySpark-код и язык запроса в ``attrs``.
+        """
+
+        result = _fake_read_table(
+            table_name="hits",
+            select_columns=["event_id", "event_dt"],
+            filters=[
+                {
+                    "column": "event_dt",
+                    "operator": "between",
+                    "values": ["20260124", "20260206"],
+                }
+            ],
+            derived_columns=[],
+            group_by=[],
+            aggregations=[],
+            order_by=[],
+            max_rows=2,
+        )
+
+        query_code = result.attrs["spark_query_code"]
+
+        self.assertEqual(result.attrs["spark_query_language"], "pyspark")
+        self.assertIn("df = spark.table(", query_code)
+        self.assertIn("F.col('event_dt').between('20260124', '20260206')", query_code)
+        self.assertIn("result = df.select('event_id', 'event_dt')", query_code)
+        self.assertIn("pdf = result.toPandas()", query_code)
+
     def test_long_epk_id_is_loaded_as_string(self) -> None:
         """Проверяет сохранение точности длинного клиентского идентификатора.
 
