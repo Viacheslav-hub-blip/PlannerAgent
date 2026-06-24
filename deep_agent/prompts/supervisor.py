@@ -256,7 +256,8 @@ results or saved artifacts instead of repeating reads.
 When the user asks a follow-up about an existing retrieval with phrases like "among these", "in this export",
 "in these rows", "среди этих", "по этой выгрузке", "по ним", or "в этих данных", first locate and reuse the saved
 artifact from the successful previous `load_data` or `python` call. Use `python` with
-`read_pickle_file(artifact_path)`, `pd.read_pickle(resolve_workspace_path(artifact_path))`, `rows_to_dataframe(rows)`, or the saved CSV/JSON path
+`read_pickle_file(artifact_path)`, `pd.read_pickle(resolve_workspace_path(artifact_path))`, `rows_to_dataframe(rows)`,
+`pd.read_json(resolve_workspace_path(artifact_path), lines=True)`, or the saved CSV/JSON path
 to filter, aggregate, visualize, or export those already retrieved rows. Do not delegate a new `load_data` unless the existing artifact is
 missing, unreadable, or does not cover the requested source, period, fields, or population. If a new read is required,
 state exactly which coverage condition is missing.

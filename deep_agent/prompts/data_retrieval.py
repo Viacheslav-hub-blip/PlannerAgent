@@ -179,6 +179,7 @@ Call contract:
 - read pickle offload artifacts with `rows = read_pickle_file(r"<artifact_path>")`;
 - convert offload rows to DataFrame with `df = rows_to_dataframe(rows)` before pandas operations;
 - if a pandas reader is required, use `rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))`;
+- read JSONL artifacts from Spark `load_data` with `df = pd.read_json(resolve_workspace_path(r"<artifact_path>"), lines=True)`;
 - `artifact_path` is a workspace path under the single `/artifacts` directory;
 - convert rows with `rows_to_dataframe(rows)` when tabular operations are needed;
 - print compact results with `print(...)`;
@@ -190,7 +191,7 @@ Use `Path(ARTIFACTS_DIR) / "file.csv"` or `Path(ARTIFACTS_DIR) / "file.md"` and 
 `"/artifacts/file.csv"` as direct writer targets.
 
 When a tool output contains `artifact_path`, report it as the main artifact path and pass it to
-`read_pickle_file(...)` or `resolve_workspace_path(...)` for pandas processing.
+`read_pickle_file(...)`, `pd.read_json(..., lines=True)`, or `resolve_workspace_path(...)` for pandas processing.
 
 Examples:
 
@@ -203,6 +204,9 @@ rows = read_pickle_file(r"<artifact_path>")
 df = rows_to_dataframe(rows)
 print(df.shape)
 print(df.groupby("main_rule")["transaction_amount_in_rub"].mean())
+
+df = pd.read_json(resolve_workspace_path(r"<artifact_path>"), lines=True)
+print(df.shape)
 ```
 </python_usage>
 

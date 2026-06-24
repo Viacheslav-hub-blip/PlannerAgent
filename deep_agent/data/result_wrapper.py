@@ -27,6 +27,7 @@
 - _call_base_tool: синхронно вызывает базовый data-tool без вложенного callback-события.
 - _call_base_tool_async: асинхронно вызывает базовый data-tool без вложенного callback-события.
 - _format_result: готовит content/artifact для ответа инструмента.
+- _format_file_artifact_result: готовит ответ для data-tool, который уже сохранил результат в файл.
 - _build_success_content: строит текст успешного результата.
 - _dataframe_to_rows: преобразует DataFrame в JSON-записи.
 - _clean_scalar: приводит pandas/numpy scalar к JSON-совместимому значению.
@@ -155,6 +156,9 @@ _TRANSPARENCY_NOTE = (
 def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
     """Готовит пару (content, artifact) для агента из результата базового инструмента."""
 
+    if isinstance(raw, dict) and raw.get("artifact_type") == "spark_load_data_file":
+        return _format_file_artifact_result(raw)
+
     if pd is not None and isinstance(raw, pd.DataFrame):
         query_code = str(raw.attrs.get("spark_query_code") or _build_query_code(kwargs))
         query_language = str(raw.attrs.get("spark_query_language") or "pyspark")
@@ -187,6 +191,57 @@ def _format_result(kwargs: dict[str, Any], raw: Any) -> tuple[str, Any]:
     query_code = _build_query_code(kwargs)
     content = f"Исходный запрос к инструменту:\n{query_code}\n\nРезультат инструмента:\n{raw}"
     return content, None
+
+
+def _format_file_artifact_result(raw: dict[str, Any]) -> tuple[str, Any]:
+    """Готовит ответ ``load_data`` для результата, уже сохранённого в artifact-файл.
+
+    Args:
+        raw: Словарь результата базового data-tool с путём к файлу, числом строк,
+            колонками, preview и служебной metadata.
+
+    Returns:
+        Пара ``(content, artifact)`` для LangChain tool response. Artifact не содержит
+        полного набора строк и поэтому не отправляется в повторный pickle-offload.
+    """
+
+    workspace_file = str(raw.get("workspace_file") or "")
+    absolute_file = str(raw.get("absolute_file") or "")
+    rows = int(raw.get("rows") or 0)
+    columns = [str(column) for column in raw.get("columns") or []]
+    preview_rows = raw.get("preview_rows") if isinstance(raw.get("preview_rows"), list) else []
+    preview_text = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
+    table_name = str(raw.get("table_name") or "")
+    original_query = str(raw.get("original_query") or "").strip()
+    original_query_note = f"\nИсходный SQL-подобный запрос:\n{original_query}\n" if original_query else ""
+    content = (
+        "Результат `load_data` сохранён в artifact-файл, полный набор строк не передан в контекст.\n"
+        f"Источник: {table_name or 'не указан'}.\n"
+        f"Формат: JSON Lines (`.jsonl`).\n"
+        f"artifact_path: {workspace_file}\n"
+        f"absolute_file: {absolute_file}\n"
+        f"Строк в файле: {rows}; колонок: {len(columns)}.\n"
+        f"Колонки: {', '.join(columns)}.\n"
+        f"{original_query_note}"
+        "Для дальнейшей обработки используй `python`, а не повторный `load_data`:\n"
+        f"df = pd.read_json(resolve_workspace_path(r\"{workspace_file}\"), lines=True)\n"
+        f"Preview первых {len(preview_rows)} строк:\n{preview_text}"
+    )
+    artifact = {
+        "artifact_type": "spark_load_data_file",
+        "workspace_file": workspace_file,
+        "absolute_file": absolute_file,
+        "format": "jsonl",
+        "rows": rows,
+        "columns": columns,
+        "preview_rows": preview_rows,
+        "table_name": table_name,
+        "resolved_table_name": raw.get("resolved_table_name"),
+        "original_query": original_query,
+        "query_language": raw.get("query_language") or "pyspark",
+        "is_aggregation": bool(raw.get("is_aggregation")),
+    }
+    return content, artifact
 
 
 def _build_success_content(

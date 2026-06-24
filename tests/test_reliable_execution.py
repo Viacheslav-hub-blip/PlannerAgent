@@ -52,7 +52,7 @@ from deep_agent.prompts.tool_contracts import (
     TASK_TOOL_DESCRIPTION,
     TOOL_DESCRIPTION_OVERRIDES,
 )
-from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION
+from deep_agent.tools.spark_data import READ_TABLE_DESCRIPTION, _build_pyspark_query_code
 from deep_agent.settings import (
     DEFAULT_CONFIG_PATH,
     DeepAgentSettings,
@@ -831,6 +831,60 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Исходный SQL-подобный запрос:", content)
         self.assertEqual(artifact["query_language"], "pyspark")
         self.assertIn("result = df.select('event_id')", artifact["query_code"])
+
+    def test_data_tool_wrapper_accepts_file_artifact_result(self) -> None:
+        """Проверяет новый контракт ``load_data`` с уже сохраненным JSONL artifact.
+
+        Returns:
+            ``None``.
+        """
+
+        content, artifact = _format_result(
+            {"query": "LOAD hits SELECT event_id"},
+            {
+                "artifact_type": "spark_load_data_file",
+                "workspace_file": "/artifacts/load_data_hits_abc.jsonl",
+                "absolute_file": "C:/workspace/artifacts/load_data_hits_abc.jsonl",
+                "format": "jsonl",
+                "rows": 2,
+                "columns": ["event_id"],
+                "preview_rows": [{"event_id": "1"}],
+                "table_name": "hits",
+                "original_query": "LOAD hits SELECT event_id",
+                "query_language": "pyspark",
+            },
+        )
+
+        self.assertIn("artifact_path: /artifacts/load_data_hits_abc.jsonl", content)
+        self.assertIn("pd.read_json(resolve_workspace_path", content)
+        self.assertEqual(artifact["format"], "jsonl")
+        self.assertEqual(artifact["rows"], 2)
+        self.assertNotIn("query_code", artifact)
+
+    def test_pyspark_query_code_can_materialize_jsonl_file(self) -> None:
+        """Проверяет генерацию PySpark-кода записи результата в JSONL artifact.
+
+        Returns:
+            ``None``.
+        """
+
+        query_code = _build_pyspark_query_code(
+            resolved_table_name="prod.hits",
+            select_columns=["event_id"],
+            filters=[],
+            derived_columns=[],
+            group_by=[],
+            aggregations=[],
+            order_by=[],
+            max_rows=None,
+            output_path=Path("artifacts/tmp"),
+            final_output_path=Path("artifacts/load_data_hits.jsonl"),
+        )
+
+        self.assertIn("result = df.select('event_id')", query_code)
+        self.assertIn("row_count = result.count()", query_code)
+        self.assertIn(".write.mode('overwrite').json(", query_code)
+        self.assertNotIn("pdf = result.toPandas()", query_code)
 
     def test_create_session_tool_outputs_dir_uses_single_artifacts_folder(self) -> None:
         """Проверяет, что session outputs не создают дополнительный подкаталог.

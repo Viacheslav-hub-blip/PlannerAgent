@@ -28,7 +28,7 @@ index 3dcdee2..df4e8d1 100644
      "@radix-ui/react-dialog": "^1.1.15",
      "@radix-ui/react-label": "^2.1.8",
 diff --git a/src/app/components/ChatInterface.tsx b/src/app/components/ChatInterface.tsx
-index c3691a9..7856e7b 100644
+index c3691a9..f71fcd4 100644
 --- a/src/app/components/ChatInterface.tsx
 +++ b/src/app/components/ChatInterface.tsx
 @@ -25,6 +25,7 @@ import type {
@@ -64,7 +64,7 @@ index c3691a9..7856e7b 100644
  export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
    const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | null>(null);
    const tasksContainerRef = useRef<HTMLDivElement | null>(null);
-@@ -71,6 +90,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -71,20 +90,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
  
    const {
      stream,
@@ -72,7 +72,9 @@ index c3691a9..7856e7b 100644
      messages,
      todos,
      files,
-@@ -79,12 +99,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+     ui,
++    loadDataProgress,
+     setFiles,
      isLoading,
      isThreadLoading,
      interrupt,
@@ -87,7 +89,7 @@ index c3691a9..7856e7b 100644
  
    const handleSubmit = useCallback(
      (e?: FormEvent) => {
-@@ -171,7 +193,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -171,7 +194,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                id: toolCall.id || `tool-${Math.random()}`,
                name,
                args,
@@ -96,7 +98,7 @@ index c3691a9..7856e7b 100644
              } as ToolCall;
            }
          );
-@@ -213,7 +235,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -213,7 +236,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
          showAvatar: data.message.type !== prevMessage?.type,
        };
      });
@@ -105,7 +107,7 @@ index c3691a9..7856e7b 100644
  
    const groupedTodos = {
      in_progress: todos.filter((t) => t.status === "in_progress"),
-@@ -267,6 +289,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -267,6 +290,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                      key={data.message.id}
                      message={data.message}
                      toolCalls={data.toolCalls}
@@ -120,15 +122,16 @@ index c3691a9..7856e7b 100644
                      isLoading={isLoading}
                      actionRequestsMap={
                        isLastMessage ? actionRequestsMap : undefined
-@@ -274,6 +304,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -274,6 +305,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                      reviewConfigsMap={
                        isLastMessage ? reviewConfigsMap : undefined
                      }
 +                    interrupts={interrupts}
++                    loadDataProgress={loadDataProgress}
                      ui={messageUi}
                      stream={stream}
                      onResumeInterrupt={resumeInterrupt}
-@@ -490,7 +521,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -490,7 +523,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                            files={files}
                            setFiles={setFiles}
                            editDisabled={
@@ -137,7 +140,7 @@ index c3691a9..7856e7b 100644
                            }
                          />
                        </div>
-@@ -504,6 +535,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -504,6 +537,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
              onSubmit={handleSubmit}
              className="flex flex-col"
            >
@@ -153,10 +156,10 @@ index c3691a9..7856e7b 100644
                ref={textareaRef}
                value={input}
 diff --git a/src/app/components/ChatMessage.tsx b/src/app/components/ChatMessage.tsx
-index 48eadde..4546443 100644
+index 48eadde..333001f 100644
 --- a/src/app/components/ChatMessage.tsx
 +++ b/src/app/components/ChatMessage.tsx
-@@ -1,16 +1,15 @@
+@@ -1,16 +1,20 @@
  "use client";
  
 -import React, { useMemo, useState, useCallback } from "react";
@@ -164,13 +167,13 @@ index 48eadde..4546443 100644
  import { SubAgentIndicator } from "@/app/components/SubAgentIndicator";
  import { ToolCallBox } from "@/app/components/ToolCallBox";
  import { MarkdownContent } from "@/app/components/MarkdownContent";
--import type {
+ import type {
 -  SubAgent,
--  ToolCall,
--  ActionRequest,
--  ReviewConfig,
--} from "@/app/types/types";
-+import type { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
+   ToolCall,
+   ActionRequest,
+   ReviewConfig,
++  LoadDataProgress,
+ } from "@/app/types/types";
  import { Message } from "@langchain/langgraph-sdk";
 +import type {
 +  SubagentStreamInterface,
@@ -179,7 +182,7 @@ index 48eadde..4546443 100644
  import {
    extractSubAgentContent,
    extractStringFromMessageContent,
-@@ -20,22 +19,145 @@ import { cn } from "@/lib/utils";
+@@ -20,22 +24,147 @@ import { cn } from "@/lib/utils";
  interface ChatMessageProps {
    message: Message;
    toolCalls: ToolCall[];
@@ -188,6 +191,7 @@ index 48eadde..4546443 100644
    actionRequestsMap?: Map<string, ActionRequest>;
    reviewConfigsMap?: Map<string, ReviewConfig>;
 +  interrupts?: InterruptLike[];
++  loadDataProgress?: Record<string, LoadDataProgress>;
    ui?: any[];
    stream?: any;
 -  onResumeInterrupt?: (value: any) => void;
@@ -323,10 +327,11 @@ index 48eadde..4546443 100644
      actionRequestsMap,
      reviewConfigsMap,
 +    interrupts,
++    loadDataProgress,
      ui,
      stream,
      onResumeInterrupt,
-@@ -45,31 +167,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -45,31 +174,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
      const messageContent = extractStringFromMessageContent(message);
      const hasContent = messageContent && messageContent.trim() !== "";
      const hasToolCalls = toolCalls.length > 0;
@@ -358,7 +363,7 @@ index 48eadde..4546443 100644
      const [expandedSubAgents, setExpandedSubAgents] = useState<
        Record<string, boolean>
      >({});
-@@ -131,16 +228,28 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -131,16 +235,29 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                  );
                  const actionRequest = actionRequestsMap?.get(toolCall.name);
                  const reviewConfig = reviewConfigsMap?.get(toolCall.name);
@@ -385,13 +390,14 @@ index 48eadde..4546443 100644
 -                    onResume={onResumeInterrupt}
 +                    actionRequest={approvalMatch.actionRequest}
 +                    reviewConfig={approvalMatch.reviewConfig}
++                    progress={loadDataProgress?.[toolCall.name]}
 +                    onResume={(value) =>
 +                      onResumeInterrupt?.(value, approvalMatch.interrupt)
 +                    }
                      isLoading={isLoading}
                    />
                  );
-@@ -157,7 +266,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -157,7 +274,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                    <div className="flex items-end gap-2">
                      <div className="w-[calc(100%-100px)]">
                        <SubAgentIndicator
@@ -403,7 +409,7 @@ index 48eadde..4546443 100644
                          onClick={() => toggleSubAgent(subAgent.id)}
                          isExpanded={isSubAgentExpanded(subAgent.id)}
                        />
-@@ -167,21 +279,77 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -167,21 +287,82 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                      <div className="w-full max-w-full">
                        <div className="bg-surface border-border-light rounded-md border p-4">
                          <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
@@ -445,6 +451,11 @@ index 48eadde..4546443 100644
 +                                    }
 +                                    actionRequest={approvalMatch?.actionRequest}
 +                                    reviewConfig={approvalMatch?.reviewConfig}
++                                    progress={
++                                      loadDataProgress?.[
++                                        normalizedToolCall.name
++                                      ]
++                                    }
 +                                    onResume={(value) =>
 +                                      onResumeInterrupt?.(
 +                                        value,
@@ -575,8 +586,160 @@ index 67b1aef..ae16849 100644
              </div>
              {isExpanded ? (
                <ChevronUp
+diff --git a/src/app/components/ToolCallBox.tsx b/src/app/components/ToolCallBox.tsx
+index 4c20e73..77a6076 100644
+--- a/src/app/components/ToolCallBox.tsx
++++ b/src/app/components/ToolCallBox.tsx
+@@ -11,7 +11,12 @@ import {
+   StopCircle,
+ } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+-import { ToolCall, ActionRequest, ReviewConfig } from "@/app/types/types";
++import {
++  ToolCall,
++  ActionRequest,
++  ReviewConfig,
++  LoadDataProgress,
++} from "@/app/types/types";
+ import { cn } from "@/lib/utils";
+ import { LoadExternalComponent } from "@langchain/langgraph-sdk/react-ui";
+ import { ToolApprovalInterrupt } from "@/app/components/ToolApprovalInterrupt";
+@@ -23,10 +28,43 @@ interface ToolCallBoxProps {
+   graphId?: string;
+   actionRequest?: ActionRequest;
+   reviewConfig?: ReviewConfig;
++  progress?: LoadDataProgress;
+   onResume?: (value: any) => void;
+   isLoading?: boolean;
+ }
+ 
++/**
++ * Форматирует этап Spark-загрузки для отображения в карточке инструмента.
++ *
++ * @param stage Служебное имя этапа из backend progress event.
++ * @returns Человекочитаемое название этапа.
++ */
++function formatLoadDataStage(stage?: string): string {
++  switch (stage) {
++    case "count":
++      return "Подсчет строк";
++    case "write_jsonl":
++      return "Запись JSONL";
++    case "preview":
++      return "Подготовка preview";
++    default:
++      return stage ?? "Выполнение Spark";
++  }
++}
++
++/**
++ * Возвращает процент Spark-progress, если backend передал долю выполнения.
++ *
++ * @param progress Значение от 0 до 1 из backend progress event.
++ * @returns Процент от 0 до 100 или ``null``.
++ */
++function formatProgressPercent(progress?: number | null): number | null {
++  if (typeof progress !== "number" || !Number.isFinite(progress)) {
++    return null;
++  }
++  return Math.max(0, Math.min(100, Math.round(progress * 100)));
++}
++
+ export const ToolCallBox = React.memo<ToolCallBoxProps>(
+   ({
+     toolCall,
+@@ -35,6 +73,7 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
+     graphId,
+     actionRequest,
+     reviewConfig,
++    progress,
+     onResume,
+     isLoading,
+   }) => {
+@@ -100,7 +139,10 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
+       }));
+     }, []);
+ 
+-    const hasContent = result || Object.keys(args).length > 0;
++    const progressPercent = formatProgressPercent(progress?.progress);
++    const hasContent = Boolean(
++      result || Object.keys(args).length > 0 || progress
++    );
+ 
+     return (
+       <div
+@@ -164,6 +206,69 @@ export const ToolCallBox = React.memo<ToolCallBoxProps>(
+               </div>
+             ) : (
+               <>
++                {progress && (
++                  <div className="mt-4 rounded-sm border border-border bg-muted/30 p-3">
++                    <div className="mb-2 flex items-center justify-between gap-3">
++                      <div className="min-w-0">
++                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
++                          Spark Progress
++                        </h4>
++                        <p className="mt-1 truncate text-xs text-foreground">
++                          {formatLoadDataStage(progress.stage)}
++                        </p>
++                      </div>
++                      <span
++                        className={cn(
++                          "shrink-0 rounded-sm px-2 py-1 text-xs font-medium",
++                          progress.status === "error"
++                            ? "bg-destructive/10 text-destructive"
++                            : progress.status === "completed"
++                              ? "bg-success/10 text-success"
++                              : "bg-warning/10 text-warning"
++                        )}
++                      >
++                        {progress.status ?? "running"}
++                      </span>
++                    </div>
++                    <div className="h-2 overflow-hidden rounded-sm bg-background">
++                      <div
++                        className={cn(
++                          "h-full transition-all duration-300",
++                          progress.status === "error"
++                            ? "bg-destructive"
++                            : "bg-primary"
++                        )}
++                        style={{
++                          width: `${progressPercent ?? 8}%`,
++                        }}
++                      />
++                    </div>
++                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
++                      {progressPercent !== null && (
++                        <span>{progressPercent}%</span>
++                      )}
++                      {typeof progress.completedTasks === "number" &&
++                        typeof progress.totalTasks === "number" && (
++                          <span>
++                            tasks {progress.completedTasks}/
++                            {progress.totalTasks}
++                          </span>
++                        )}
++                      {typeof progress.activeTasks === "number" && (
++                        <span>active {progress.activeTasks}</span>
++                      )}
++                      {typeof progress.failedTasks === "number" &&
++                        progress.failedTasks > 0 && (
++                          <span>failed {progress.failedTasks}</span>
++                        )}
++                    </div>
++                    {progress.error && (
++                      <pre className="mt-2 whitespace-pre-wrap break-words rounded-sm border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
++                        {progress.error}
++                      </pre>
++                    )}
++                  </div>
++                )}
+                 {Object.keys(args).length > 0 && (
+                   <div className="mt-4">
+                     <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 diff --git a/src/app/hooks/useChat.ts b/src/app/hooks/useChat.ts
-index 139b78e..5a6e962 100644
+index 139b78e..495cad2 100644
 --- a/src/app/hooks/useChat.ts
 +++ b/src/app/hooks/useChat.ts
 @@ -1,6 +1,6 @@
@@ -592,19 +755,20 @@ index 139b78e..5a6e962 100644
  } from "@langchain/langgraph-sdk";
  import { v4 as uuidv4 } from "uuid";
 -import type { UseStreamThread } from "@langchain/langgraph-sdk/react";
+-import type { TodoItem } from "@/app/types/types";
 +import type {
 +  SubagentStreamInterface,
 +  UseStreamOptions,
 +  UseStreamThread,
 +} from "@langchain/langgraph-sdk/react";
- import type { TodoItem } from "@/app/types/types";
++import type { LoadDataProgress, TodoItem } from "@/app/types/types";
  import { useClient } from "@/providers/ClientProvider";
  import { useQueryState } from "nuqs";
 +import { toast } from "sonner";
  
  export type StateType = {
    messages: Message[];
-@@ -25,6 +30,38 @@ export type StateType = {
+@@ -25,6 +30,109 @@ export type StateType = {
    ui?: any;
  };
  
@@ -616,6 +780,8 @@ index 139b78e..5a6e962 100644
 +type DeepAgentStreamOptions = UseStreamOptions<StateType> & {
 +  filterSubagentMessages?: boolean;
 +};
++
++const LOAD_DATA_PROGRESS_EVENT = "load_data_progress";
 +
 +/**
 + * Преобразует ошибку stream в безопасное сообщение для пользователя.
@@ -640,18 +806,101 @@ index 139b78e..5a6e962 100644
 +  return "Выполнение запроса завершилось с ошибкой. Повторите запрос позже.";
 +}
 +
++/**
++ * Возвращает числовое значение из custom event, если оно передано числом.
++ *
++ * @param value Значение из payload события.
++ * @returns Число или ``undefined``.
++ */
++function optionalNumber(value: unknown): number | undefined {
++  return typeof value === "number" && Number.isFinite(value)
++    ? value
++    : undefined;
++}
++
++/**
++ * Преобразует custom event backend-а в состояние прогресса ``load_data``.
++ *
++ * @param data Raw payload из LangGraph custom stream.
++ * @returns Нормализованный progress или ``null`` для чужих событий.
++ */
++function normalizeLoadDataProgress(data: unknown): LoadDataProgress | null {
++  if (typeof data !== "object" || data === null) {
++    return null;
++  }
++  const raw = data as Record<string, unknown>;
++  const nestedData =
++    typeof raw.data === "object" && raw.data !== null
++      ? (raw.data as Record<string, unknown>)
++      : undefined;
++  const payload =
++    raw.event === LOAD_DATA_PROGRESS_EVENT ||
++    raw.name === LOAD_DATA_PROGRESS_EVENT
++      ? nestedData ?? raw
++      : nestedData?.event === LOAD_DATA_PROGRESS_EVENT ||
++          nestedData?.name === LOAD_DATA_PROGRESS_EVENT
++        ? nestedData
++        : null;
++  if (payload == null) {
++    return null;
++  }
++
++  const status = String(payload.status ?? "");
++  const normalizedStatus = ["started", "running", "completed", "error"].includes(
++    status
++  )
++    ? (status as LoadDataProgress["status"])
++    : undefined;
++
++  return {
++    stage: typeof payload.stage === "string" ? payload.stage : undefined,
++    status: normalizedStatus,
++    groupId: typeof payload.group_id === "string" ? payload.group_id : undefined,
++    jobIds: Array.isArray(payload.job_ids)
++      ? payload.job_ids.filter((item): item is number => typeof item === "number")
++      : undefined,
++    stageIds: Array.isArray(payload.stage_ids)
++      ? payload.stage_ids.filter((item): item is number => typeof item === "number")
++      : undefined,
++    totalTasks: optionalNumber(payload.total_tasks),
++    completedTasks: optionalNumber(payload.completed_tasks),
++    activeTasks: optionalNumber(payload.active_tasks),
++    failedTasks: optionalNumber(payload.failed_tasks),
++    progress:
++      typeof payload.progress === "number" && Number.isFinite(payload.progress)
++        ? payload.progress
++        : null,
++    error: typeof payload.error === "string" ? payload.error : undefined,
++    updatedAt: Date.now(),
++  };
++}
++
  export function useChat({
    activeAssistant,
    onHistoryRevalidate,
-@@ -35,30 +72,51 @@ export function useChat({
+@@ -35,30 +143,83 @@ export function useChat({
    thread?: UseStreamThread<StateType>;
  }) {
    const [threadId, setThreadId] = useQueryState("threadId");
 +  const [streamError, setStreamError] = useState<string | null>(null);
++  const [loadDataProgress, setLoadDataProgress] = useState<
++    Record<string, LoadDataProgress>
++  >({});
 +  const lastThreadIdRef = useRef<string | null>(threadId ?? null);
    const client = useClient();
  
 -  const stream = useStream<StateType>({
++  const handleCustomEvent = useCallback((data: unknown) => {
++    const progress = normalizeLoadDataProgress(data);
++    if (progress == null) {
++      return;
++    }
++    setLoadDataProgress((previous) => ({
++      ...previous,
++      load_data: progress,
++    }));
++  }, []);
++
 +  const streamOptions: DeepAgentStreamOptions = {
      assistantId: activeAssistant?.assistant_id || "",
      client: client ?? undefined,
@@ -669,12 +918,28 @@ index 139b78e..5a6e962 100644
 +    onError: (error) => {
 +      const message = formatStreamError(error);
 +      setStreamError(message);
++      setLoadDataProgress((previous) => {
++        const current = previous.load_data;
++        if (current == null || current.status === "completed") {
++          return previous;
++        }
++        return {
++          ...previous,
++          load_data: {
++            ...current,
++            status: "error",
++            error: message,
++            updatedAt: Date.now(),
++          },
++        };
++      });
 +      toast.error(message);
 +      onHistoryRevalidate?.();
 +    },
      onCreated: onHistoryRevalidate,
 -    experimental_thread: thread,
 -  });
++    onCustomEvent: handleCustomEvent,
 +  };
 +  const stream = useStream<StateType>(streamOptions) as DeepAgentStream;
 +
@@ -685,12 +950,14 @@ index 139b78e..5a6e962 100644
 +    }
 +    lastThreadIdRef.current = nextThreadId;
 +    setStreamError(null);
++    setLoadDataProgress({});
 +    stream.switchThread(nextThreadId);
 +  }, [stream, threadId]);
  
    const sendMessage = useCallback(
      (content: string) => {
 +      setStreamError(null);
++      setLoadDataProgress({});
        const newMessage: Message = { id: uuidv4(), type: "human", content };
        stream.submit(
          { messages: [newMessage] },
@@ -699,7 +966,14 @@ index 139b78e..5a6e962 100644
            optimisticValues: (prev) => ({
              messages: [...(prev.messages ?? []), newMessage],
            }),
-@@ -85,6 +143,7 @@ export function useChat({
+@@ -79,20 +240,27 @@ export function useChat({
+       optimisticMessages?: Message[]
+     ) => {
+       if (checkpoint) {
++        setLoadDataProgress({});
+         stream.submit(undefined, {
+           ...(optimisticMessages
+             ? { optimisticValues: { messages: optimisticMessages } }
              : {}),
            config: activeAssistant?.config,
            checkpoint: checkpoint,
@@ -707,8 +981,9 @@ index 139b78e..5a6e962 100644
            ...(isRerunningSubagent
              ? { interruptAfter: ["tools"] }
              : { interruptBefore: ["tools"] }),
-@@ -92,7 +151,11 @@ export function useChat({
+         });
        } else {
++        setLoadDataProgress({});
          stream.submit(
            { messages },
 -          { config: activeAssistant?.config, interruptBefore: ["tools"] }
@@ -720,17 +995,18 @@ index 139b78e..5a6e962 100644
          );
        }
      },
-@@ -111,7 +174,9 @@ export function useChat({
+@@ -111,7 +279,10 @@ export function useChat({
  
    const continueStream = useCallback(
      (hasTaskToolCall?: boolean) => {
 +      setStreamError(null);
++      setLoadDataProgress({});
        stream.submit(undefined, {
 +        streamSubgraphs: true,
          config: {
            ...(activeAssistant?.config || {}),
            recursion_limit: 100,
-@@ -127,14 +192,22 @@ export function useChat({
+@@ -127,14 +298,23 @@ export function useChat({
    );
  
    const markCurrentThreadAsResolved = useCallback(() => {
@@ -748,6 +1024,7 @@ index 139b78e..5a6e962 100644
 -      stream.submit(null, { command: { resume: value } });
 +    (value: any, interrupt?: { id?: string; ns?: string[] }) => {
 +      setStreamError(null);
++      setLoadDataProgress({});
 +      const resumeValue = interrupt?.id ? { [interrupt.id]: value } : value;
 +      stream.submit(null, {
 +        command: { resume: resumeValue },
@@ -756,8 +1033,11 @@ index 139b78e..5a6e962 100644
        // Update thread list when resuming from interrupt
        onHistoryRevalidate?.();
      },
-@@ -153,9 +226,11 @@ export function useChat({
+@@ -151,11 +331,14 @@ export function useChat({
+     files: stream.values.files ?? {},
+     email: stream.values.email,
      ui: stream.values.ui,
++    loadDataProgress,
      setFiles,
      messages: stream.messages,
 +    streamError,
@@ -768,6 +1048,32 @@ index 139b78e..5a6e962 100644
      getMessagesMetadata: stream.getMessagesMetadata,
      sendMessage,
      runSingleStep,
+diff --git a/src/app/types/types.ts b/src/app/types/types.ts
+index 780fdb2..3dd6c24 100644
+--- a/src/app/types/types.ts
++++ b/src/app/types/types.ts
+@@ -6,6 +6,21 @@ export interface ToolCall {
+   status: "pending" | "completed" | "error" | "interrupted";
+ }
+ 
++export interface LoadDataProgress {
++  stage?: string;
++  status?: "started" | "running" | "completed" | "error";
++  groupId?: string;
++  jobIds?: number[];
++  stageIds?: number[];
++  totalTasks?: number;
++  completedTasks?: number;
++  activeTasks?: number;
++  failedTasks?: number;
++  progress?: number | null;
++  error?: string;
++  updatedAt: number;
++}
++
+ export interface SubAgent {
+   id: string;
+   name: string;
 diff --git a/src/lib/config.ts b/src/lib/config.ts
 index ae15fb6..b273ff2 100644
 --- a/src/lib/config.ts
