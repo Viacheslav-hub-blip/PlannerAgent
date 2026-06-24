@@ -156,7 +156,7 @@ index c3691a9..f71fcd4 100644
                ref={textareaRef}
                value={input}
 diff --git a/src/app/components/ChatMessage.tsx b/src/app/components/ChatMessage.tsx
-index 48eadde..333001f 100644
+index 48eadde..5403887 100644
 --- a/src/app/components/ChatMessage.tsx
 +++ b/src/app/components/ChatMessage.tsx
 @@ -1,16 +1,20 @@
@@ -409,7 +409,7 @@ index 48eadde..333001f 100644
                          onClick={() => toggleSubAgent(subAgent.id)}
                          isExpanded={isSubAgentExpanded(subAgent.id)}
                        />
-@@ -167,21 +287,82 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -167,21 +287,88 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                      <div className="w-full max-w-full">
                        <div className="bg-surface border-border-light rounded-md border p-4">
                          <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
@@ -436,7 +436,10 @@ index 48eadde..333001f 100644
 +                                  normalizeSubagentToolCall(toolCall);
 +                                const approvalMatch = findApprovalForToolCall(
 +                                  normalizedToolCall,
-+                                  subAgent.interrupts
++                                  [
++                                    ...(subAgent.interrupts ?? []),
++                                    ...(interrupts ?? []),
++                                  ]
 +                                );
 +                                return (
 +                                  <ToolCallBox
@@ -462,7 +465,10 @@ index 48eadde..333001f 100644
 +                                        approvalMatch?.interrupt
 +                                      )
 +                                    }
-+                                    isLoading={subAgent.status === "running"}
++                                    isLoading={
++                                      subAgent.status === "running" &&
++                                      !approvalMatch?.actionRequest
++                                    }
 +                                  />
 +                                );
 +                              })}
