@@ -166,8 +166,10 @@ All new or changed functions and classes must follow the repository documentatio
 schemas, include a docstring describing purpose, inputs, and outputs as required by project instructions.
 
 Filesystem convention: `/` is the configured user workspace root. `/deep_agent/` is the agent implementation directory,
-not the default output directory. Save generated user artifacts in `/artifacts` unless
-the delegated objective explicitly requires changing agent code, prompts, tools, tests, or skills under `/deep_agent/`.
+not the default output directory. Use `/artifacts` only for data exports, offloaded table results, and intermediate
+transformation files. For ordinary user-created files, reports, notebooks, documentation, and source edits, use the
+path requested by the user or the appropriate repository/workspace path; do not redirect them to `/artifacts` by
+default.
 
 </engineering_principles>
 

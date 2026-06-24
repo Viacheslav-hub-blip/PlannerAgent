@@ -182,9 +182,9 @@ Call contract:
 - `artifact_path` is a workspace path under the single `/artifacts` directory;
 - convert rows with `rows_to_dataframe(rows)` when tabular operations are needed;
 - print compact results with `print(...)`;
-- save user-facing outputs with ordinary Python code under `ARTIFACTS_DIR`.
+- save data exports and transformed data outputs with ordinary Python code under `ARTIFACTS_DIR`.
 
-When saving user-facing workspace artifacts from Python, create files under `ARTIFACTS_DIR` with ordinary Python code.
+When saving data artifacts from Python, create files under `ARTIFACTS_DIR` with ordinary Python code.
 Use `Path(ARTIFACTS_DIR) / "file.csv"` or `Path(ARTIFACTS_DIR) / "file.md"` and standard writers such as
 `DataFrame.to_csv(...)`, `Path.write_text(...)`, or `json.dump(...)`. Do not use string workspace paths like
 `"/artifacts/file.csv"` as direct writer targets.

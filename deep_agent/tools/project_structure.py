@@ -35,9 +35,6 @@ Tool не возвращает корневые документы, tests, scrip
 - `max_entries`: максимум строк дерева файлов.
 """.strip()
 
-AGENT_STRUCTURE_TARGETS = (
-    "deep_agent",
-)
 SKIPPED_TREE_NAMES = frozenset(
     {
         "__pycache__",
@@ -73,6 +70,8 @@ class GetProjectStructureTool(BaseTool):
 
     Args:
         workspace_root: Фактический корень workspace текущего запуска.
+        agent_root: Фактическая папка реализации агента внутри workspace.
+        skills_root: Фактическая папка skills внутри workspace.
 
     Returns:
         Tool, который возвращает markdown-отчет со структурой проекта.
@@ -83,16 +82,28 @@ class GetProjectStructureTool(BaseTool):
     args_schema: type[BaseModel] = GetProjectStructureInput
 
     _workspace_root: Path = PrivateAttr()
+    _agent_root: Path = PrivateAttr()
+    _skills_root: Path = PrivateAttr()
 
-    def __init__(self, *, workspace_root: Path) -> None:
+    def __init__(
+        self,
+        *,
+        workspace_root: Path,
+        agent_root: Path | None = None,
+        skills_root: Path | None = None,
+    ) -> None:
         """Создает tool поверх фактического workspace текущего запуска.
 
         Args:
             workspace_root: Фактический корень workspace.
+            agent_root: Фактическая папка реализации агента. Если ``None``, используется ``workspace_root/deep_agent``.
+            skills_root: Фактическая папка skills. Если ``None``, используется ``agent_root/skills``.
         """
 
         super().__init__()
         self._workspace_root = workspace_root.resolve()
+        self._agent_root = (agent_root or self._workspace_root / "deep_agent").resolve()
+        self._skills_root = (skills_root or self._agent_root / "skills").resolve()
 
     def _run(
         self,
@@ -111,6 +122,8 @@ class GetProjectStructureTool(BaseTool):
 
         return build_project_structure_report(
             workspace_root=self._workspace_root,
+            agent_root=self._agent_root,
+            skills_root=self._skills_root,
             max_tree_entries=max(1, int(max_entries)),
         )
 
@@ -135,11 +148,15 @@ class GetProjectStructureTool(BaseTool):
 def build_get_project_structure_tool(
     *,
     workspace_root: Path,
+    agent_root: Path | None = None,
+    skills_root: Path | None = None,
 ) -> GetProjectStructureTool:
     """Собирает tool ``get_project_structure``.
 
     Args:
         workspace_root: Фактический корень workspace текущего запуска.
+        agent_root: Фактическая папка реализации агента внутри workspace.
+        skills_root: Фактическая папка skills внутри workspace.
 
     Returns:
         Готовый ``GetProjectStructureTool``.
@@ -147,18 +164,24 @@ def build_get_project_structure_tool(
 
     return GetProjectStructureTool(
         workspace_root=workspace_root,
+        agent_root=agent_root,
+        skills_root=skills_root,
     )
 
 
 def build_project_structure_report(
     *,
     workspace_root: Path,
+    agent_root: Path | None = None,
+    skills_root: Path | None = None,
     max_tree_entries: int = 450,
 ) -> str:
     """Собирает текстовый отчет о внутренней структуре агента.
 
     Args:
         workspace_root: Корень workspace, от которого строятся workspace-пути.
+        agent_root: Фактическая папка реализации агента внутри workspace.
+        skills_root: Фактическая папка skills внутри workspace.
         max_tree_entries: Максимальное число строк дерева файлов.
 
     Returns:
@@ -166,10 +189,11 @@ def build_project_structure_report(
     """
 
     workspace_path = workspace_tool_path(workspace_root, workspace_root, directory=True)
-    agent_path = workspace_root / "deep_agent"
-    skills_path = agent_path / "skills"
+    agent_path = (agent_root or workspace_root / "deep_agent").resolve()
+    skills_path = (skills_root or agent_path / "skills").resolve()
     tree_lines = _iter_agent_structure_lines(
         workspace_root=workspace_root,
+        agent_root=agent_path,
         max_entries=max_tree_entries,
     )
     return "\n".join(
@@ -193,12 +217,14 @@ def build_project_structure_report(
 def _iter_agent_structure_lines(
     *,
     workspace_root: Path,
+    agent_root: Path,
     max_entries: int,
 ) -> list[str]:
     """Строит компактное дерево файлов проекта.
 
     Args:
         workspace_root: Корень workspace.
+        agent_root: Фактическая папка реализации агента.
         max_entries: Максимальное число строк дерева.
 
     Returns:
@@ -206,21 +232,17 @@ def _iter_agent_structure_lines(
     """
 
     lines = [workspace_tool_path(workspace_root, workspace_root, directory=True)]
-    for target_name in AGENT_STRUCTURE_TARGETS:
-        target_path = workspace_root / target_name
-        if not target_path.exists():
-            continue
+    if agent_root.exists():
         lines.extend(
             _iter_tree_lines(
-                target_path,
+                agent_root,
                 workspace_root=workspace_root,
                 indent="  ",
             )
         )
-        if len(lines) >= max_entries:
-            lines = lines[:max_entries]
-            lines.append("  ...")
-            break
+    if len(lines) >= max_entries:
+        lines = lines[:max_entries]
+        lines.append("  ...")
     return lines
 
 

@@ -60,7 +60,7 @@ class PythonToolTests(unittest.TestCase):
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(
-            "сохраняй все пользовательские и промежуточные артефакты обычным Python-кодом в `ARTIFACTS_DIR`",
+            "сохраняй в `ARTIFACTS_DIR` только результаты выгрузки данных",
             PYTHON_TOOL_DESCRIPTION,
         )
         self.assertIn(

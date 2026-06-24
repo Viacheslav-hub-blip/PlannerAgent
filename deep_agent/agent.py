@@ -309,6 +309,8 @@ def build_analytics_deep_agent(
     )
     project_structure_tool = build_get_project_structure_tool(
         workspace_root=resolved_workspace_root,
+        agent_root=resolved_skills_root.parent,
+        skills_root=resolved_skills_root,
     )
     jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
         workspace_root=resolved_workspace_root,
@@ -316,6 +318,9 @@ def build_analytics_deep_agent(
     runtime_context_prompt = _build_runtime_context_prompt(
         resolved_workspace_root,
         session_tool_outputs_dir,
+        agent_root=resolved_skills_root.parent,
+        skills_root=resolved_skills_root,
+        agents_memory_path=agents_memory_path,
     )
     gigachat_practices_prompt = build_gigachat_practices_prompt()
     shared_skills_selection: dict[str, Any] = {}
@@ -759,12 +764,22 @@ def _build_terminal_environment() -> dict[str, str]:
     return {name: os.environ[name] for name in allowed_names if name in os.environ}
 
 
-def _build_runtime_context_prompt(workspace_root: Path, tool_outputs_dir: Path) -> str:
+def _build_runtime_context_prompt(
+    workspace_root: Path,
+    tool_outputs_dir: Path,
+    *,
+    agent_root: Path | None = None,
+    skills_root: Path | None = None,
+    agents_memory_path: str | None = None,
+) -> str:
     """Формирует runtime-блок для system prompt с датой запуска и путями.
 
     Args:
         workspace_root: Реальный корень workspace текущего запуска.
         tool_outputs_dir: Реальный каталог session tool outputs.
+        agent_root: Реальная папка реализации агента внутри workspace.
+        skills_root: Реальная папка skills внутри workspace.
+        agents_memory_path: Workspace-путь к файлу project memory.
 
     Returns:
         XML-подобный блок system prompt с текущей датой, корнем workspace и правилами
@@ -780,21 +795,41 @@ def _build_runtime_context_prompt(workspace_root: Path, tool_outputs_dir: Path) 
         )
     except ValueError:
         workspace_outputs_path = str(tool_outputs_dir.resolve())
+    agent_root_line = ""
+    if agent_root is not None:
+        agent_root_line = (
+            "\nAgent implementation directory: "
+            f"{workspace_tool_path(agent_root, workspace_root, directory=True)} maps to real path {agent_root.resolve()}."
+        )
+    skills_root_line = ""
+    if skills_root is not None:
+        skills_root_line = (
+            "\nSkills directory: "
+            f"{workspace_tool_path(skills_root, workspace_root, directory=True)} maps to real path {skills_root.resolve()}."
+        )
+    memory_path_line = ""
+    if agents_memory_path:
+        memory_path_line = f"\nProject memory file: {agents_memory_path}."
     return f"""
 <runtime_context>
 ## Runtime Context
 
 Current date: {today}.
 Workspace root: {workspace_tool_root(workspace_root)} maps to real path {workspace_root.resolve()}.
-Artifacts directory: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
+Data artifacts directory: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
+{agent_root_line}{skills_root_line}{memory_path_line}
 
 For relative dates in user requests, calculate the period from Current date. For example, "last 2 days" means the
 two calendar days ending on Current date unless the user explicitly defines another business convention. Never take
 relative dates from examples, validation cases, demo data, or visible table partitions.
 
-When reporting saved files, include the workspace path under `/artifacts`. If the user asked to see or download a
-result, save it to the single artifacts directory. Do not create extra artifact folders unless the user explicitly
-asks for a different repository file.
+Use `/artifacts` only for `load_data` offload files, data exports, and intermediate transformation outputs. Do not
+move ordinary user files, source code, documentation, reports, notebooks, or requested repository files into
+`/artifacts` unless the user explicitly names that path. For regular file creation, use the user's requested path or
+an appropriate workspace path under `/`. When reporting saved data artifacts, include their workspace path.
+
+Use the Agent implementation directory and Skills directory from this runtime context. Do not assume that agent code or
+skills live at `/deep_agent/` when the runtime context shows another path.
 </runtime_context>
 """.strip()
 

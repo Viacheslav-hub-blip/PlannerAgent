@@ -876,12 +876,12 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertIn("Current date:", prompt)
         self.assertIn("Workspace root:", prompt)
-        self.assertIn("Artifacts directory:", prompt)
+        self.assertIn("Data artifacts directory:", prompt)
         self.assertIn("last 2 days", prompt)
         self.assertIn("Never take", prompt)
         self.assertIn("examples", prompt)
         self.assertIn("demo data", prompt)
-        self.assertIn("single artifacts directory", prompt)
+        self.assertIn("Use `/artifacts` only for `load_data` offload files", prompt)
 
     def test_agent_builder_keeps_session_tool_outputs_persistent(self) -> None:
         """Сборка агента не должна удалять session tool outputs при закрытии графа.
@@ -1030,7 +1030,7 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
         self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
         self.assertIn('Path(ARTIFACTS_DIR) / "file.csv"', DATA_RETRIEVAL_PROMPT)
-        self.assertIn("workspace path under the single `/artifacts` directory", DATA_RETRIEVAL_PROMPT)
+        self.assertIn("save data exports and transformed data outputs", DATA_RETRIEVAL_PROMPT)
         self.assertIn("pd.read_pickle(resolve_workspace_path", DATA_RETRIEVAL_PROMPT)
         self.assertIn("Comparison and change requests require separate comparable populations", DATA_RETRIEVAL_PROMPT)
         self.assertIn("two adjacent 7-day windows", DATA_RETRIEVAL_PROMPT)

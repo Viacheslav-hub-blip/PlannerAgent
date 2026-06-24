@@ -22,6 +22,7 @@ instructions above; they do not override them.
 - Read the request literally and complete the requested deliverable without unrelated extras.
 - Process every line, file, row, or item named by the task, not only the first matching item.
 - Prefer direct completion over exploration for straightforward tasks.
+- If the task has two halves such as rename, move, convert, replace, or remove, complete both halves before answering.
 - If a tool returns the same result or the same error twice in a row, change the approach instead of trying it again.
 - If a script fails twice, rewrite the script from a simpler structure or switch to another verified method.
 - If the task names exact output files, create those exact files with the requested content, not a helper script that
@@ -36,7 +37,12 @@ GIGACHAT_FILESYSTEM_PRACTICES_PROMPT = """
 
 - Filesystem tools use the canonical POSIX workspace namespace. The workspace root is ``/``.
 - Use paths returned by tools or workspace paths such as ``/README.md``, ``/deep_agent/agent.py``, and
-  ``/artifacts/report.md``. Do not use Windows paths or host absolute paths in filesystem tools.
+  ``/artifacts/load_data_result.pkl``. Do not use Windows paths or host absolute paths in filesystem tools.
+- For agent code and skills, prefer the Agent implementation directory and Skills directory shown in runtime context;
+  do not assume they are always under ``/deep_agent``.
+- If asked for filesystem structure, report only paths observed from ``get_project_structure``, ``ls``, ``glob``, or
+  other successful tools. Do not invent common directories such as ``/work``, ``/home``, ``/logs`` or examples from
+  model memory.
 - For each source file change, read the relevant fragment once, then make the smallest coherent ``edit_file`` change.
 - ``read_file`` output can include display-only line numbers or pagination notices. Do not copy line-number prefixes
   into ``old_string``, ``new_string``, or new file content.
@@ -46,6 +52,8 @@ GIGACHAT_FILESYSTEM_PRACTICES_PROMPT = """
   prefixes, wrong indentation, truncated context, or stale file content before retrying.
 - For ``grep``, pass one search phrase per call and always scope the search with ``path`` and, when useful, ``glob``.
   If repeated ``grep`` calls return no useful matches, switch to a different search method or a small Python scan.
+- ``grep`` is for literal text search. For regex-like patterns, multiple alternatives, counting across many files, or
+  transformations, write one small Python scan instead of chaining many grep calls.
 """.strip()
 
 GIGACHAT_SHELL_PRACTICES_PROMPT = """
@@ -68,7 +76,8 @@ GIGACHAT_PYTHON_PRACTICES_PROMPT = """
   small script file over a complex ``python -c`` one-liner.
 - ``python -c`` one-liners are acceptable only for simple expressions and generator expressions. A statement such as
   ``for``, ``if``, ``def``, ``class``, or ``with`` after a semicolon is a common ``SyntaxError`` source.
-- For ad hoc helper scripts, write them under ``/artifacts`` unless the task explicitly requires a repository file.
+- For data processing and intermediate transformation helper scripts, write them under ``/artifacts`` unless the task
+  explicitly requires a repository file.
   Example: write ``/artifacts/run.py`` and run ``execute(command="python /artifacts/run.py")``.
 - Before writing parsing or aggregation code for CSV, JSONL, XML, logs, or spreadsheets, inspect a small sample and use
   the exact field names and value formats observed there.
@@ -84,9 +93,11 @@ GIGACHAT_FORMAT_PRACTICES_PROMPT = """
   integer versus decimal representation, and path style.
 - If the task asks for a Markdown table, use a real Markdown table with pipe separators.
 - If the task asks for CSV or TSV, use the requested delimiter and include or omit the header exactly as requested.
-- When reporting workspace files to the user, prefer canonical workspace paths such as ``/artifacts/result.csv`` or
-  repository paths such as ``/deep_agent/prompts/supervisor.py``.
+- When reporting workspace files to the user, use their actual canonical workspace paths, for example
+  ``/artifacts/result.csv`` for data artifacts or ``/deep_agent/prompts/supervisor.py`` for repository files.
 - If the result depends on a saved artifact, verify the artifact before reporting success.
+- Before the final answer, check that exact output files exist, JSON parses when JSON was requested, old paths/symbols
+  are gone after rename/remove/replace tasks, and saved paths match the actual workspace paths.
 """.strip()
 
 GIGACHAT_EXTERNAL_RUNTIME_PRACTICES_PROMPT = """

@@ -68,6 +68,39 @@ class ProjectStructureToolTests(unittest.TestCase):
         self.assertNotIn("test_sample.py", report)
         self.assertNotIn("script.py", report)
 
+    def test_project_structure_report_uses_configured_agent_root(self) -> None:
+        """Проверяет, что отчет использует фактический путь агента из конфигурации.
+
+        Returns:
+            ``None``.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            agent_root = workspace / "deepagent_langchain" / "deep_agent"
+            skills_root = agent_root / "skills"
+            agent_root.mkdir(parents=True)
+            skills_root.mkdir(parents=True)
+            (agent_root / "agent.py").write_text("# agent\n", encoding="utf-8")
+
+            report = build_project_structure_report(
+                workspace_root=workspace,
+                agent_root=agent_root,
+                skills_root=skills_root,
+                max_tree_entries=50,
+            )
+
+        self.assertIn(
+            workspace_tool_path(agent_root, workspace, directory=True),
+            report,
+        )
+        self.assertIn(
+            workspace_tool_path(skills_root, workspace, directory=True),
+            report,
+        )
+        self.assertIn("agent.py", report)
+        self.assertNotIn("- Agent internals: `/deep_agent/`", report)
+
 
 if __name__ == "__main__":
     unittest.main()

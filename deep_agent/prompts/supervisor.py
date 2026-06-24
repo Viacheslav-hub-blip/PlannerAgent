@@ -281,9 +281,10 @@ conclusion.
 <filesystem_principles>
 ## Filesystem Principles
 
-Treat `/` in filesystem tools as the configured user workspace root. Save user-facing artifacts in the single shared
-folder `/artifacts` by default. Do not create extra category folders unless the user explicitly asks for a repository
-file at that path.
+Treat `/` in filesystem tools as the configured user workspace root. Use `/artifacts` only for `load_data` offload
+files, data exports, and intermediate transformation outputs. For ordinary user files, source code, documentation,
+reports, notebooks, or requested repository files, use the path requested by the user or an appropriate workspace path
+under `/`; do not redirect them to `/artifacts` by default.
 
 Treat `/deep_agent/` as the agent implementation directory. Read it when code, skills, prompts, or agent internals are
 relevant, but do not create, overwrite, or edit files under `/deep_agent/` unless the user explicitly asks to change

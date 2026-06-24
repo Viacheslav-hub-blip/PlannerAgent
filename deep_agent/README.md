@@ -71,7 +71,7 @@
    join, фильтрации, подготовки итоговых таблиц, файловых операций и subprocess-задач
    внутри настроенного workspace. Tool сохраняет переменные между вызовами, маппит
    полные workspace-пути на фактический корень текущего запуска и регистрирует
-   артефакты обычным Python-кодом в `ARTIFACTS_DIR`.
+   data/offload-артефакты и промежуточные файлы преобразований обычным Python-кодом в `ARTIFACTS_DIR`.
 
 10. Встроенные ограничения выполнения.
 
@@ -251,7 +251,8 @@ deep_agent/config/defaults.json
   `/deep_agent/skills/x/SKILL.md` соответствует
   `workspace_root/deep_agent/skills/x/SKILL.md`.
 - `/` соответствует пользовательскому `workspace_root` и является базовой областью
-  для новых пользовательских файлов и артефактов. `/deep_agent/` — папка реализации
+  для новых пользовательских файлов. `/artifacts` используется для выгрузок данных,
+  offload-результатов и промежуточных преобразований. `/deep_agent/` — папка реализации
   агента; ее читают и меняют только для задач по коду, prompts, tests или skills агента.
 - aliases `/skills`, `/tool_outputs` и `/project_memory` не используются.
 - `harness_profile_key` - provider или `provider:model` для регистрации HarnessProfile.

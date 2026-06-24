@@ -153,7 +153,8 @@ Limitations:
 - do not write a helper script instead of the requested output file; scripts are only intermediate tools;
 - do not leave requested output files empty or filled with placeholders unless the user explicitly asked for that;
 - `/` is the configured user workspace root;
-- user-facing artifacts should be saved in `/artifacts` by default as a single shared artifact folder;
+- `/artifacts` is reserved for data exports, offloaded table results, and intermediate transformation outputs; do not
+  save every user-facing file there by default;
 - `/deep_agent/` is the agent implementation directory, not an output folder;
 - do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
 - partial changes to an existing file are usually handled through `edit_file`.
@@ -290,6 +291,7 @@ Limitations:
   package commands, and copy/move operations;
 - do not embed multi-line content inside a double-quoted shell string;
 - avoid complex `python -c` one-liners with loops, branches, functions, classes, or context managers after semicolons;
-  write a small script under `/artifacts` or use a single-quoted heredoc instead.
+  for data/intermediate transformations write a small script under `/artifacts`, otherwise use an appropriate
+  repository/workspace path or a single-quoted heredoc.
 """.strip(),
 }
