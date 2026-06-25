@@ -48,7 +48,7 @@
 
 6. Инструменты чтения данных.
 
-   `build_spark_data_tools(spark, query_parser_model=model)` создает production
+   `build_spark_data_tools(create_spark_session, query_parser_model=model)` создает production
    `load_data` поверх Spark session. `build_fake_spark_data_tools(query_parser_model=model)`
    создает совместимый локальный tool поверх CSV. Оба принимают один аргумент `query`
    с SQL-подобным запросом.
@@ -185,8 +185,13 @@ from model import model
 USER_MESSAGE = "текст запроса пользователя"
 
 settings = load_deep_agent_settings()
-spark = SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
-data_tools = build_spark_data_tools(spark, query_parser_model=model)
+
+def create_spark_session():
+    """Создает Spark session для одного вызова инструмента ``load_data``."""
+
+    return SparkSession.builder.appName("analytics-deep-agent").getOrCreate()
+
+data_tools = build_spark_data_tools(create_spark_session, query_parser_model=model)
 agent = build_analytics_deep_agent(
     model=model,
     settings=settings,

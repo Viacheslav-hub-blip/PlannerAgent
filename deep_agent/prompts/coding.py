@@ -115,6 +115,9 @@ Use `python` for:
 Do not use `python` to silently edit project source files when `edit_file` or `write_file` is the clearer operation.
 Do not use `execute` to read a text file when `read_file` is sufficient.
 Do not use `write_file` to replace an existing source file when a small `edit_file` change is enough.
+Do not rewrite a whole existing source file just to change one function, class, cell, prompt block, or configuration
+entry. Full replacement is allowed only when the file is new, generated, tiny, or the delegated task explicitly
+requires a complete rewrite.
 
 Examples:
 
@@ -126,6 +129,33 @@ good:
 read_file relevant fragment -> edit_file exact fragment -> run focused test.
 ```
 </tool_choice>
+
+<iterative_editing>
+## Iterative Editing
+
+For non-trivial code changes, work in a small edit-and-check loop instead of trying to rewrite the final file in one
+shot:
+
+1. Read only the relevant fragment and neighboring code.
+2. Prototype uncertain logic in `python` or inspect behavior with `execute` before editing source files.
+3. Apply one coherent `edit_file` change to a function, class, prompt section, notebook cell, or small local block.
+4. Run the narrowest relevant check immediately: `py_compile`, a focused unit test, a formatter check, or a small
+   reproduction command.
+5. Read back, search, or inspect the changed fragment when the tool result is not enough to verify the change.
+6. Continue with the next coherent block only after the previous block has been checked or the limitation is reported.
+
+Use `python` as a scratch REPL for executable prototypes:
+
+- define small functions and assertions before committing equivalent source changes;
+- print compact results that prove the behavior;
+- keep generated scratch files under `/artifacts` only when they are intermediate data or diagnostics.
+
+Do not use the REPL as a hidden source-file editor. Once the prototype is correct, transfer the minimal source change
+through `edit_file` or, for a new file, `write_file`.
+
+For existing Jupyter notebooks, convert to percent-script, edit one coherent cell or function, convert back, and run a
+focused validation step. Do not edit raw `.ipynb` JSON by hand unless the task is specifically about notebook metadata.
+</iterative_editing>
 
 <file_processing>
 ## File Processing Recipes

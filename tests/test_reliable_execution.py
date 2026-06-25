@@ -55,8 +55,12 @@ from deep_agent.prompts.tool_contracts import (
 from deep_agent.tools.spark_data import (
     READ_TABLE_DESCRIPTION,
     _build_pyspark_query_code,
+    _clear_spark_job_group,
+    _managed_spark_session,
+    _stop_spark_session,
     build_load_data_approval_description,
     build_spark_data_tools,
+    stop_active_spark_sessions,
 )
 from deep_agent.settings import (
     DEFAULT_CONFIG_PATH,
@@ -78,6 +82,7 @@ from deep_agent.subagents.registry import build_subagent_specs
 from deep_agent.middleware.skills_context import (
     SelectedSkillPaths,
     build_preloaded_skills_context,
+    build_skills_index,
     discover_skill_context_files,
     select_relevant_skill_paths_with_llm,
 )
@@ -949,6 +954,291 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertIs(parameter.default, False)
 
+    def test_spark_data_tool_requires_session_factory(self) -> None:
+        """Проверяет, что ``load_data`` больше не принимает готовый Spark session.
+
+        Returns:
+            ``None``.
+        """
+
+        with self.assertRaises(TypeError):
+            build_spark_data_tools(SimpleNamespace())
+
+    def test_managed_spark_session_stops_after_success(self) -> None:
+        """Проверяет остановку Spark session после успешного вызова инструмента.
+
+        Returns:
+            ``None``.
+        """
+
+        class FakeSparkContext:
+            """Тестовый SparkContext с фиксацией отмены активных jobs."""
+
+            def __init__(self) -> None:
+                """Инициализирует счетчик вызовов ``cancelAllJobs``.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.cancel_all_calls = 0
+
+            def cancelAllJobs(self) -> None:
+                """Фиксирует отмену всех активных Spark jobs.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.cancel_all_calls += 1
+
+        class FakeSparkSession:
+            """Тестовая Spark session с методом ``stop``."""
+
+            def __init__(self) -> None:
+                """Создает Spark session с тестовым SparkContext.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.sparkContext = FakeSparkContext()
+                self.stop_calls = 0
+
+            def stop(self) -> None:
+                """Фиксирует остановку Spark session.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.stop_calls += 1
+
+        spark = FakeSparkSession()
+
+        with _managed_spark_session(lambda: spark) as active_spark:
+            self.assertIs(active_spark, spark)
+
+        self.assertEqual(spark.sparkContext.cancel_all_calls, 1)
+        self.assertEqual(spark.stop_calls, 1)
+
+    def test_managed_spark_session_stops_after_error(self) -> None:
+        """Проверяет остановку Spark session после ошибки внутри tool call.
+
+        Returns:
+            ``None``.
+        """
+
+        class FakeSparkSession:
+            """Тестовая Spark session без SparkContext."""
+
+            def __init__(self) -> None:
+                """Инициализирует счетчик остановок.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.stop_calls = 0
+
+            def stop(self) -> None:
+                """Фиксирует остановку Spark session.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.stop_calls += 1
+
+        spark = FakeSparkSession()
+
+        with self.assertRaises(RuntimeError):
+            with _managed_spark_session(lambda: spark):
+                raise RuntimeError("boom")
+
+        self.assertEqual(spark.stop_calls, 1)
+
+    def test_stop_active_spark_sessions_stops_registered_sessions(self) -> None:
+        """Проверяет аварийную остановку зарегистрированных Spark session.
+
+        Returns:
+            ``None``.
+        """
+
+        class FakeSparkSession:
+            """Тестовая Spark session для проверки ``atexit`` cleanup."""
+
+            def __init__(self) -> None:
+                """Инициализирует счетчик остановок.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.stop_calls = 0
+
+            def stop(self) -> None:
+                """Фиксирует остановку Spark session.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.stop_calls += 1
+
+        spark = FakeSparkSession()
+
+        with _managed_spark_session(lambda: spark):
+            stop_active_spark_sessions()
+
+        self.assertEqual(spark.stop_calls, 1)
+
+    def test_stop_spark_session_cancels_jobs_before_stop(self) -> None:
+        """Проверяет отмену Spark jobs перед остановкой Spark session.
+
+        Returns:
+            ``None``.
+        """
+
+        class FakeSparkContext:
+            """Тестовый SparkContext для проверки порядка cleanup."""
+
+            def __init__(self, calls: list[str]) -> None:
+                """Сохраняет общий журнал вызовов cleanup.
+
+                Args:
+                    calls: Список, куда записывается порядок операций.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls = calls
+
+            def cancelAllJobs(self) -> None:
+                """Записывает отмену всех Spark jobs.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls.append("cancelAllJobs")
+
+        class FakeSparkSession:
+            """Тестовая Spark session с журналом порядка вызовов."""
+
+            def __init__(self) -> None:
+                """Создает SparkContext и общий журнал операций.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls: list[str] = []
+                self.sparkContext = FakeSparkContext(self.calls)
+
+            def stop(self) -> None:
+                """Записывает остановку Spark session.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls.append("stop")
+
+        spark = FakeSparkSession()
+
+        _stop_spark_session(spark)
+
+        self.assertEqual(spark.calls, ["cancelAllJobs", "stop"])
+
+    def test_clear_spark_job_group_supports_old_pyspark_context(self) -> None:
+        """Проверяет fallback очистки job group для SparkContext без ``clearJobGroup``.
+
+        Returns:
+            ``None``.
+        """
+
+        class LegacySparkContext:
+            """Тестовый SparkContext старой версии без ``clearJobGroup``."""
+
+            def __init__(self) -> None:
+                """Создаёт пустой список вызовов ``setJobGroup``.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls: list[tuple[str, str]] = []
+
+            def setJobGroup(self, group_id: str, description: str) -> None:
+                """Сохраняет параметры очистки job group.
+
+                Args:
+                    group_id: Идентификатор Spark job group.
+                    description: Описание Spark job group.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.calls.append((group_id, description))
+
+        context = LegacySparkContext()
+
+        _clear_spark_job_group(context)
+
+        self.assertEqual(context.calls, [("", "")])
+
+    def test_clear_spark_job_group_prefers_native_method(self) -> None:
+        """Проверяет использование нативного ``clearJobGroup`` при его наличии.
+
+        Returns:
+            ``None``.
+        """
+
+        class CurrentSparkContext:
+            """Тестовый SparkContext с нативным ``clearJobGroup``."""
+
+            def __init__(self) -> None:
+                """Инициализирует флаги вызовов.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.cleared = False
+                self.set_calls: list[tuple[str, str]] = []
+
+            def clearJobGroup(self) -> None:
+                """Отмечает вызов нативной очистки job group.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.cleared = True
+
+            def setJobGroup(self, group_id: str, description: str) -> None:
+                """Сохраняет нежелательный fallback-вызов.
+
+                Args:
+                    group_id: Идентификатор Spark job group.
+                    description: Описание Spark job group.
+
+                Returns:
+                    ``None``.
+                """
+
+                self.set_calls.append((group_id, description))
+
+        context = CurrentSparkContext()
+
+        _clear_spark_job_group(context)
+
+        self.assertTrue(context.cleared)
+        self.assertEqual(context.set_calls, [])
+
     def test_create_session_tool_outputs_dir_uses_single_artifacts_folder(self) -> None:
         """Проверяет, что session outputs не создают дополнительный подкаталог.
 
@@ -963,8 +1253,8 @@ class ReliableExecutionTests(unittest.TestCase):
             self.assertEqual(result, artifacts_dir.resolve())
             self.assertTrue(artifacts_dir.exists())
 
-    def test_agent_builder_uses_native_hitl_for_load_data(self) -> None:
-        """Сборка агента должна использовать штатный ``interrupt_on`` для ``load_data``.
+    def test_agent_builder_temporarily_disables_hitl_for_load_data(self) -> None:
+        """Сборка агента должна временно не включать ``interrupt_on`` для ``load_data``.
 
         Returns:
             ``None``.
@@ -975,8 +1265,8 @@ class ReliableExecutionTests(unittest.TestCase):
         )
 
         self.assertIn("_build_load_data_interrupt_on", source)
-        self.assertIn("interrupt_on=data_retrieval_interrupt_on", source)
-        self.assertIn("checkpointer=InMemorySaver()", source)
+        self.assertNotIn("interrupt_on=data_retrieval_interrupt_on", source)
+        self.assertNotIn("checkpointer=InMemorySaver(),", source)
         self.assertIn('"load_data"', source)
         self.assertNotIn("permissions=", source)
         self.assertNotIn("FilesystemPermission", source)
@@ -1267,6 +1557,40 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("Не добавляй логику финальной выборки строк в этот skill", content)
         self.assertNotIn("result_fields", content)
         self.assertNotIn("final_artifact", content)
+
+    def test_jupyter_notebook_skill_has_examples_and_index_triggers(self) -> None:
+        """Проверяет, что Jupyter skill виден в индексе и содержит примеры реализации.
+
+        Returns:
+            ``None``.
+        """
+
+        project_root = Path(__file__).resolve().parents[1]
+        skills_root = project_root / "deep_agent" / "skills"
+        skill_path = skills_root / "jupyter-notebook" / "SKILL.md"
+        skill_files = discover_skill_context_files(skills_root)
+
+        index = build_skills_index(
+            skill_files=skill_files,
+            skills_root=skills_root,
+            skills_workspace_dir="/deep_agent/skills/",
+        )
+        jupyter_entry = next(
+            item for item in index if item["path"] == "/deep_agent/skills/jupyter-notebook/SKILL.md"
+        )
+        content = skill_path.read_text(encoding="utf-8")
+
+        self.assertEqual(jupyter_entry["name"], "jupyter-notebook")
+        self.assertIn(".ipynb", jupyter_entry["description"])
+        self.assertIn("percent-script", jupyter_entry["description"])
+        self.assertIn("convert_jupyter_notebook", jupyter_entry["description"])
+        self.assertIn("Хорошо:", content)
+        self.assertIn("Плохо:", content)
+        self.assertIn("# %% [markdown]", content)
+        self.assertIn("def normalize_column_names", content)
+        self.assertIn("channel_summary = (", content)
+        self.assertIn("convert_jupyter_notebook(", content)
+        self.assertIn("Нет `# Markdown:` внутри code cells.", content)
 
 
 def _create_test_skills(root: Path) -> Path:

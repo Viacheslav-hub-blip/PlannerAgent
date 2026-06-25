@@ -13,6 +13,7 @@ from pathlib import Path
 
 from deep_agent.settings import workspace_tool_path
 from deep_agent.tools.jupyter_notebook import (
+    CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION,
     CONVERT_JUPYTER_NOTEBOOK_TOOL_NAME,
     build_convert_jupyter_notebook_tool,
     convert_jupyter_notebook_file,
@@ -21,6 +22,21 @@ from deep_agent.tools.jupyter_notebook import (
 
 class JupyterNotebookToolTests(unittest.TestCase):
     """Проверяет конвертацию Jupyter Notebook без выполнения кода."""
+
+    def test_description_requires_markdown_percent_cells(self) -> None:
+        """Проверяет prompt-контракт для markdown-ячеек notebook.
+
+        Returns:
+            ``None``.
+        """
+
+        self.assertIn("# %% [markdown]", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("Good percent-script", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("Bad percent-script", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("# Markdown:", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("standalone triple-quoted strings", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("всегда форматирует содержимое notebook", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
+        self.assertIn("выноси объяснения", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
 
     def test_py_to_ipynb_creates_notebook_from_percent_script(self) -> None:
         """Проверяет создание `.ipynb` из `.py` файла с percent-ячейками.
@@ -64,6 +80,47 @@ class JupyterNotebookToolTests(unittest.TestCase):
         self.assertEqual(notebook["cells"][1]["cell_type"], "code")
         self.assertEqual(notebook["cells"][1]["outputs"], [])
         self.assertIn("value = 2 + 2\n", notebook["cells"][1]["source"])
+
+    def test_py_to_ipynb_formats_code_and_markdown_cells(self) -> None:
+        """Проверяет встроенное форматирование code- и markdown-ячеек notebook.
+
+        Returns:
+            ``None``.
+        """
+
+        long_markdown = (
+            "Этот абзац специально написан одной длинной строкой, чтобы проверить, "
+            "что инструмент преобразует markdown-ячейку в читаемый текст с переносами "
+            "строк без отдельного вызова форматтера."
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir).resolve()
+            source_file = workspace / "analysis.py"
+            output_file = workspace / "analysis.ipynb"
+            source_file.write_text(
+                "# %% [markdown]\n"
+                f"# {long_markdown}\n"
+                "# %%\n"
+                "def first():\n"
+                "    return 1\n"
+                "def second():\n"
+                "    return 2\n",
+                encoding="utf-8",
+            )
+
+            convert_jupyter_notebook_file(
+                mode="py_to_ipynb",
+                source_path="analysis.py",
+                output_path="analysis.ipynb",
+                workspace_root=workspace,
+            )
+            notebook = json.loads(output_file.read_text(encoding="utf-8"))
+
+        markdown_source = notebook["cells"][0]["source"]
+        code_source = "".join(notebook["cells"][1]["source"])
+        self.assertGreater(len(markdown_source), 1)
+        self.assertTrue(all(len(line.rstrip("\n")) <= 88 for line in markdown_source))
+        self.assertIn("return 1\n\n\ndef second():", code_source)
 
     def test_ipynb_to_py_creates_percent_script_without_outputs(self) -> None:
         """Проверяет создание `.py` percent-script из `.ipynb` без outputs.

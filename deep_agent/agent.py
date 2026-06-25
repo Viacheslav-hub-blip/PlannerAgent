@@ -391,11 +391,6 @@ def build_analytics_deep_agent(
         common_middleware=data_retrieval_agent_middleware,
         skill_sources=[skills_workspace_dir],
     )
-    data_retrieval_interrupt_on = _build_load_data_interrupt_on(
-        query_parser_model=model,
-        workspace_root=resolved_workspace_root,
-        output_dir=resolved_tool_outputs_root,
-    )
     data_retrieval_agent_spec["system_prompt"] = (
         f"{data_retrieval_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
     )
@@ -403,8 +398,6 @@ def build_analytics_deep_agent(
         **data_retrieval_agent_spec,
         backend=data_backend,
         memory=[agents_memory_path],
-        interrupt_on=data_retrieval_interrupt_on,
-        checkpointer=InMemorySaver(),
     )
 
     # Шаг 4. Сборка изолированных compiled subagents.

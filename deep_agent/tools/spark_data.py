@@ -2,10 +2,20 @@
 
 Содержит функции:
 - build_spark_data_tools: сборка LangChain tool;
+- _managed_spark_session: жизненный цикл Spark session для одного tool call;
+- _register_active_spark_session: регистрация Spark session для аварийной остановки;
+- _unregister_active_spark_session: удаление Spark session из реестра аварийной остановки;
+- _stop_spark_session: отмена jobs и остановка Spark session;
+- stop_active_spark_sessions: аварийная остановка активных Spark session;
+- _register_spark_shutdown_handlers: регистрация cleanup при завершении процесса;
+- _spark_shutdown_signals: список сигналов для cleanup Spark session;
 - _read_table: выполнение подготовленного запроса;
 - _request_spark_query_approval: запрос HITL-подтверждения перед Spark action;
 - _write_result_to_jsonl: запись Spark DataFrame в один JSONL artifact;
 - _run_spark_action_with_progress: выполнение Spark action с progress-событиями;
+- _clear_spark_job_group: очистка Spark job group с учётом разных версий PySpark;
+- _cancel_spark_job_group: отмена Spark jobs по job group при ошибке;
+- _cancel_all_spark_jobs: отмена активных Spark jobs перед stop;
 - _emit_load_data_progress: отправка custom progress-события;
 - _clean_preview_value: приведение scalar preview к JSON-совместимому значению;
 - _resolve_table_name: разрешение alias источника;
@@ -28,10 +38,15 @@
 
 from __future__ import annotations
 
+import atexit
 import hashlib
+import signal
 import shutil
+import threading
 import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -115,10 +130,13 @@ READ_TABLE_DESCRIPTION = (
 DEFAULT_SPARK_OUTPUT_DIR = "artifacts"
 DEFAULT_SPARK_PREVIEW_ROWS = 30
 LOAD_DATA_PROGRESS_EVENT = "load_data_progress"
+_SPARK_TOOL_LOCK = threading.RLock()
+_ACTIVE_SPARK_SESSIONS: dict[int, Any] = {}
+_SPARK_SHUTDOWN_HANDLERS_REGISTERED = False
 
 
 def build_spark_data_tools(
-    spark: Any,
+    spark_session_factory: Callable[[], Any],
     query_parser_model: Any | None = None,
     *,
     output_dir: str | Path = DEFAULT_SPARK_OUTPUT_DIR,
@@ -126,10 +144,10 @@ def build_spark_data_tools(
     preview_rows: int = DEFAULT_SPARK_PREVIEW_ROWS,
     require_approval: bool = False,
 ) -> list[BaseTool]:
-    """Создает инструмент ``load_data`` поверх готовой Spark session.
+    """Создает инструмент ``load_data`` с новой Spark session на каждый вызов.
 
     Args:
-        spark: Активная ``pyspark.sql.SparkSession``, созданная один раз при старте приложения.
+        spark_session_factory: Функция без аргументов, создающая ``pyspark.sql.SparkSession`` для одного вызова.
         query_parser_model: Chat-модель LangChain для внутреннего разбора SQL-подобного ``query``.
         output_dir: Каталог, куда ``load_data`` сохраняет JSONL artifact с полным результатом.
         workspace_root: Корень workspace для построения пути вида ``/artifacts/file.jsonl``.
@@ -141,11 +159,14 @@ def build_spark_data_tools(
         Список с одним LangChain tool ``load_data``.
     """
 
+    if not callable(spark_session_factory):
+        raise TypeError("spark_session_factory должен быть callable, создающим SparkSession.")
+
     resolved_workspace_root = Path(workspace_root or Path.cwd()).resolve()
     resolved_output_dir = _resolve_output_dir(output_dir=output_dir, workspace_root=resolved_workspace_root)
 
     def read_table(query: str) -> Any:
-        """Выполняет SQL-подобный запрос к Spark-таблице через переданную Spark session.
+        """Выполняет SQL-подобный запрос к Spark-таблице через отдельную Spark session.
 
         Args:
             query: SQL-подобный запрос с alias таблицы и колонками результата.
@@ -160,15 +181,16 @@ def build_spark_data_tools(
         except ValueError as exc:
             return f"Ошибка load_data: {exc}"
 
-        result = _read_table(
-            spark=spark,
-            original_query=query,
-            output_dir=resolved_output_dir,
-            workspace_root=resolved_workspace_root,
-            preview_rows=preview_rows,
-            require_approval=require_approval,
-            **parsed,
-        )
+        with _managed_spark_session(spark_session_factory) as spark:
+            result = _read_table(
+                spark=spark,
+                original_query=query,
+                output_dir=resolved_output_dir,
+                workspace_root=resolved_workspace_root,
+                preview_rows=preview_rows,
+                require_approval=require_approval,
+                **parsed,
+            )
         if isinstance(result, dict):
             result["original_query"] = query.strip()
             result["query_language"] = "pyspark"
@@ -184,6 +206,160 @@ def build_spark_data_tools(
         )
     ]
 
+
+@contextmanager
+def _managed_spark_session(spark_session_factory: Callable[[], Any]) -> Iterator[Any]:
+    """Создает Spark session для одного tool call и гарантирует остановку после него.
+
+    Args:
+        spark_session_factory: Функция без аргументов, возвращающая активную Spark session.
+
+    Yields:
+        Spark session, доступная только на время текущего вызова инструмента.
+
+    Raises:
+        ValueError: Фабрика вернула ``None`` вместо Spark session.
+    """
+
+    spark = None
+    with _SPARK_TOOL_LOCK:
+        try:
+            spark = spark_session_factory()
+            if spark is None:
+                raise ValueError("spark_session_factory вернул None вместо SparkSession.")
+            _register_active_spark_session(spark)
+            yield spark
+        finally:
+            if spark is not None and id(spark) in _ACTIVE_SPARK_SESSIONS:
+                try:
+                    _stop_spark_session(spark)
+                finally:
+                    _unregister_active_spark_session(spark)
+
+
+def _register_active_spark_session(spark: Any) -> None:
+    """Добавляет Spark session в реестр аварийной остановки.
+
+    Args:
+        spark: Активная Spark session текущего вызова инструмента.
+
+    Returns:
+        ``None``.
+    """
+
+    _ACTIVE_SPARK_SESSIONS[id(spark)] = spark
+
+
+def _unregister_active_spark_session(spark: Any) -> None:
+    """Удаляет Spark session из реестра аварийной остановки.
+
+    Args:
+        spark: Spark session, которая уже остановлена или больше не принадлежит инструменту.
+
+    Returns:
+        ``None``.
+    """
+
+    _ACTIVE_SPARK_SESSIONS.pop(id(spark), None)
+
+
+def _stop_spark_session(spark: Any) -> None:
+    """Отменяет активные Spark jobs и останавливает Spark session.
+
+    Args:
+        spark: Spark session, которую нужно завершить без переиспользования.
+
+    Returns:
+        ``None``. Ошибки остановки не перекрывают основной результат инструмента.
+    """
+
+    sc = getattr(spark, "sparkContext", None)
+    if sc is not None:
+        _cancel_all_spark_jobs(sc)
+    stop = getattr(spark, "stop", None)
+    if callable(stop):
+        try:
+            stop()
+        except Exception:
+            return
+
+
+def stop_active_spark_sessions() -> None:
+    """Останавливает все Spark session, зарегистрированные инструментом ``load_data``.
+
+    Returns:
+        ``None``. Функция используется для ``atexit`` и обработчиков завершения процесса.
+    """
+
+    with _SPARK_TOOL_LOCK:
+        sessions = list(_ACTIVE_SPARK_SESSIONS.values())
+        for spark in sessions:
+            try:
+                _stop_spark_session(spark)
+            finally:
+                _unregister_active_spark_session(spark)
+
+
+def _register_spark_shutdown_handlers() -> None:
+    """Регистрирует best-effort cleanup Spark session при завершении процесса.
+
+    Returns:
+        ``None``. Обработчики ставятся только в главном потоке и сохраняют прежнее поведение сигналов.
+    """
+
+    global _SPARK_SHUTDOWN_HANDLERS_REGISTERED
+    if _SPARK_SHUTDOWN_HANDLERS_REGISTERED:
+        return
+    atexit.register(stop_active_spark_sessions)
+    if threading.current_thread() is not threading.main_thread():
+        _SPARK_SHUTDOWN_HANDLERS_REGISTERED = True
+        return
+
+    for signal_number in _spark_shutdown_signals():
+        previous_handler = signal.getsignal(signal_number)
+
+        def _handler(signum: int, frame: Any, previous: Any = previous_handler) -> None:
+            """Останавливает Spark session и передает сигнал предыдущему обработчику.
+
+            Args:
+                signum: Номер полученного сигнала.
+                frame: Текущий frame Python, переданный модулем ``signal``.
+                previous: Обработчик, который был зарегистрирован до Spark cleanup.
+
+            Returns:
+                ``None``. Для стандартного обработчика завершает процесс через ``SystemExit``.
+            """
+
+            stop_active_spark_sessions()
+            if callable(previous):
+                previous(signum, frame)
+                return
+            if previous == signal.SIG_IGN:
+                return
+            raise SystemExit(128 + int(signum))
+
+        try:
+            signal.signal(signal_number, _handler)
+        except (OSError, RuntimeError, ValueError):
+            continue
+    _SPARK_SHUTDOWN_HANDLERS_REGISTERED = True
+
+
+def _spark_shutdown_signals() -> tuple[int, ...]:
+    """Возвращает набор сигналов, при которых нужно завершать Spark session.
+
+    Returns:
+        Кортеж сигналов ``SIGINT``, ``SIGTERM`` и, на Windows, ``SIGBREAK``.
+    """
+
+    signals = [signal.SIGINT, signal.SIGTERM]
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signals.append(sigbreak)
+    return tuple(signals)
+
+
+_register_spark_shutdown_handlers()
 
 
 def _read_table(
@@ -532,7 +708,7 @@ def _run_spark_action_with_progress(
         try:
             return action()
         finally:
-            sc.clearJobGroup()
+            _clear_spark_job_group(sc)
 
     _emit_load_data_progress(stage=stage, status="started", group_id=group_id)
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -542,7 +718,8 @@ def _run_spark_action_with_progress(
                 _emit_spark_status_progress(sc=sc, group_id=group_id, stage=stage)
                 time.sleep(0.5)
             result = future.result()
-        except Exception as exc:
+        except BaseException as exc:
+            _cancel_spark_job_group(sc=sc, group_id=group_id)
             _emit_load_data_progress(
                 stage=stage,
                 status="error",
@@ -553,6 +730,62 @@ def _run_spark_action_with_progress(
     _emit_spark_status_progress(sc=sc, group_id=group_id, stage=stage)
     _emit_load_data_progress(stage=stage, status="completed", group_id=group_id)
     return result
+
+
+def _clear_spark_job_group(sc: Any) -> None:
+    """Очищает текущую Spark job group с учётом разных версий PySpark.
+
+    Args:
+        sc: SparkContext, у которого может быть или отсутствовать метод ``clearJobGroup``.
+
+    Returns:
+        ``None``.
+    """
+
+    clear_job_group = getattr(sc, "clearJobGroup", None)
+    if callable(clear_job_group):
+        clear_job_group()
+        return
+    sc.setJobGroup("", "")
+
+
+def _cancel_spark_job_group(*, sc: Any, group_id: str) -> None:
+    """Отменяет Spark jobs текущего tool action по job group.
+
+    Args:
+        sc: SparkContext, управляющий текущими Spark jobs.
+        group_id: Идентификатор Spark job group, которую нужно отменить.
+
+    Returns:
+        ``None``. Ошибки отмены не должны скрывать исходную ошибку Spark action.
+    """
+
+    cancel_job_group = getattr(sc, "cancelJobGroup", None)
+    try:
+        if callable(cancel_job_group):
+            cancel_job_group(group_id)
+        else:
+            _cancel_all_spark_jobs(sc)
+    except Exception:
+        return
+
+
+def _cancel_all_spark_jobs(sc: Any) -> None:
+    """Отменяет все активные Spark jobs в SparkContext перед остановкой session.
+
+    Args:
+        sc: SparkContext, в котором могут оставаться активные jobs.
+
+    Returns:
+        ``None``. Ошибки отмены игнорируются, чтобы cleanup оставался best-effort.
+    """
+
+    cancel_all_jobs = getattr(sc, "cancelAllJobs", None)
+    if callable(cancel_all_jobs):
+        try:
+            cancel_all_jobs()
+        except Exception:
+            return
 
 
 def _emit_spark_status_progress(*, sc: Any, group_id: str, stage: str) -> None:
@@ -1273,4 +1506,5 @@ __all__ = [
     "TABLE_ALIASES",
     "build_load_data_approval_description",
     "build_spark_data_tools",
+    "stop_active_spark_sessions",
 ]
