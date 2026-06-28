@@ -11,51 +11,53 @@ from __future__ import annotations
 WRITE_TODOS_TOOL_DESCRIPTION = """
 write_todos
 ---
-Description:
-Keeps the current task checklist up to date.
+Описание:
+Поддерживает актуальный checklist текущей задачи.
 
-Input:
-- a list of tasks with a short title, status, and optional expected result.
+Вход:
+- список задач с коротким названием, статусом и необязательным expected result.
 
-Output:
-- the updated plan available to the agent during later execution steps.
+Выход:
+- обновленный план, доступный агенту на следующих шагах выполнения.
 
-Use when:
-- the task should be split into several verifiable steps;
-- the status of already planned steps has changed.
+Используй когда:
+- задачу нужно разбить на несколько проверяемых шагов;
+- статус уже запланированных шагов изменился.
 """.strip()
 
 TASK_TOOL_DESCRIPTION = """
 task
 ---
-Description:
-Runs one subagent and returns its final report.
+Описание:
+Запускает одного subagent и возвращает его финальный report.
 
-Available subagents:
+Доступные subagents:
 {available_agents}
 
-Input:
-- `subagent_type`: the subagent name from the list of available subagents.
-- `description`: the subagent task with inputs, constraints, expected result, and stopping condition.
+Вход:
+- `subagent_type`: имя subagent из списка available subagents.
+- `description`: задача subagent с inputs, constraints, expected result и stopping condition.
 
-Output:
-- a text report from the subagent covering completed work, facts found, artifacts created, checks, and limitations.
+Выход:
+- текстовый report от subagent о выполненной работе, найденных фактах, созданных artifacts, checks и limitations.
 
-Use when:
-- an isolated task should be executed in a separate context;
-- the subagent result should be returned as a compact report.
+Используй когда:
+- изолированная задача должна быть выполнена в отдельном context;
+- результат subagent нужен как compact report;
+- code/workspace task требует цепочки search, reading, editing, validation или project inspection, а не проверки
+  одного known file.
 
-Do not use when:
-- the next action is one small direct tool call;
-- the current agent already has enough verified evidence to answer;
-- delegation would only restate known context.
+Не используй когда:
+- next action - один маленький direct tool call вне code/workspace investigation или modification chain;
+- у текущего agent уже достаточно verified evidence для ответа;
+- delegation только повторит known context.
 
-Bad example:
+Плохой пример:
 ```text
 task(subagent_type="<subagent-name>", description="Fix paths")
 ```
 
-Good example:
+Хороший пример:
 ```text
 task(
   subagent_type="<subagent-name>",
@@ -76,109 +78,109 @@ TOOL_DESCRIPTION_OVERRIDES = {
     "ls": """
 ls
 ---
-Description:
-Lists the contents of one directory.
+Описание:
+Показывает содержимое одной директории.
 
-Input:
-- `path`: an absolute directory path in the tools file namespace.
-- Use canonical POSIX workspace paths such as `/` or `/deep_agent/agent.py`; do not pass Windows paths.
+Вход:
+- `path`: абсолютный path директории в файловом namespace tools.
+- Используй canonical POSIX workspace paths, например `/` или `/deep_agent/`; не передавай Windows paths.
 
-Output:
-- a list of files and subdirectories, or an error message for inaccessible or missing paths.
+Выход:
+- список files и subdirectories или error message для inaccessible/missing path.
 
-Use when:
-- the contents of a known directory should be inspected;
-- a directory existence check is needed.
+Используй когда:
+- нужно inspect contents известной directory;
+- нужна проверка существования directory.
 """.strip(),
     "read_file": """
 read_file
 ---
-Description:
-Reads a text file.
+Описание:
+Читает text file.
 
-Input:
-- `file_path`: an absolute file path in the tools file namespace.
-- `offset`: the first line to read when paginating.
-- `limit`: the maximum number of lines to read.
-- Use canonical POSIX workspace paths such as `/report.md`; do not pass Windows paths.
+Вход:
+- `file_path`: абсолютный file path в файловом namespace tools.
+- `offset`: первая строка для чтения при pagination.
+- `limit`: maximum number of lines.
+- Используй canonical POSIX workspace paths, например `/report.md`; не передавай Windows paths.
 
-Output:
-- the requested text fragment and metadata about the range that was read.
-- content may be displayed with line numbers or service notices; those prefixes are not part of the file content.
+Выход:
+- requested text fragment и metadata о прочитанном диапазоне.
+- content может отображаться с line numbers или service notices; эти prefixes не являются частью file content.
 
-Call format:
-- pass the path through `file_path`;
-- if the file was not read completely, request the next fragment with a new `offset`.
+Формат вызова:
+- передавай path через `file_path`;
+- если file прочитан не полностью, запроси next fragment с новым `offset`.
 
-Example:
+Пример:
 ```text
 read_file(file_path="/deep_agent/prompts/supervisor.py", offset=1, limit=120)
 ```
 
-Use when:
-- source code, configuration, documentation, or another text artifact is needed.
+Используй когда:
+- нужен source code, configuration, documentation или другой text artifact.
 
-Limitations:
-- the tool is not intended for binary files;
-- when reusing text in `edit_file`, strip display-only line numbers, tabs, and pagination notices from the fragment.
+Ограничения:
+- tool не предназначен для binary files;
+- при переносе текста в `edit_file` убирай display-only line numbers, tabs и pagination notices из fragment.
 """.strip(),
     "write_file": """
 write_file
 ---
-Description:
-Writes a text file.
+Описание:
+Записывает text file.
 
-Input:
-- the target file path;
-- the complete new text content for the file.
-- Use canonical POSIX workspace paths such as `/report.md`; do not pass Windows paths.
+Вход:
+- target file path;
+- complete new text content для file.
+- Используй canonical POSIX workspace paths, например `/report.md`; не передавай Windows paths.
 
-Output:
-- the write result plus a verification notice, or an error message if the file cannot be read back after writing.
+Выход:
+- write result plus verification notice или error message, если file cannot be read back after writing.
 
-Use when:
-- the result should be saved as a text file;
-- the complete content of an existing text file should be intentionally replaced.
-- the task names an exact output file and the final deliverable must be written to that exact file.
+Используй когда:
+- result должен быть сохранен как text file;
+- complete content existing text file должен быть intentionally replaced;
+- task names an exact output file и final deliverable must be written to that exact file.
 
-Example:
+Пример:
 ```text
 write_file(file_path="/summary.md", content="<complete markdown report>")
 ```
 
-Limitations:
-- the tool works with text files;
-- the tool overwrites an existing file at the same path; do not create duplicate filenames with suffixes like
-  `_final`, `_final_final`, or `_new` after a successful write;
-- do not write a helper script instead of the requested output file; scripts are only intermediate tools;
-- do not leave requested output files empty or filled with placeholders unless the user explicitly asked for that;
-- `/` is the configured user workspace root;
-- `/artifacts` is reserved for data exports, offloaded table results, and intermediate transformation outputs; do not
-  save every user-facing file there by default;
-- `/deep_agent/` is the agent implementation directory, not an output folder;
-- do not write under `/deep_agent/` unless the task explicitly changes agent code, prompts, tests, or skills;
-- partial changes to an existing file are usually handled through `edit_file`.
+Ограничения:
+- tool работает с text files;
+- tool overwrites existing file at the same path; не создавай duplicate filenames с suffixes вроде `_final`,
+  `_final_final` или `_new` после successful write;
+- не записывай helper script вместо requested output file; scripts - только intermediate tools;
+- не оставляй requested output files empty или placeholders, если user explicitly не просил это;
+- `/` - configured user workspace root;
+- `/artifacts` reserved for data exports, offloaded table results и intermediate transformation outputs; не сохраняй
+  every user-facing file there by default;
+- `/deep_agent/` - agent implementation directory, not output folder;
+- не write under `/deep_agent/`, если task explicitly не changes agent code, prompts, tests или skills;
+- partial changes to existing file обычно выполняются через `edit_file`.
 """.strip(),
     "edit_file": """
 edit_file
 ---
-Description:
-Edits an existing text file by replacing an exact text fragment.
+Описание:
+Редактирует existing text file, заменяя exact text fragment.
 
-Input:
-- `file_path`: the target file path;
-- `old_string`: the exact text fragment to replace;
-- `new_string`: the replacement text fragment;
-- `replace_all`: whether to replace every occurrence instead of one unique occurrence.
-- Use canonical POSIX workspace paths such as `/deep_agent/prompts/supervisor.py`; do not pass Windows paths.
+Вход:
+- `file_path`: target file path;
+- `old_string`: exact text fragment to replace;
+- `new_string`: replacement text fragment;
+- `replace_all`: replace every occurrence instead of one unique occurrence.
+- Используй canonical POSIX workspace paths, например `/deep_agent/prompts/coding.py`; не передавай Windows paths.
 
-Output:
-- the replacement result plus a verification notice, or an error message if the file cannot be read back after editing.
+Выход:
+- replacement result plus verification notice или error message, если file cannot be read back after editing.
 
-Use when:
-- an existing text file needs a local change.
+Используй когда:
+- existing text file needs a local change.
 
-Example:
+Пример:
 ```text
 edit_file(
   file_path="/deep_agent/prompts/coding.py",
@@ -187,111 +189,110 @@ edit_file(
 )
 ```
 
-Limitations:
-- the fragment to replace must be found unambiguously in the file;
-- strip display-only line-number prefixes copied from `read_file` before filling `old_string` or `new_string`;
-- if the tool reports that the string was not found, change the fragment using verified file content instead of
-  repeating the same failed edit;
+Ограничения:
+- fragment to replace must be found unambiguously in the file;
+- strip display-only line-number prefixes copied from `read_file` before filling `old_string` или `new_string`;
+- если tool reports string not found, измени fragment using verified file content instead of repeating same failed edit;
 - `/deep_agent/` is the agent implementation directory and should be edited only for explicit agent code, prompt,
-  test, or skill changes;
-- the tool is not intended for binary files or generated files that should be updated by a generator.
+  test или skill changes;
+- tool не предназначен для binary files или generated files, которые should be updated by a generator.
 """.strip(),
     "glob": """
 glob
 ---
-Description:
-Finds files by a glob pattern.
+Описание:
+Находит files по glob pattern.
 
-Input:
-- `pattern`: a glob pattern, for example `**/*.md`;
-- `path`: the base search directory.
-- Use canonical POSIX workspace paths such as `/` or `/deep_agent/`; do not pass Windows paths.
+Вход:
+- `pattern`: glob pattern, например `**/*.md`;
+- `path`: base search directory.
+- Используй canonical POSIX workspace paths, например `/` или `/deep_agent/`; не передавай Windows paths.
 
-Output:
-- a list of paths matching the pattern.
+Выход:
+- list of paths matching the pattern.
 
-Use when:
-- files should be found by name, extension, or directory structure.
+Используй когда:
+- files нужно найти по name, extension или directory structure.
 """.strip(),
     "grep": """
 grep
 ---
-Description:
-Searches for text in files.
+Описание:
+Ищет text in files.
 
-Input:
-- `pattern`: the text to search for;
-- `path`: the search directory;
-- `glob`: the file filter;
-- `output_mode`: the output mode, such as `files_with_matches`, `content`, or `count`.
-- Use canonical POSIX workspace paths such as `/` or `/deep_agent/`; do not pass Windows paths.
+Вход:
+- `pattern`: text to search for;
+- `path`: search directory;
+- `glob`: file filter;
+- `output_mode`: output mode, например `files_with_matches`, `content` или `count`.
+- Используй canonical POSIX workspace paths, например `/` или `/deep_agent/`; не передавай Windows paths.
 
-Output:
-- matching content, files with matches, or match counts depending on `output_mode`.
+Выход:
+- matching content, files with matches или match counts depending on `output_mode`.
 
-Call format:
-- pass the search text through `pattern`;
+Формат вызова:
+- передавай search text через `pattern`;
 - `path` points to a directory;
-- a single file name can be passed through `glob`.
-- pass one search phrase per call; if several alternatives are needed, make separate calls or use a Python scan.
+- single file name can be passed through `glob`;
+- передавай одну search phrase за call; если нужно several alternatives, make separate calls или use Python scan.
 
-Use when:
-- a symbol, call, configuration key, text, or artifact mention should be found.
+Используй когда:
+- нужно найти symbol, call, configuration key, text или artifact mention.
 
-Limitations:
-- `pattern` is treated as plain text unless the tool implementation declares another search mode;
-- if repeated searches return no useful matches, change `path`/`glob` from verified context or switch strategy instead
-  of retrying equivalent searches.
+Ограничения:
+- `pattern` treated as plain text, unless tool implementation declares another search mode;
+- если repeated searches не дают useful matches, измени `path`/`glob` from verified context или switch strategy
+  instead of retrying equivalent searches.
 """.strip(),
     "execute": """
 execute
 ---
-Description:
-Runs a non-interactive shell command in the tool working directory.
+Описание:
+Запускает non-interactive shell command в tool working directory.
 
-Input:
-- the command to run;
-- when supported by the runtime: timeout, working directory, and additional execution parameters.
-- Workspace-absolute paths returned by filesystem tools, such as `/VLM PRES.ipynb`, are mapped to real shell paths.
+Вход:
+- command to run;
+- when supported by runtime: timeout, working directory и additional execution parameters.
+- Workspace-absolute paths returned by filesystem tools, например `/VLM PRES.ipynb`, mapped to real shell paths.
   Quote paths that contain spaces.
 
-Output:
-- the command exit code, stdout, and stderr.
+Выход:
+- command exit code, stdout и stderr.
 
-Use when:
-- tests, a linter, formatter, type checker, build, generator, or diagnostic command should be run;
-- command output is needed as a verifiable observation.
-- filesystem operations such as copy, move, remove, or directory creation are needed.
+Используй когда:
+- нужно run tests, linter, formatter, type checker, build, generator или diagnostic command;
+- command output нужен как verifiable observation;
+- нужны filesystem operations вроде copy, move, remove или directory creation.
 
-Do not use when:
-- you only need to read or edit a text file;
-- `python` is better for a data calculation over an existing artifact;
-- the command requires API keys, secrets, interactive input, or long-running services.
+Не используй когда:
+- нужно только read/edit text file;
+- `python` лучше подходит для data calculation over existing artifact;
+- command requires API keys, secrets, interactive input или long-running services.
 
-Example:
+Пример:
 ```text
 execute(command="python -m pytest tests/test_filesystem_path_contract.py -q")
 execute(command="jupyter nbconvert --to script \"/VLM PRES.ipynb\" --output \"/VLM_PRES.py\"")
 ```
 
-Bad example:
+Плохой пример:
 ```text
 execute(command="type deep_agent\\agent.py")
 ```
 
-Good example:
+Хороший пример:
 ```text
 read_file(file_path="/deep_agent/agent.py", offset=1, limit=120)
 ```
 
-Limitations:
-- the command must not require interactive input;
-- the tool must not be used for commands that require secrets or API keys.
+Ограничения:
+- command must not require interactive input;
+- tool must not be used for commands requiring secrets или API keys;
 - use filesystem tools for ordinary text read/write/edit operations; use shell for tests, builds, diagnostics,
-  package commands, and copy/move operations;
-- do not embed multi-line content inside a double-quoted shell string;
-- avoid complex `python -c` one-liners with loops, branches, functions, classes, or context managers after semicolons;
+  package commands и copy/move operations;
+- не embed multi-line content inside a double-quoted shell string;
+- avoid complex `python -c` one-liners with loops, branches, functions, classes или context managers after semicolons;
   for data/intermediate transformations write a small script under `/artifacts`, otherwise use an appropriate
-  repository/workspace path or a single-quoted heredoc.
+  repository/workspace path или single-quoted heredoc.
 """.strip(),
 }
