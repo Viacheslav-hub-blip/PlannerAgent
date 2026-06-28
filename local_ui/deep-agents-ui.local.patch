@@ -28,7 +28,7 @@ index 3dcdee2..df4e8d1 100644
      "@radix-ui/react-dialog": "^1.1.15",
      "@radix-ui/react-label": "^2.1.8",
 diff --git a/src/app/components/ChatInterface.tsx b/src/app/components/ChatInterface.tsx
-index c3691a9..f71fcd4 100644
+index c3691a9..33635b8 100644
 --- a/src/app/components/ChatInterface.tsx
 +++ b/src/app/components/ChatInterface.tsx
 @@ -25,6 +25,7 @@ import type {
@@ -39,7 +39,7 @@ index c3691a9..f71fcd4 100644
  import { extractStringFromMessageContent } from "@/app/utils/utils";
  import { useChatContext } from "@/providers/ChatProvider";
  import { cn } from "@/lib/utils";
-@@ -61,6 +62,24 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
+@@ -61,6 +62,33 @@ const getStatusIcon = (status: TodoItem["status"], className?: string) => {
    }
  };
  
@@ -53,18 +53,27 @@ index c3691a9..f71fcd4 100644
 +const getSubagentsForToolCalls = (
 +  toolCalls: ToolCall[],
 +  subagents: Map<string, SubagentStreamInterface>
-+): SubagentStreamInterface[] =>
-+  toolCalls
-+    .filter((toolCall) => toolCall.name === "task")
-+    .map((toolCall) => subagents.get(toolCall.id))
-+    .filter(
-+      (subAgent): subAgent is SubagentStreamInterface => subAgent !== undefined
-+    );
++): SubagentStreamInterface[] => {
++  const result: SubagentStreamInterface[] = [];
++  const seenIds = new Set<string>();
++  for (const toolCall of toolCalls) {
++    if (toolCall.name !== "task" || seenIds.has(toolCall.id)) {
++      continue;
++    }
++    const subAgent = subagents.get(toolCall.id);
++    if (subAgent === undefined) {
++      continue;
++    }
++    seenIds.add(toolCall.id);
++    result.push(subAgent);
++  }
++  return result;
++};
 +
  export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
    const [metaOpen, setMetaOpen] = useState<"tasks" | "files" | null>(null);
    const tasksContainerRef = useRef<HTMLDivElement | null>(null);
-@@ -71,20 +90,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -71,20 +99,24 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
  
    const {
      stream,
@@ -89,7 +98,7 @@ index c3691a9..f71fcd4 100644
  
    const handleSubmit = useCallback(
      (e?: FormEvent) => {
-@@ -171,7 +194,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -171,7 +203,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                id: toolCall.id || `tool-${Math.random()}`,
                name,
                args,
@@ -98,7 +107,7 @@ index c3691a9..f71fcd4 100644
              } as ToolCall;
            }
          );
-@@ -213,7 +236,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -213,7 +245,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
          showAvatar: data.message.type !== prevMessage?.type,
        };
      });
@@ -107,7 +116,7 @@ index c3691a9..f71fcd4 100644
  
    const groupedTodos = {
      in_progress: todos.filter((t) => t.status === "in_progress"),
-@@ -267,6 +290,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -267,6 +299,17 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                      key={data.message.id}
                      message={data.message}
                      toolCalls={data.toolCalls}
@@ -119,10 +128,13 @@ index c3691a9..f71fcd4 100644
 +                          )
 +                        : []
 +                    }
++                    taskToolCalls={data.toolCalls.filter(
++                      (toolCall) => toolCall.name === "task"
++                    )}
                      isLoading={isLoading}
                      actionRequestsMap={
                        isLastMessage ? actionRequestsMap : undefined
-@@ -274,6 +305,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -274,6 +317,8 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                      reviewConfigsMap={
                        isLastMessage ? reviewConfigsMap : undefined
                      }
@@ -131,7 +143,7 @@ index c3691a9..f71fcd4 100644
                      ui={messageUi}
                      stream={stream}
                      onResumeInterrupt={resumeInterrupt}
-@@ -490,7 +523,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -490,7 +535,7 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
                            files={files}
                            setFiles={setFiles}
                            editDisabled={
@@ -140,7 +152,7 @@ index c3691a9..f71fcd4 100644
                            }
                          />
                        </div>
-@@ -504,6 +537,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
+@@ -504,6 +549,14 @@ export const ChatInterface = React.memo<ChatInterfaceProps>(({ assistant }) => {
              onSubmit={handleSubmit}
              className="flex flex-col"
            >
@@ -156,7 +168,7 @@ index c3691a9..f71fcd4 100644
                ref={textareaRef}
                value={input}
 diff --git a/src/app/components/ChatMessage.tsx b/src/app/components/ChatMessage.tsx
-index 48eadde..5403887 100644
+index 48eadde..a435ca8 100644
 --- a/src/app/components/ChatMessage.tsx
 +++ b/src/app/components/ChatMessage.tsx
 @@ -1,16 +1,20 @@
@@ -182,11 +194,12 @@ index 48eadde..5403887 100644
  import {
    extractSubAgentContent,
    extractStringFromMessageContent,
-@@ -20,22 +24,147 @@ import { cn } from "@/lib/utils";
+@@ -20,22 +24,228 @@ import { cn } from "@/lib/utils";
  interface ChatMessageProps {
    message: Message;
    toolCalls: ToolCall[];
 +  subAgents?: SubagentStreamInterface[];
++  taskToolCalls?: ToolCall[];
    isLoading?: boolean;
    actionRequestsMap?: Map<string, ActionRequest>;
    reviewConfigsMap?: Map<string, ReviewConfig>;
@@ -210,6 +223,85 @@ index 48eadde..5403887 100644
 +  reviewConfig?: ReviewConfig;
 +  interrupt?: InterruptLike;
 +};
++
++/**
++ * Нормализует lifecycle-статус sub-agent из разных версий SDK.
++ *
++ * @param status Статус sub-agent из live-stream или восстановленной истории.
++ * @returns Статус, поддерживаемый текущим индикатором sub-agent.
++ */
++function normalizeSubagentStatus(
++  status: SubagentStreamInterface["status"] | "completed"
++): SubagentStreamInterface["status"] {
++  return status === "completed" ? "complete" : status;
++}
++
++/**
++ * Синхронизирует sub-agent stream с финальным root tool message инструмента task.
++ *
++ * @param subAgent Live-stream sub-agent из SDK.
++ * @param taskToolCall Root tool call ``task`` с результатом из основного thread.
++ * @returns Sub-agent stream со статусом, согласованным с финальным task result.
++ */
++function reconcileSubAgentWithTaskToolCall(
++  subAgent: SubagentStreamInterface,
++  taskToolCall?: ToolCall
++): SubagentStreamInterface {
++  const normalizedStatus = normalizeSubagentStatus(subAgent.status);
++  if (taskToolCall?.status === "completed") {
++    return {
++      ...subAgent,
++      status: "complete",
++      result: taskToolCall.result ?? subAgent.result,
++    };
++  }
++  if (taskToolCall?.status === "error") {
++    return {
++      ...subAgent,
++      status: "error",
++    };
++  }
++  if (normalizedStatus !== subAgent.status) {
++    return {
++      ...subAgent,
++      status: normalizedStatus,
++    };
++  }
++  return subAgent;
++}
++
++/**
++ * Возвращает уникальный список sub-agent streams для рендера.
++ *
++ * @param subAgents Sub-agent streams, полученные от SDK.
++ * @param taskToolCalls Root tool calls инструмента task из текущего AI-сообщения.
++ * @returns Дедуплицированный список sub-agent streams с согласованными статусами.
++ */
++function getVisibleSubAgents(
++  subAgents: SubagentStreamInterface[],
++  taskToolCalls: ToolCall[]
++): SubagentStreamInterface[] {
++  const taskToolCallById = new Map(
++    taskToolCalls.map((toolCall) => [toolCall.id, toolCall])
++  );
++  const result = new Map<string, SubagentStreamInterface>();
++  for (const subAgent of subAgents) {
++    const reconciledSubAgent = reconcileSubAgentWithTaskToolCall(
++      subAgent,
++      taskToolCallById.get(subAgent.id)
++    );
++    const previous = result.get(subAgent.id);
++    if (
++      previous === undefined ||
++      previous.status === "pending" ||
++      reconciledSubAgent.status === "complete" ||
++      reconciledSubAgent.status === "error"
++    ) {
++      result.set(subAgent.id, reconciledSubAgent);
++    }
++  }
++  return Array.from(result.values());
++}
 +
 +/**
 + * Преобразует streamed tool call sub-agent в формат карточки UI.
@@ -323,6 +415,7 @@ index 48eadde..5403887 100644
      message,
      toolCalls,
 +    subAgents = [],
++    taskToolCalls = [],
      isLoading,
      actionRequestsMap,
      reviewConfigsMap,
@@ -331,7 +424,7 @@ index 48eadde..5403887 100644
      ui,
      stream,
      onResumeInterrupt,
-@@ -45,31 +174,6 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -45,31 +255,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(
      const messageContent = extractStringFromMessageContent(message);
      const hasContent = messageContent && messageContent.trim() !== "";
      const hasToolCalls = toolCalls.length > 0;
@@ -360,10 +453,11 @@ index 48eadde..5403887 100644
 -        });
 -    }, [toolCalls]);
 -
++    const visibleSubAgents = getVisibleSubAgents(subAgents, taskToolCalls);
      const [expandedSubAgents, setExpandedSubAgents] = useState<
        Record<string, boolean>
      >({});
-@@ -131,16 +235,29 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -131,25 +317,38 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                  );
                  const actionRequest = actionRequestsMap?.get(toolCall.name);
                  const reviewConfig = reviewConfigsMap?.get(toolCall.name);
@@ -397,7 +491,18 @@ index 48eadde..5403887 100644
                      isLoading={isLoading}
                    />
                  );
-@@ -157,7 +274,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+               })}
+             </div>
+           )}
+-          {!isUser && subAgents.length > 0 && (
++          {!isUser && visibleSubAgents.length > 0 && (
+             <div className="flex w-fit max-w-full flex-col gap-4">
+-              {subAgents.map((subAgent) => (
++              {visibleSubAgents.map((subAgent) => (
+                 <div
+                   key={subAgent.id}
+                   className="flex w-full flex-col gap-2"
+@@ -157,7 +356,10 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                    <div className="flex items-end gap-2">
                      <div className="w-[calc(100%-100px)]">
                        <SubAgentIndicator
@@ -409,7 +514,7 @@ index 48eadde..5403887 100644
                          onClick={() => toggleSubAgent(subAgent.id)}
                          isExpanded={isSubAgentExpanded(subAgent.id)}
                        />
-@@ -167,21 +287,88 @@ export const ChatMessage = React.memo<ChatMessageProps>(
+@@ -167,21 +369,88 @@ export const ChatMessage = React.memo<ChatMessageProps>(
                      <div className="w-full max-w-full">
                        <div className="bg-surface border-border-light rounded-md border p-4">
                          <h4 className="text-primary/70 mb-2 text-xs font-semibold uppercase tracking-wider">
@@ -745,7 +850,7 @@ index 4c20e73..77a6076 100644
                    <div className="mt-4">
                      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 diff --git a/src/app/hooks/useChat.ts b/src/app/hooks/useChat.ts
-index 139b78e..495cad2 100644
+index 139b78e..6991cec 100644
 --- a/src/app/hooks/useChat.ts
 +++ b/src/app/hooks/useChat.ts
 @@ -1,6 +1,6 @@
@@ -774,7 +879,7 @@ index 139b78e..495cad2 100644
  
  export type StateType = {
    messages: Message[];
-@@ -25,6 +30,109 @@ export type StateType = {
+@@ -25,6 +30,111 @@ export type StateType = {
    ui?: any;
  };
  
@@ -788,6 +893,8 @@ index 139b78e..495cad2 100644
 +};
 +
 +const LOAD_DATA_PROGRESS_EVENT = "load_data_progress";
++type RunConflictStrategy = "reject";
++const RUN_CONFLICT_STRATEGY: RunConflictStrategy = "reject";
 +
 +/**
 + * Преобразует ошибку stream в безопасное сообщение для пользователя.
@@ -884,7 +991,7 @@ index 139b78e..495cad2 100644
  export function useChat({
    activeAssistant,
    onHistoryRevalidate,
-@@ -35,30 +143,83 @@ export function useChat({
+@@ -35,30 +145,87 @@ export function useChat({
    thread?: UseStreamThread<StateType>;
  }) {
    const [threadId, setThreadId] = useQueryState("threadId");
@@ -962,22 +1069,30 @@ index 139b78e..495cad2 100644
  
    const sendMessage = useCallback(
      (content: string) => {
++      if (stream.isLoading) {
++        return;
++      }
 +      setStreamError(null);
 +      setLoadDataProgress({});
        const newMessage: Message = { id: uuidv4(), type: "human", content };
        stream.submit(
          { messages: [newMessage] },
          {
++          multitaskStrategy: RUN_CONFLICT_STRATEGY,
 +          streamSubgraphs: true,
            optimisticValues: (prev) => ({
              messages: [...(prev.messages ?? []), newMessage],
            }),
-@@ -79,20 +240,27 @@ export function useChat({
+@@ -79,20 +246,35 @@ export function useChat({
        optimisticMessages?: Message[]
      ) => {
        if (checkpoint) {
++        if (stream.isLoading) {
++          return;
++        }
 +        setLoadDataProgress({});
          stream.submit(undefined, {
++          multitaskStrategy: RUN_CONFLICT_STRATEGY,
            ...(optimisticMessages
              ? { optimisticValues: { messages: optimisticMessages } }
              : {}),
@@ -989,11 +1104,15 @@ index 139b78e..495cad2 100644
              : { interruptBefore: ["tools"] }),
          });
        } else {
++        if (stream.isLoading) {
++          return;
++        }
 +        setLoadDataProgress({});
          stream.submit(
            { messages },
 -          { config: activeAssistant?.config, interruptBefore: ["tools"] }
 +          {
++            multitaskStrategy: RUN_CONFLICT_STRATEGY,
 +            config: activeAssistant?.config,
 +            interruptBefore: ["tools"],
 +            streamSubgraphs: true,
@@ -1001,23 +1120,31 @@ index 139b78e..495cad2 100644
          );
        }
      },
-@@ -111,7 +279,10 @@ export function useChat({
+@@ -111,7 +293,14 @@ export function useChat({
  
    const continueStream = useCallback(
      (hasTaskToolCall?: boolean) => {
++      if (stream.isLoading) {
++        return;
++      }
 +      setStreamError(null);
 +      setLoadDataProgress({});
        stream.submit(undefined, {
++        multitaskStrategy: RUN_CONFLICT_STRATEGY,
 +        streamSubgraphs: true,
          config: {
            ...(activeAssistant?.config || {}),
            recursion_limit: 100,
-@@ -127,14 +298,23 @@ export function useChat({
+@@ -127,14 +316,31 @@ export function useChat({
    );
  
    const markCurrentThreadAsResolved = useCallback(() => {
 -    stream.submit(null, { command: { goto: "__end__", update: null } });
++    if (stream.isLoading) {
++      return;
++    }
 +    stream.submit(null, {
++      multitaskStrategy: RUN_CONFLICT_STRATEGY,
 +      command: { goto: "__end__", update: null },
 +      streamSubgraphs: true,
 +    });
@@ -1029,17 +1156,21 @@ index 139b78e..495cad2 100644
 -    (value: any) => {
 -      stream.submit(null, { command: { resume: value } });
 +    (value: any, interrupt?: { id?: string; ns?: string[] }) => {
++      if (stream.isLoading) {
++        return;
++      }
 +      setStreamError(null);
 +      setLoadDataProgress({});
 +      const resumeValue = interrupt?.id ? { [interrupt.id]: value } : value;
 +      stream.submit(null, {
++        multitaskStrategy: RUN_CONFLICT_STRATEGY,
 +        command: { resume: resumeValue },
 +        streamSubgraphs: true,
 +      });
        // Update thread list when resuming from interrupt
        onHistoryRevalidate?.();
      },
-@@ -151,11 +331,14 @@ export function useChat({
+@@ -151,11 +357,14 @@ export function useChat({
      files: stream.values.files ?? {},
      email: stream.values.email,
      ui: stream.values.ui,

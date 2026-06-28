@@ -127,6 +127,11 @@ class LocalUiIntegrationTests(unittest.TestCase):
         self.assertIn("loadDataProgress", patch_text)
         self.assertIn("Spark Progress", patch_text)
         self.assertIn("...(interrupts ?? [])", patch_text)
+        self.assertIn("RUN_CONFLICT_STRATEGY", patch_text)
+        self.assertIn("multitaskStrategy: RUN_CONFLICT_STRATEGY", patch_text)
+        self.assertIn("taskToolCalls", patch_text)
+        self.assertIn("reconcileSubAgentWithTaskToolCall", patch_text)
+        self.assertIn("getVisibleSubAgents", patch_text)
 
     def test_langgraph_config_does_not_require_env_file(self) -> None:
         """Проверяет запуск UI с Python-конфигурацией без env-файла.
