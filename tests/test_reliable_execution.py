@@ -33,6 +33,7 @@ from deep_agent.agent import (
     _agents_memory_path,
     _build_native_runtime_middleware,
     _build_runtime_context_prompt,
+    build_analytics_deep_agent,
     build_conversation_checkpointer,
     build_skills_backend,
     build_supervisor_backend,
@@ -311,6 +312,19 @@ class ReliableExecutionTests(unittest.TestCase):
 
         self.assertIsNotNone(profile.general_purpose_subagent)
         self.assertFalse(profile.general_purpose_subagent.enabled)
+
+    def test_supervisor_general_purpose_is_enabled_by_default(self) -> None:
+        """Supervisor должен по умолчанию сохранять штатный general-purpose subagent."""
+
+        build_signature = signature(build_analytics_deep_agent)
+        default_value = build_signature.parameters["enable_general_purpose"].default
+        source = (Path(__file__).parents[1] / "deep_agent" / "agent.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertTrue(default_value)
+        self.assertIn("enable_general_purpose=enable_general_purpose", source)
+        self.assertIn("enable_general_purpose=False", source)
 
     def test_subagent_specs_include_coding_and_data_agents(self) -> None:
         """Сборка должна явно добавлять coding-agent и data-retrieval-agent."""

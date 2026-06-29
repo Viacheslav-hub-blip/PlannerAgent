@@ -185,6 +185,7 @@ def build_analytics_deep_agent(
     checkpointer: Any = _DEFAULT_CHECKPOINTER,
     state_artifacts_virtual_dir: str | None = None,
     system_prompt_suffix: str | None = None,
+    enable_general_purpose: bool = True,
 ) -> Any:
     """Собирает гибридный аналитический и coding DeepAgent.
 
@@ -226,6 +227,10 @@ def build_analytics_deep_agent(
             сохраняемых в state LangGraph и доступных UI. Если ``None``, state-маршрут
             не создаётся.
         system_prompt_suffix: Дополнительные инструкции, добавляемые к системному prompt.
+        enable_general_purpose: Нужно ли оставлять штатный ``general-purpose`` subagent
+            доступным supervisor-у. Вложенные compiled subagents по-прежнему собираются
+            без собственного ``general-purpose``, чтобы не создавать цепочки универсальных
+            subagents.
 
     Returns:
         Скомпилированный DeepAgents граф (supervisor), готовый к ``invoke``/``stream``.
@@ -413,7 +418,7 @@ def build_analytics_deep_agent(
 
     register_analytics_harness_profile(
         settings.harness_profile_key,
-        enable_general_purpose=True,
+        enable_general_purpose=enable_general_purpose,
     )
     agent = create_deep_agent(
         model=model,
