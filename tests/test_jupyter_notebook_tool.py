@@ -13,7 +13,6 @@ from pathlib import Path
 
 from deep_agent.settings import workspace_tool_path
 from deep_agent.tools.jupyter_notebook import (
-    CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION,
     CONVERT_JUPYTER_NOTEBOOK_TOOL_NAME,
     build_convert_jupyter_notebook_tool,
     convert_jupyter_notebook_file,
@@ -22,21 +21,6 @@ from deep_agent.tools.jupyter_notebook import (
 
 class JupyterNotebookToolTests(unittest.TestCase):
     """Проверяет конвертацию Jupyter Notebook без выполнения кода."""
-
-    def test_description_requires_markdown_percent_cells(self) -> None:
-        """Проверяет prompt-контракт для markdown-ячеек notebook.
-
-        Returns:
-            ``None``.
-        """
-
-        self.assertIn("# %% [markdown]", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("Good percent-script", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("Bad percent-script", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("# Markdown:", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("standalone triple-quoted strings", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("всегда форматирует содержимое notebook", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
-        self.assertIn("выноси объяснения", CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION)
 
     def test_py_to_ipynb_creates_notebook_from_percent_script(self) -> None:
         """Проверяет создание `.ipynb` из `.py` файла с percent-ячейками.

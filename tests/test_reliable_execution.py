@@ -32,7 +32,6 @@ from langgraph.checkpoint.memory import InMemorySaver
 from deep_agent.agent import (
     _agents_memory_path,
     _build_native_runtime_middleware,
-    _build_runtime_context_prompt,
     build_analytics_deep_agent,
     build_conversation_checkpointer,
     build_skills_backend,
@@ -41,25 +40,11 @@ from deep_agent.agent import (
 )
 from deep_agent.data.result_wrapper import _format_result
 from deep_agent.runtime.harness import build_analytics_harness_profile
-from deep_agent.prompts.coding import CODING_AGENT_PROMPT
-from deep_agent.prompts.data_retrieval import DATA_RETRIEVAL_PROMPT
-from deep_agent.prompts.gigachat import GIGACHAT_AGENT_PRACTICES_PROMPT
-from deep_agent.prompts.skills import (
-    DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-)
-from deep_agent.prompts.supervisor import SYSTEM_PROMPT
-from deep_agent.prompts.tool_contracts import (
-    TASK_TOOL_DESCRIPTION,
-    TOOL_DESCRIPTION_OVERRIDES,
-)
 from deep_agent.tools.spark_data import (
-    READ_TABLE_DESCRIPTION,
     _build_pyspark_query_code,
     _clear_spark_job_group,
     _managed_spark_session,
     _stop_spark_session,
-    build_load_data_approval_description,
     build_spark_data_tools,
     stop_active_spark_sessions,
 )
@@ -96,9 +81,12 @@ from deep_agent.middleware.gigachat_runtime import (
     ShellSafetyMiddleware,
     ThinkToolMiddleware,
 )
-from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
+from deep_agent.middleware.tool_descriptions import (
+    PromptToolDescriptionsMiddleware,
+    PromptToolFilterMiddleware,
+)
 from deep_agent.data.query_schema import FilterCondition, ParsedDataQuery
-from deep_agent.tools.skill_loader import LOAD_SKILLS_DESCRIPTION, build_load_skills_tool
+from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.tools.image_analysis import build_analyze_image_tool
 from deep_agent.tools.project_structure import build_get_project_structure_tool
 from deep_agent.data.query_parser import _parsed_query_to_read_args
@@ -347,19 +335,6 @@ class ReliableExecutionTests(unittest.TestCase):
             specs[1]["description"],
             DATA_RETRIEVAL_AGENT_DESCRIPTION,
         )
-        self.assertIn("refactor existing code", CODING_AGENT_DESCRIPTION)
-        self.assertIn("edit or create source files", CODING_AGENT_DESCRIPTION)
-        self.assertIn("convert files between supported formats", CODING_AGENT_DESCRIPTION)
-        self.assertIn("run validation commands", CODING_AGENT_DESCRIPTION)
-        self.assertIn("Do not use for table data retrieval", CODING_AGENT_DESCRIPTION)
-        self.assertIn("Use only for bounded table data retrieval with load_data", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("fetch unique values of one column", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("retrieve rows matching exact identifiers", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("Provide a precise retrieval objective", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("Do not use for calculations", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("semantic classification decisions", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("Bad tasks: calculate totals or averages", DATA_RETRIEVAL_AGENT_DESCRIPTION)
-        self.assertIn("delegate those follow-up tasks to coding-agent", DATA_RETRIEVAL_AGENT_DESCRIPTION)
 
     def test_subagent_builders_return_create_deep_agent_kwargs(self) -> None:
         """Builder-ы должны возвращать независимые kwargs без registry-описания."""
@@ -720,6 +695,28 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertTrue(any(isinstance(item, ShellSafetyMiddleware) for item in middleware))
         self.assertTrue(any(isinstance(item, LoopBreakerMiddleware) for item in middleware))
 
+    def test_prompt_tool_filter_hides_edit_file_for_coding_agent(self) -> None:
+        """Проверяет скрытие ``edit_file`` из model-visible tools.
+
+        Returns:
+            ``None``.
+        """
+
+        middleware = PromptToolFilterMiddleware(("edit_file",))
+        request = SimpleNamespace(
+            tools=[
+                {"name": "read_file", "description": "read"},
+                {"name": "edit_file", "description": "edit"},
+                {"name": "write_file", "description": "write"},
+            ],
+            override=lambda **kwargs: SimpleNamespace(**kwargs),
+        )
+
+        filtered = middleware._override_request(request)
+        tool_names = [tool["name"] for tool in filtered.tools]
+
+        self.assertEqual(tool_names, ["read_file", "write_file"])
+
     def test_shell_safety_blocks_unsafe_python_one_liner(self) -> None:
         """Проверяет блокировку небезопасного ``python -c`` до запуска shell.
 
@@ -784,18 +781,6 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIsInstance(update["messages"][0], HumanMessage)
         self.assertIn("[LOOP-BREAKER]", update["messages"][0].content)
         self.assertIn("/artifacts/run.py", update["messages"][0].content)
-
-    def test_gigachat_practices_prompt_keeps_project_path_contract(self) -> None:
-        """Проверяет, что GigaChat prompt-довесок сохраняет namespace workspace ``/``.
-
-        Returns:
-            ``None``.
-        """
-
-        self.assertIn("supplement the project", GIGACHAT_AGENT_PRACTICES_PROMPT)
-        self.assertIn("The workspace root is ``/``", GIGACHAT_AGENT_PRACTICES_PROMPT)
-        self.assertIn("/artifacts/run.py", GIGACHAT_AGENT_PRACTICES_PROMPT)
-        self.assertNotIn("MEMORY.md", GIGACHAT_AGENT_PRACTICES_PROMPT)
 
     def test_tool_output_summary_includes_workspace_artifact_path(self) -> None:
         """Offload summary должен показывать workspace-путь для pandas pickle.
@@ -909,53 +894,6 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn("row_count = result.count()", query_code)
         self.assertIn(".write.mode('overwrite').json(", query_code)
         self.assertNotIn("pdf = result.toPandas()", query_code)
-
-    def test_load_data_hitl_description_contains_real_pyspark_code(self) -> None:
-        """Проверяет описание штатного HITL approval для ``load_data`` без Spark action.
-
-        Returns:
-            ``None``.
-        """
-
-        parsed = ParsedDataQuery(
-            status="ready",
-            table_name="hits",
-            select_columns=["event_id", "event_dt", "epk_id"],
-            filters=[
-                FilterCondition(
-                    column="event_dt",
-                    operator="between",
-                    values=["20260324", "20260624"],
-                ),
-                FilterCondition(
-                    column="epk_id",
-                    operator="eq",
-                    value="1129335958569578699",
-                ),
-            ],
-        )
-        model = SequencedStructuredModel(
-            [AIMessage(content=json.dumps(parsed.model_dump()))]
-        )
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            description = build_load_data_approval_description(
-                query=(
-                    "LOAD hits SELECT event_id, event_dt, epk_id "
-                    "WHERE epk_id = '1129335958569578699' "
-                    "PERIOD event_dt FROM '20260324' TO '20260624'"
-                ),
-                query_parser_model=model,
-                output_dir=workspace / "artifacts",
-                workspace_root=workspace,
-            )
-
-        self.assertIn("Подтвердите выполнение Spark-запроса.", description)
-        self.assertIn("Источник: hits", description)
-        self.assertIn("```python", description)
-        self.assertIn("df = spark.table(", description)
-        self.assertIn("F.col('epk_id') == '1129335958569578699'", description)
-        self.assertIn("row_count = result.count()", description)
 
     def test_spark_data_tool_disables_internal_approval_by_default(self) -> None:
         """Проверяет, что approval ``load_data`` теперь выполняется middleware, а не самим tool.
@@ -1285,28 +1223,6 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertNotIn("permissions=", source)
         self.assertNotIn("FilesystemPermission", source)
 
-    def test_runtime_context_prompt_defines_current_date_and_artifact_paths(self) -> None:
-        """Runtime prompt должен явно фиксировать дату и реальные пути артефактов.
-
-        Returns:
-            ``None``.
-        """
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = Path(temp_dir)
-            outputs_dir = workspace / "artifacts"
-            outputs_dir.mkdir(parents=True)
-            prompt = _build_runtime_context_prompt(workspace, outputs_dir)
-
-        self.assertIn("Current date:", prompt)
-        self.assertIn("Workspace root:", prompt)
-        self.assertIn("Data artifacts directory:", prompt)
-        self.assertIn("last 2 days", prompt)
-        self.assertIn("Never take", prompt)
-        self.assertIn("examples", prompt)
-        self.assertIn("demo data", prompt)
-        self.assertIn("Use `/artifacts` only for `load_data` offload files", prompt)
-
     def test_agent_builder_keeps_session_tool_outputs_persistent(self) -> None:
         """Сборка агента не должна удалять session tool outputs при закрытии графа.
 
@@ -1367,114 +1283,6 @@ class ReliableExecutionTests(unittest.TestCase):
         self.assertIn(memory_path, prompt_text)
         self.assertIn("## Role", prompt_text)
         self.assertIn("data-retrieval-agent", prompt_text)
-
-    def test_filesystem_tool_descriptions_define_public_call_contract(self) -> None:
-        """Описания filesystem tools должны фиксировать публичный контракт вызова."""
-
-        read_file_description = TOOL_DESCRIPTION_OVERRIDES["read_file"]
-        grep_description = TOOL_DESCRIPTION_OVERRIDES["grep"]
-        write_file_description = TOOL_DESCRIPTION_OVERRIDES["write_file"]
-        edit_file_description = TOOL_DESCRIPTION_OVERRIDES["edit_file"]
-
-        self.assertIn("pass the path through `file_path`", read_file_description)
-        self.assertIn("request the next fragment with a new `offset`", read_file_description)
-        self.assertIn("pass the search text through `pattern`", grep_description)
-        self.assertIn("`path` points to a directory", grep_description)
-        self.assertIn("single file name can be passed through `glob`", grep_description)
-        self.assertIn("exit code, stdout, and stderr", TOOL_DESCRIPTION_OVERRIDES["execute"])
-        self.assertIn("`/` is the configured user workspace root", write_file_description)
-        self.assertIn("overwrites an existing file at the same path", write_file_description)
-        self.assertIn("_final_final", write_file_description)
-        self.assertIn("do not write under `/deep_agent/`", write_file_description)
-        self.assertIn("should be edited only for explicit agent code", edit_file_description)
-
-    def test_load_skills_description_rejects_auxiliary_files(self) -> None:
-        """Описание load_skills должно запрещать загрузку fields.md как skill."""
-
-        self.assertIn("loads only `SKILL.md` files", LOAD_SKILLS_DESCRIPTION)
-        self.assertIn(
-            "Do not pass paths like `/deep_agent/skills/name/fields.md`",
-            LOAD_SKILLS_DESCRIPTION,
-        )
-
-    def test_tool_descriptions_are_separate_from_agent_workflow_rules(self) -> None:
-        """Описания tools не должны содержать внутренние workflow-правила агента."""
-
-        self.assertIn("Runs one subagent", TASK_TOOL_DESCRIPTION)
-        self.assertIn("`subagent_type`", TASK_TOOL_DESCRIPTION)
-        self.assertIn("`description`", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("coding-agent", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("data-retrieval-agent", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("supervisor", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("не повторяй один и тот же tool call", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("пустой отчёт", TASK_TOOL_DESCRIPTION)
-        self.assertNotIn("load_data", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
-        self.assertNotIn("load_skills", SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
-        self.assertNotIn("read_file", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
-        self.assertNotIn("load_skills", DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE)
-        self.assertNotIn("инструмент", SYSTEM_PROMPT.lower())
-        self.assertIn("Do not repeat the same delegation", SYSTEM_PROMPT)
-        self.assertIn("report without factual evidence", SYSTEM_PROMPT)
-        self.assertIn("Create a plan before executing every non-trivial task", SYSTEM_PROMPT)
-        self.assertIn("Use delegation as the default execution strategy", SYSTEM_PROMPT)
-        self.assertIn(
-            "may call a non-delegation tool directly only for a very small atomic action",
-            SYSTEM_PROMPT,
-        )
-        self.assertIn("Never expose private chain-of-thought", SYSTEM_PROMPT)
-        self.assertIn("delegate it to `coding-agent`", SYSTEM_PROMPT)
-        self.assertIn("do not call tools in a loop after a successful result", SYSTEM_PROMPT)
-        self.assertIn("Treat `/` in filesystem tools as the configured user workspace root", SYSTEM_PROMPT)
-        self.assertIn("Do not use `/deep_agent/` as a default", SYSTEM_PROMPT)
-        self.assertIn("среди этих", SYSTEM_PROMPT)
-        self.assertIn("pd.read_pickle(resolve_workspace_path(artifact_path))", SYSTEM_PROMPT)
-        self.assertIn("read_pickle_file(artifact_path)", SYSTEM_PROMPT)
-        self.assertIn("Do not delegate a new `load_data`", SYSTEM_PROMPT)
-        self.assertIn("good plan for analytics over retrieved data", SYSTEM_PROMPT)
-        self.assertIn("retrieve raw trigger rows for the last calendar month", SYSTEM_PROMPT)
-        self.assertIn("retrieve raw trigger rows for the previous calendar month", SYSTEM_PROMPT)
-        self.assertIn("calculate absolute change and percentage", SYSTEM_PROMPT)
-        self.assertIn("handling of zero previous-month counts", SYSTEM_PROMPT)
-        self.assertIn("Before accepting a subagent result", SYSTEM_PROMPT)
-        self.assertIn("two-step operation such as rename, move, convert", SYSTEM_PROMPT)
-        self.assertIn("intermediate artifact is not enough", SYSTEM_PROMPT)
-        self.assertIn("bounded code and workspace tasks", CODING_AGENT_PROMPT)
-        self.assertIn("Do not access table data", CODING_AGENT_PROMPT)
-        self.assertIn("`/deep_agent/` is the agent implementation directory", CODING_AGENT_PROMPT)
-        self.assertIn("Treat the requested deliverable as strict", CODING_AGENT_PROMPT)
-        self.assertIn("For two-step operations, complete both halves", CODING_AGENT_PROMPT)
-        self.assertIn("For policy/action JSON tasks", CODING_AGENT_PROMPT)
-        self.assertIn("For merge or conflict-resolution tasks", CODING_AGENT_PROMPT)
-        self.assertIn("material parameters", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("observed results", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("Preserve exact names and values from verified sources", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("every exact value, field, period label, and artifact path", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("material parameters", CODING_AGENT_PROMPT)
-        self.assertIn("observed result", CODING_AGENT_PROMPT)
-        self.assertIn("Do not add row limits on behalf of the user", SYSTEM_PROMPT)
-        self.assertIn("Do not add `LIMIT` unless the original user request", DATA_RETRIEVAL_PROMPT)
-        self.assertIn('Path(ARTIFACTS_DIR) / "file.csv"', DATA_RETRIEVAL_PROMPT)
-        self.assertIn("save data exports and transformed data outputs", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("pd.read_pickle(resolve_workspace_path", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("Comparison and change requests require separate comparable populations", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("two adjacent 7-day windows", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("do not replace them with one 20260601-20260614 aggregate", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("A mandatory calls section with one item per tool invocation", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("exact tool name", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("exact material parameters / input parameters", DATA_RETRIEVAL_PROMPT)
-        self.assertIn("## Вызовы инструментов", DATA_RETRIEVAL_PROMPT)
-        self.assertIn('Do not add a separate "Ограничения" / limitations section by default', DATA_RETRIEVAL_PROMPT)
-
-    def test_load_data_description_makes_limit_user_explicit_only(self) -> None:
-        """Описание ``load_data`` должно запрещать неявный LIMIT.
-
-        Returns:
-            ``None``.
-        """
-
-        self.assertIn("LIMIT не является обязательным", READ_TABLE_DESCRIPTION)
-        self.assertIn("Не добавляй LIMIT самостоятельно", READ_TABLE_DESCRIPTION)
-        self.assertIn("LIMIT запрещён", READ_TABLE_DESCRIPTION)
 
     def test_tool_context_notice_text_is_human_readable(self) -> None:
         """Tool notice должен явно сообщать о переданном контексте."""

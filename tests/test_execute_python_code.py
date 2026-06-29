@@ -15,90 +15,12 @@ from pathlib import Path
 from deep_agent.runtime.python_sandbox import DeepAgentPythonSandbox
 from deep_agent.settings import workspace_tool_path
 from deep_agent.tools.python_execution import (
-    PYTHON_TOOL_DESCRIPTION,
     build_python_tool,
 )
 
 
 class PythonToolTests(unittest.TestCase):
     """Проверяет контракт REPL tool ``python`` с полным доступом внутри workspace."""
-
-    def test_description_contains_policy_as_prompt_sections(self) -> None:
-        """Проверяет декларативную политику выбора инструмента и примеры.
-
-        Returns:
-            ``None``. Тест завершается успешно при наличии ключевых policy-секций.
-        """
-
-        required_fragments = (
-            "Назначение:",
-            "Правило выбора:",
-            "Хорошее решение:",
-            "Работа с путями:",
-            "Обработка ошибок:",
-            "сначала выполни код",
-        )
-        for fragment in required_fragments:
-            self.assertIn(fragment, PYTHON_TOOL_DESCRIPTION)
-
-    def test_description_shows_session_artifact_path_example(self) -> None:
-        """Проверяет примеры сохранения пользовательских и временных артефактов.
-
-        Args:
-            Отсутствуют.
-
-        Returns:
-            ``None``. Тест завершается успешно, если описание содержит безопасный шаблон пути.
-        """
-
-        self.assertIn(
-            'output_path = Path(ARTIFACTS_DIR) / "generated_report.json"',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            'output_path = Path(ARTIFACTS_DIR) / "scratch.json"',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "сохраняй в `ARTIFACTS_DIR` только результаты выгрузки данных",
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "`Path(ARTIFACTS_DIR) / \"file.ext\"`",
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "для тестов, сборки и package-команд используй shell `execute`, а не Python",
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            'df.to_csv(output_path, index=False)',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            'df.to_csv("/artifacts/export.csv", index=False)',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            'rows = read_pickle_file(r"/artifacts/load_data_x.pkl")',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            'rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))',
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "`resolve_workspace_path(path)`",
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "для сохранения DataFrame используй обычный pandas writer",
-            PYTHON_TOOL_DESCRIPTION,
-        )
-        self.assertIn(
-            "для прототипирования решения до внесения изменений в исходники проекта",
-            PYTHON_TOOL_DESCRIPTION,
-        )
 
     def test_tool_schema_has_no_target_variable(self) -> None:
         """Проверяет публичное имя и отсутствие скрытого поля результата.

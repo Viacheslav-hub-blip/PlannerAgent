@@ -43,17 +43,8 @@ GIGACHAT_FILESYSTEM_PRACTICES_PROMPT = """
 - If asked for filesystem structure, report only paths observed from ``get_project_structure``, ``ls``, ``glob``, or
   other successful tools. Do not invent common directories such as ``/work``, ``/home``, ``/logs`` or examples from
   model memory.
-- For each source file change, read the relevant fragment once, then make the smallest coherent ``edit_file`` change.
-- ``read_file`` output can include display-only line numbers or pagination notices. Do not copy line-number prefixes
-  into ``old_string``, ``new_string``, or new file content.
-- Prefer ``edit_file`` for small changes to existing text files and ``write_file`` for new files or intentional full
-  replacements.
-- If ``edit_file`` says that the string was not found, inspect whether the copied fragment contains display-only line
-  prefixes, wrong indentation, truncated context, or stale file content before retrying.
-- For ``grep``, pass one search phrase per call and always scope the search with ``path`` and, when useful, ``glob``.
-  If repeated ``grep`` calls return no useful matches, switch to a different search method or a small Python scan.
-- ``grep`` is for literal text search. For regex-like patterns, multiple alternatives, counting across many files, or
-  transformations, write one small Python scan instead of chaining many grep calls.
+- Before changing a source file, read the relevant context and preserve unrelated text.
+- Treat tool descriptions as the authoritative contract for file reading, writing, editing, and search arguments.
 """.strip()
 
 GIGACHAT_SHELL_PRACTICES_PROMPT = """

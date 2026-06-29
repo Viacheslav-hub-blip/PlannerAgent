@@ -140,6 +140,7 @@ write_file
 
 Используй когда:
 - result должен быть сохранен как text file;
+- нужно создать или обновить `.py` файл: сначала прочитай текущий файл, затем передай в `content` полное обновленное содержимое с минимально необходимыми изменениями;
 - complete content existing text file должен быть intentionally replaced;
 - task names an exact output file и final deliverable must be written to that exact file.
 
@@ -159,7 +160,7 @@ write_file(file_path="/summary.md", content="<complete markdown report>")
   every user-facing file there by default;
 - `/deep_agent/` - agent implementation directory, not output folder;
 - не write under `/deep_agent/`, если task explicitly не changes agent code, prompts, tests или skills;
-- partial changes to existing file обычно выполняются через `edit_file`.
+- для `.py` файлов используй `write_file` даже при точечных изменениях: сохраняй остальной текст файла без необоснованных правок.
 """.strip(),
     "edit_file": """
 edit_file

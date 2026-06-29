@@ -83,7 +83,10 @@ from deep_agent.middleware.gigachat_runtime import (
     ThinkToolMiddleware,
 )
 from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
-from deep_agent.middleware.tool_descriptions import PromptToolDescriptionsMiddleware
+from deep_agent.middleware.tool_descriptions import (
+    PromptToolDescriptionsMiddleware,
+    PromptToolFilterMiddleware,
+)
 from deep_agent.middleware.todo_reset import TodoResetMiddleware
 from deep_agent.logging import build_postgres_logging_middleware
 from deep_agent.prompts.gigachat import build_gigachat_practices_prompt
@@ -354,6 +357,7 @@ def build_analytics_deep_agent(
         workspace_root=resolved_workspace_root,
         agent_name="coding-agent",
         limit_model_calls=True,
+        hidden_tool_names=("edit_file",),
     )
     coding_agent_spec = build_coding_subagent_spec(
         model=model,
@@ -505,6 +509,7 @@ def _build_native_runtime_middleware(
     workspace_root: Path | None = None,
     agent_name: str = "supervisor",
     limit_model_calls: bool,
+    hidden_tool_names: tuple[str, ...] = (),
 ) -> list[Any]:
     """Собирает runtime middleware из публичных реализаций LangChain.
 
@@ -515,6 +520,7 @@ def _build_native_runtime_middleware(
         workspace_root: Корень workspace для canonical POSIX-путей filesystem tools.
         agent_name: Имя агента для служебного логирования.
         limit_model_calls: Нужно ли ограничивать число model calls для subagent.
+        hidden_tool_names: Имена tools, которые нужно скрыть от модели для этого агента.
 
     Returns:
         Список middleware для передачи в ``create_deep_agent``.
@@ -547,6 +553,8 @@ def _build_native_runtime_middleware(
             exit_behavior="continue",
         ),
     ]
+    if hidden_tool_names:
+        middleware.insert(1, PromptToolFilterMiddleware(tuple(hidden_tool_names)))
     if filesystem_backend is not None and workspace_root is not None:
         middleware.insert(
             3,
