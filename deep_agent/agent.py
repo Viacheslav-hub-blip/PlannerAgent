@@ -441,6 +441,7 @@ def build_analytics_deep_agent(
                 workspace_root=resolved_workspace_root,
                 agent_name="supervisor",
                 limit_model_calls=False,
+                hidden_tool_names=("edit_file",),
             ),
         ],
         memory=[agents_memory_path],

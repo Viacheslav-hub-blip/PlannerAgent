@@ -40,6 +40,11 @@ skills.
 
 ## Делегация основного рефакторинга
 
+Все примеры ниже показывают синтаксис tools из обвязки. Не считай paths, имена
+файлов и команды из примеров подтвержденными фактами. Перед вызовом проверь, что
+tool доступен текущему агенту, а path найден через runtime context, skills index,
+tool output или явно указан пользователем.
+
 Если нужный workflow не загружен, сначала загрузи skills через штатный tool:
 
 ```text
@@ -60,7 +65,7 @@ write_todos([
 ])
 ```
 
-Пример реального вызова `task` из обвязки:
+Пример формы вызова `task` из обвязки:
 
 ```text
 task(
@@ -72,7 +77,7 @@ Skills: /deep_agent/skills/refactor-files/SKILL.md, /deep_agent/skills/jupyter-n
 Constraints:
 - сохранить исходную последовательность вычислений;
 - markdown должен быть реальными markdown-ячейками, а не комментариями внутри code cells;
-- над измененными строками должны быть короткие комментарии через #.
+- неочевидная измененная логика должна быть пояснена короткими комментариями через #.
 Expected artifacts:
 - обновленный /reports/client_analysis.ipynb;
 - промежуточный percent-script только если он нужен для конвертации.
@@ -85,7 +90,7 @@ Expected artifacts:
 После report от `coding-agent` supervisor обязан проверить файлы сам. Для одного
 известного файла достаточно `read_file` или `ls` родительской директории.
 
-Примеры реальных filesystem-вызовов:
+Примеры формы filesystem-вызовов:
 
 ```text
 ls(path="/reports")
@@ -119,7 +124,7 @@ Checklist:
 - при редактировании notebook использован convert_jupyter_notebook;
 - код не склеен в одну ячейку;
 - исходная логика и важные вычисления не потеряны;
-- измененные строки снабжены короткими комментариями через #;
+- неочевидная измененная логика пояснена короткими комментариями через #;
 - новые или измененные функции и классы имеют русские docstring;
 - type hints добавлены там, где изменялись функции или классы;
 - выполнена доступная проверка: ruff, compileall, pytest или обоснованное объяснение,
@@ -165,16 +170,6 @@ convert_jupyter_notebook(
 write_file(file_path="/reports/client_analysis.py", content="<complete updated percent-script>")
 ```
 
-Точечное редактирование существующего text artifact:
-
-```text
-edit_file(
-  file_path="/deep_agent/prompts/coding.py",
-  old_string="<verified exact fragment>",
-  new_string="<updated fragment>"
-)
-```
-
 Проверки через shell wrapper:
 
 ```text
@@ -208,4 +203,3 @@ execute(command="python -m ruff check deep_agent/prompts/coding.py")
    Стало:
    <короткий фрагмент>
 ```
-
