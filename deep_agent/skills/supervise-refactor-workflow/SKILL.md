@@ -40,16 +40,11 @@ skills.
 
 ## Делегация основного рефакторинга
 
-Все примеры ниже показывают синтаксис tools из обвязки. Не считай paths, имена
-файлов и команды из примеров подтвержденными фактами. Перед вызовом проверь, что
-tool доступен текущему агенту, а path найден через runtime context, skills index,
-tool output или явно указан пользователем.
-
 Если нужный workflow не загружен, сначала загрузи skills через штатный tool:
 
 ```text
 load_skills(
-  skill_names="/deep_agent/skills/supervise-refactor-workflow/SKILL.md, /deep_agent/skills/refactor-files/SKILL.md",
+  skill_names="/skill_1/SKILL.md, /skill_2/SKILL.md",
   already_loaded=""
 )
 ```
@@ -65,21 +60,21 @@ write_todos([
 ])
 ```
 
-Пример формы вызова `task` из обвязки:
+Пример реального вызова `task` из обвязки:
 
 ```text
 task(
   subagent_type="coding-agent",
   description="
 Objective: отрефакторить существующий notebook без изменения аналитической логики.
-Scope: /reports/client_analysis.ipynb
-Skills: /deep_agent/skills/refactor-files/SKILL.md, /deep_agent/skills/jupyter-notebook/SKILL.md.
+Scope: /file_1.ipynb
+Skills: /skill_1/SKILL.md, /skill_2/SKILL.md.
 Constraints:
 - сохранить исходную последовательность вычислений;
 - markdown должен быть реальными markdown-ячейками, а не комментариями внутри code cells;
-- неочевидная измененная логика должна быть пояснена короткими комментариями через #.
+- над измененными строками должны быть короткие комментарии через #.
 Expected artifacts:
-- обновленный /reports/client_analysis.ipynb;
+- обновленный /file_1.ipynb;
 - промежуточный percent-script только если он нужен для конвертации.
 "
 )
@@ -90,14 +85,14 @@ Expected artifacts:
 После report от `coding-agent` supervisor обязан проверить файлы сам. Для одного
 известного файла достаточно `read_file` или `ls` родительской директории.
 
-Примеры формы filesystem-вызовов:
+Примеры реальных filesystem-вызовов:
 
 ```text
-ls(path="/reports")
+ls(path="/dir_1")
 ```
 
 ```text
-read_file(file_path="/deep_agent/skills/refactor-files/SKILL.md", offset=1, limit=80)
+read_file(file_path="/file_1.py", offset=1, limit=80)
 ```
 
 Если изменен `.ipynb`, не читай большой JSON полностью без необходимости. Проверь
@@ -115,8 +110,8 @@ task(
   subagent_type="coding-agent",
   description="
 Objective: проверить качество уже измененного файла после рефакторинга.
-Scope: /reports/client_analysis.ipynb
-Skills: /deep_agent/skills/refactor-files/SKILL.md, /deep_agent/skills/jupyter-notebook/SKILL.md.
+Scope: /file_1.ipynb
+Skills: /skill_1/SKILL.md, /skill_2/SKILL.md.
 Do not make broad refactoring. Read the changed artifact and validate it.
 Checklist:
 - файл существует и читается;
@@ -124,7 +119,7 @@ Checklist:
 - при редактировании notebook использован convert_jupyter_notebook;
 - код не склеен в одну ячейку;
 - исходная логика и важные вычисления не потеряны;
-- неочевидная измененная логика пояснена короткими комментариями через #;
+- измененные строки снабжены короткими комментариями через #;
 - новые или измененные функции и классы имеют русские docstring;
 - type hints добавлены там, где изменялись функции или классы;
 - выполнена доступная проверка: ruff, compileall, pytest или обоснованное объяснение,
@@ -149,8 +144,8 @@ task как ожидаемые инструменты или checks.
 ```text
 convert_jupyter_notebook(
   mode="ipynb_to_py",
-  source_path="/reports/client_analysis.ipynb",
-  output_path="/reports/client_analysis.py"
+  source_path="/file_1.ipynb",
+  output_path="/file_1.py"
 )
 ```
 
@@ -159,23 +154,33 @@ convert_jupyter_notebook(
 ```text
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="/reports/client_analysis.py",
-  output_path="/reports/client_analysis.ipynb"
+  source_path="/file_1.py",
+  output_path="/file_1.ipynb"
 )
 ```
 
 Запись обновленного `.py` percent-script:
 
 ```text
-write_file(file_path="/reports/client_analysis.py", content="<complete updated percent-script>")
+write_file(file_path="/file_1.py", content="<complete updated percent-script>")
+```
+
+Точечное редактирование существующего text artifact:
+
+```text
+edit_file(
+  file_path="/file_2.md",
+  old_string="<verified exact fragment>",
+  new_string="<updated fragment>"
+)
 ```
 
 Проверки через shell wrapper:
 
 ```text
-execute(command="python -m compileall -q deep_agent/prompts/coding.py")
-execute(command="python -m pytest tests/test_coding_prompt.py -q")
-execute(command="python -m ruff check deep_agent/prompts/coding.py")
+execute(command="python -m compileall -q file_1.py")
+execute(command="python -m pytest tests/test_file_1.py -q")
+execute(command="python -m ruff check file_1.py")
 ```
 
 Если `ruff` не установлен, это не blocker само по себе. Report должен явно сказать,

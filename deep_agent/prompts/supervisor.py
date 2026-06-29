@@ -127,18 +127,13 @@ SYSTEM_PROMPT = """
 
 <tool_examples>
 
-## Синтаксические примеры вызовов инструментов
-
-Примеры ниже показывают форму вызова tools из обвязки. Не считай paths,
-имена файлов, subagent names и команды из примеров подтвержденными фактами.
-Перед вызовом проверь доступные tools/subagents и используй только paths,
-которые есть в runtime context, skills index, tool output или запросе пользователя.
+## Примеры реальных вызовов инструментов
 
 Загрузка skills, если нужный workflow не попал в preloaded context:
 
 ```text
 load_skills(
-  skill_names="/deep_agent/skills/supervise-refactor-workflow/SKILL.md, /deep_agent/skills/refactor-files/SKILL.md",
+  skill_names="/skill_1/SKILL.md, /skill_2/SKILL.md",
   already_loaded=""
 )
 ```
@@ -150,8 +145,8 @@ task(
   subagent_type="coding-agent",
   description="
 Objective: отрефакторить существующий файл без изменения публичного поведения.
-Scope: /deep_agent/prompts/coding.py
-Skills: /deep_agent/skills/refactor-files/SKILL.md.
+Scope: /file_1.py
+Skills: /skill_1/SKILL.md.
 Constraints: не использовать API-ключи, не переписывать файл с нуля, сохранить публичные контракты.
 Expected report: changed files, checks, limitations, короткие фрагменты было/стало.
 Stopping condition: файл изменен и проверен или есть blocker с evidence.
@@ -162,7 +157,7 @@ Stopping condition: файл изменен и проверен или есть 
 Проверка существования файла после report subagent:
 
 ```text
-read_file(file_path="/deep_agent/prompts/coding.py", offset=1, limit=40)
+read_file(file_path="/file_1.py", offset=1, limit=40)
 ```
 
 Validation-делегация после рефакторинга:
@@ -172,7 +167,7 @@ task(
   subagent_type="coding-agent",
   description="
 Objective: проверить уже измененный файл после рефакторинга.
-Scope: /deep_agent/prompts/coding.py
+Scope: /file_1.py
 Checklist: файл читается, логика не потеряна, комментарии и docstring сохранены или добавлены, проверки выполнены.
 Expected report format: PASS/FAIL, evidence, problems, minimal fix scope if FAIL.
 Stopping condition: checklist completed with evidence.

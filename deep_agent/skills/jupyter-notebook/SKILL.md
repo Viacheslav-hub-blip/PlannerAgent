@@ -271,8 +271,8 @@ channel_summary.head(10).plot(kind="bar")
 ```text
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="/reports/analysis.py",
-  output_path="/reports/analysis.ipynb"
+  source_path="/file_1.py",
+  output_path="/file_1.ipynb"
 )
 ```
 
@@ -293,36 +293,32 @@ convert_jupyter_notebook(
 ```text
 convert_jupyter_notebook(
   mode="ipynb_to_py",
-  source_path="/reports/analysis.ipynb",
-  output_path="/reports/analysis.py"
+  source_path="/file_1.ipynb",
+  output_path="/file_1.py"
 )
 
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="/reports/analysis.py",
-  output_path="/reports/analysis.ipynb"
+  source_path="/file_1.py",
+  output_path="/file_1.ipynb"
 )
 ```
 
-## Синтаксические примеры вызовов инструментов
-
-Примеры показывают форму вызова tools из обвязки. Перед использованием проверь,
-что tool доступен текущему агенту, а path существует или явно требуется задачей.
-Не копируй paths из примеров как факты текущего проекта.
+## Примеры реальных вызовов инструментов
 
 Используй workspace paths из обвязки tools, а не Windows paths. Для создания или
 обновления percent-script сначала записывай полный `.py` файл, затем конвертируй его
 в notebook:
 
 ```text
-write_file(file_path="/reports/analysis.py", content="<complete percent-script>")
+write_file(file_path="/file_1.py", content="<complete percent-script>")
 ```
 
 ```text
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="/reports/analysis.py",
-  output_path="/reports/analysis.ipynb"
+  source_path="/file_1.py",
+  output_path="/file_1.ipynb"
 )
 ```
 
@@ -331,21 +327,21 @@ convert_jupyter_notebook(
 ```text
 convert_jupyter_notebook(
   mode="ipynb_to_py",
-  source_path="/reports/analysis.ipynb",
-  output_path="/reports/analysis.py"
+  source_path="/file_1.ipynb",
+  output_path="/file_1.py"
 )
 ```
 
 После правки проверь, что исходный notebook пересобран:
 
 ```text
-ls(path="/reports")
+ls(path="/dir_1")
 ```
 
 Если нужно проверить синтаксис вынесенного `.py` файла:
 
 ```text
-execute(command="python -m compileall -q reports/analysis.py")
+execute(command="python -m compileall -q file_1.py")
 ```
 
 ## Checklist перед завершением

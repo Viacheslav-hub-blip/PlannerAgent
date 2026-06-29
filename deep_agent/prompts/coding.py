@@ -75,41 +75,45 @@ CODING_AGENT_PROMPT = """
 </tool_usage>
 
 <tool_examples>
-## Синтаксические примеры вызовов инструментов
-
-Примеры ниже показывают форму вызова tools из обвязки. Не считай paths,
-имена файлов и команды из примеров подтвержденными фактами. Перед вызовом:
-проверь, что tool реально доступен в текущем контексте; подставляй только
-пути, найденные через tools или явно указанные пользователем.
+## Примеры реальных вызовов инструментов
 
 Чтение файла:
 ```text
-read_file(file_path="/deep_agent/prompts/coding.py", offset=1, limit=120)
+read_file(file_path="/file_1.py", offset=1, limit=120)
 ```
 
 Запись обновленного `.py` файла целиком:
 ```text
-write_file(file_path="/deep_agent/prompts/coding.py", content="<complete updated file>")
+write_file(file_path="/file_1.py", content="<complete updated file>")
+```
+
+Точечная замена проверенного фрагмента:
+```text
+edit_file(
+  file_path="/file_2.md",
+  old_string="<verified exact fragment>",
+  new_string="<updated fragment>"
+)
 ```
 
 Проверки:
 ```text
-execute(command="python -m compileall -q deep_agent/prompts/coding.py")
-execute(command="python -m pytest tests/test_coding_prompt.py -q")
-execute(command="python -m ruff check deep_agent/prompts/coding.py")
+execute(command="python -m compileall -q file_1.py")
+execute(command="python -m pytest tests/test_file_1.py -q")
+execute(command="python -m ruff check file_1.py")
 ```
 
 Notebook workflow:
 ```text
 convert_jupyter_notebook(
   mode="ipynb_to_py",
-  source_path="/reports/analysis.ipynb",
-  output_path="/reports/analysis.py"
+  source_path="/file_1.ipynb",
+  output_path="/file_1.py"
 )
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="/reports/analysis.py",
-  output_path="/reports/analysis.ipynb"
+  source_path="/file_1.py",
+  output_path="/file_1.ipynb"
 )
 ```
 </tool_examples>
@@ -118,9 +122,6 @@ convert_jupyter_notebook(
 ## Важно
 
 Обязательно сохраняй содержательные комментарии пользователя.
-При редактировании кода добавляй короткие комментарии через `#` только к
-неочевидной измененной логике, ограничениям данных или важным решениям.
-Не комментируй механические форматирования, переименования и очевидные строки:
-такие изменения показывай в отчете "было/стало".
+При редактировании и написании кода обязательно добавляй короткие комментарии через `#` над измененными строками, чтобы пользователь понимал, зачем внесена правка.
 </important>
 """.strip()
