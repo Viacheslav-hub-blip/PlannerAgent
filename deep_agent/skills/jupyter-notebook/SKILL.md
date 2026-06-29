@@ -9,6 +9,10 @@ description: "Используй при создании, редактирова
 markdown cells и code cells. Notebook должен быть читаемым аналитическим документом,
 а не набором склеенных code cells.
 
+## Область применения
+
+Этот skill может использоваться только `coding-agent`.
+
 ## Модель мышления
 
 Перед записью notebook мысленно разложи работу на ячейки:
@@ -267,8 +271,8 @@ channel_summary.head(10).plot(kind="bar")
 ```text
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="analysis.py",
-  output_path="analysis.ipynb"
+  source_path="/reports/analysis.py",
+  output_path="/reports/analysis.ipynb"
 )
 ```
 
@@ -277,23 +281,67 @@ convert_jupyter_notebook(
 1. Вызови `convert_jupyter_notebook` с `mode="ipynb_to_py"`.
 2. Редактируй полученный percent-script.
 3. Сохраняй структуру markdown/code cells.
-4. Снова вызови `convert_jupyter_notebook` с `mode="py_to_ipynb"`.
-5. Если пользователь не просил новый файл, перезапиши исходный notebook.
+4. Запиши обновленный `.py` файл с новой структурой, комментариями и маркерами ячеек.
+5. Снова вызови `convert_jupyter_notebook` с `mode="py_to_ipynb"`.
+6. Если пользователь не просил новый файл, перезапиши исходный notebook.
+
+ВАЖНО: не создавай сразу `.ipynb` файл вручную. Используй промежуточный шаг через
+`.py` percent-script и конвертацию через `convert_jupyter_notebook`.
 
 Пример:
 
 ```text
 convert_jupyter_notebook(
   mode="ipynb_to_py",
-  source_path="analysis.ipynb",
-  output_path="analysis.py"
+  source_path="/reports/analysis.ipynb",
+  output_path="/reports/analysis.py"
 )
 
 convert_jupyter_notebook(
   mode="py_to_ipynb",
-  source_path="analysis.py",
-  output_path="analysis.ipynb"
+  source_path="/reports/analysis.py",
+  output_path="/reports/analysis.ipynb"
 )
+```
+
+## Примеры реальных вызовов инструментов
+
+Используй workspace paths из обвязки tools, а не Windows paths. Для создания или
+обновления percent-script сначала записывай полный `.py` файл, затем конвертируй его
+в notebook:
+
+```text
+write_file(file_path="/reports/analysis.py", content="<complete percent-script>")
+```
+
+```text
+convert_jupyter_notebook(
+  mode="py_to_ipynb",
+  source_path="/reports/analysis.py",
+  output_path="/reports/analysis.ipynb"
+)
+```
+
+Для редактирования существующего notebook сначала получи percent-script:
+
+```text
+convert_jupyter_notebook(
+  mode="ipynb_to_py",
+  source_path="/reports/analysis.ipynb",
+  output_path="/reports/analysis.py"
+)
+```
+
+После правки проверь, что исходный notebook пересобран:
+
+```text
+ls(path="/reports")
+```
+
+Если нужно проверить синтаксис вынесенного `.py` файла:
+
+```text
+execute(command="python -m compileall -q reports/analysis.py")
 ```
 
 ## Checklist перед завершением
