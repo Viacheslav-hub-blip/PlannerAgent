@@ -19,6 +19,7 @@ from deep_agent.runtime.filesystem import (
     Utf8FilesystemBackend,
     Utf8LocalShellBackend,
     configure_read_file_default_limit,
+    review_snapshot_path_for_file,
 )
 from deep_agent.settings import workspace_tool_path
 
@@ -197,6 +198,54 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
         self.assertIsNone(result.error)
         self.assertEqual(result.path, "/summary.md")
         self.assertEqual(saved_content, "new\n")
+
+    def test_write_creates_review_snapshot_once(self) -> None:
+        """Сохраняет исходную версию файла перед первой записью.
+
+        Returns:
+            ``None``. Тест подтверждает, что snapshot не перезаписывается
+            последующими изменениями того же файла.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            file_path = root / "module.py"
+            file_path.write_text("old\n", encoding="utf-8")
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            first_result = backend.write("/module.py", "new\n")
+            second_result = backend.write("/module.py", "newer\n")
+            snapshot_text = review_snapshot_path_for_file(file_path, root).read_text(
+                encoding="utf-8",
+            )
+
+        self.assertIsNone(first_result.error)
+        self.assertIsNone(second_result.error)
+        self.assertEqual(snapshot_text, "old\n")
+
+    def test_edit_creates_review_snapshot_before_change(self) -> None:
+        """Сохраняет исходную версию файла перед точечным редактированием.
+
+        Returns:
+            ``None``. Тест подтверждает, что snapshot содержит текст до замены.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            file_path = root / "module.py"
+            file_path.write_text("value = 1\n", encoding="utf-8")
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.edit("/module.py", "value = 1", "value = 2")
+            edited_text = file_path.read_text(encoding="utf-8")
+            snapshot_text = review_snapshot_path_for_file(file_path, root).read_text(
+                encoding="utf-8",
+            )
+
+        self.assertIsNone(result.error)
+        self.assertEqual(result.occurrences, 1)
+        self.assertEqual(edited_text, "value = 2\n")
+        self.assertEqual(snapshot_text, "value = 1\n")
 
     def test_write_ipynb_returns_convert_warning(self) -> None:
         """Запрещает прямую запись ``.ipynb`` через ``write_file``.

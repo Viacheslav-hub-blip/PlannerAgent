@@ -4,10 +4,13 @@
 - configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
 - WorkspacePathPrefixMixin: единое отображение полного workspace-префикса в tools.
 - WorkspacePathPrefixMixin.write: запись текстового файла с разрешенной перезаписью.
+- WorkspacePathPrefixMixin.edit: редактирование файла с сохранением исходного snapshot.
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
 - _converted_notebook_script_path: путь percent-script для принудительного чтения notebook.
+- review_snapshot_path_for_file: путь snapshot исходника для внутреннего ревью.
+- _save_review_snapshot_if_needed: сохранение первой версии файла перед правкой.
 - _rewrite_workspace_paths_in_shell_command: перенос виртуальных workspace-путей в реальные shell-пути.
 - _workspace_shell_path: преобразование одного workspace-пути для shell-команды.
 - _quote_shell_path: безопасное quoting пути для shell-команды.
@@ -23,12 +26,17 @@ from pathlib import Path
 
 import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
-from deepagents.backends.protocol import ReadResult, WriteResult
+from deepagents.backends.protocol import EditResult, ReadResult, WriteResult
 
-from deep_agent.settings import strip_workspace_tool_prefix, workspace_tool_root
+from deep_agent.settings import (
+    strip_workspace_tool_prefix,
+    workspace_tool_root,
+)
 from deep_agent.tools.jupyter_notebook import convert_jupyter_notebook_file
 
 logger = logging.getLogger(__name__)
+
+REVIEW_SNAPSHOT_DIR = ".deep_agent/review_snapshots"
 
 
 def configure_read_file_default_limit(limit: int) -> None:
@@ -145,6 +153,7 @@ class WorkspacePathPrefixMixin:
             )
 
         try:
+            _save_review_snapshot_if_needed(resolved_path, self.cwd)
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
             if hasattr(os, "O_NOFOLLOW"):
@@ -155,6 +164,42 @@ class WorkspacePathPrefixMixin:
             return WriteResult(path=file_path)
         except (OSError, UnicodeEncodeError) as error:
             return WriteResult(error=f"Error writing file '{file_path}': {error}")
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        """Редактирует файл, сохраняя snapshot исходной версии перед первой правкой.
+
+        Args:
+            file_path: Виртуальный путь редактируемого файла внутри workspace.
+            old_string: Точный фрагмент для замены.
+            new_string: Новый фрагмент.
+            replace_all: Нужно ли заменить все найденные вхождения.
+
+        Returns:
+            ``EditResult`` базового backend с числом замен или текстом ошибки.
+        """
+
+        try:
+            resolved_path = self._resolve_path(file_path)
+        except (OSError, RuntimeError) as error:
+            return EditResult(error=f"Error editing file '{file_path}': {error}")
+
+        try:
+            _save_review_snapshot_if_needed(resolved_path, self.cwd)
+        except OSError as error:
+            return EditResult(error=f"Error creating review snapshot for '{file_path}': {error}")
+
+        return super().edit(
+            file_path,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+        )
 
     def _strip_workspace_prefix(self, key: str) -> str:
         """Удаляет полный workspace-префикс перед передачей пути в virtual backend.
@@ -356,6 +401,49 @@ def _converted_notebook_script_path(notebook_path: Path) -> Path:
     return notebook_path.with_suffix(".py")
 
 
+def review_snapshot_path_for_file(file_path: str | Path, workspace_root: Path) -> Path:
+    """Возвращает путь snapshot исходной версии файла для внутреннего ревью.
+
+    Args:
+        file_path: Реальный путь файла внутри workspace.
+        workspace_root: Корень workspace.
+
+    Returns:
+        Реальный путь snapshot-файла внутри ``.deep_agent/review_snapshots``.
+
+    Raises:
+        ValueError: Файл находится вне workspace.
+    """
+
+    root = workspace_root.resolve()
+    resolved_path = Path(file_path).expanduser().resolve()
+    relative_path = resolved_path.relative_to(root)
+    snapshot_name = f"{relative_path.name}.original"
+    return root / REVIEW_SNAPSHOT_DIR / relative_path.parent / snapshot_name
+
+
+def _save_review_snapshot_if_needed(file_path: Path, workspace_root: Path) -> None:
+    """Сохраняет первую версию существующего файла перед записью или редактированием.
+
+    Args:
+        file_path: Реальный путь файла, который будет изменен.
+        workspace_root: Корень workspace.
+
+    Returns:
+        ``None``. Snapshot создается только один раз и не перезаписывается.
+    """
+
+    if not file_path.exists() or not file_path.is_file():
+        return
+
+    snapshot_path = review_snapshot_path_for_file(file_path, workspace_root)
+    if snapshot_path.exists():
+        return
+
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_bytes(file_path.read_bytes())
+
+
 def _rewrite_workspace_paths_in_shell_command(command: str, workspace_root: Path) -> str:
     """Переписывает виртуальные workspace-пути внутри shell-команды в реальные ОС-пути.
 
@@ -460,4 +548,5 @@ __all__ = [
     "Utf8SearchMixin",
     "WorkspacePathPrefixMixin",
     "configure_read_file_default_limit",
+    "review_snapshot_path_for_file",
 ]

@@ -73,6 +73,7 @@ from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
 from deep_agent.tools.jupyter_notebook import build_convert_jupyter_notebook_tool
 from deep_agent.tools.python_execution import build_python_tool
 from deep_agent.tools.project_structure import build_get_project_structure_tool
+from deep_agent.tools.refactor_review import build_review_refactor_tool
 from deep_agent.tools.skill_loader import build_load_skills_tool
 from deep_agent.tools.spark_data import build_load_data_approval_description
 from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
@@ -325,6 +326,10 @@ def build_analytics_deep_agent(
     jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
         workspace_root=resolved_workspace_root,
     )
+    review_refactor_tool = build_review_refactor_tool(
+        model=model,
+        workspace_root=resolved_workspace_root,
+    )
     runtime_context_prompt = _build_runtime_context_prompt(
         resolved_workspace_root,
         session_tool_outputs_dir,
@@ -366,6 +371,7 @@ def build_analytics_deep_agent(
             python_tool,
             project_structure_tool,
             jupyter_notebook_tool,
+            review_refactor_tool,
         ],
         common_middleware=coding_agent_middleware,
         skill_sources=[skills_workspace_dir],
