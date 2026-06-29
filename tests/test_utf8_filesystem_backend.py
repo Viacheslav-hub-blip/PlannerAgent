@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import sys
 import unittest
@@ -124,6 +125,58 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
         self.assertEqual(virtual_result.file_data["content"], "same file\n")
         self.assertEqual(alias_result.file_data["content"], "same file\n")
 
+    def test_read_ipynb_forces_conversion_to_percent_script(self) -> None:
+        """Конвертирует ``.ipynb`` в ``.py`` перед чтением через backend.
+
+        Returns:
+            ``None``. Тест подтверждает, что ``read_file`` получает percent-script,
+            а не сырой JSON notebook.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir).resolve()
+            notebook_path = root / "analysis.ipynb"
+            script_path = root / "analysis.py"
+            notebook_path.write_text(
+                json.dumps(
+                    {
+                        "cells": [
+                            {
+                                "cell_type": "markdown",
+                                "metadata": {},
+                                "source": ["# Заголовок\n"],
+                            },
+                            {
+                                "cell_type": "code",
+                                "execution_count": 1,
+                                "metadata": {},
+                                "outputs": [{"output_type": "stream", "text": ["4\n"]}],
+                                "source": ["value = 2 + 2\n", "print(value)\n"],
+                            },
+                        ],
+                        "metadata": {},
+                        "nbformat": 4,
+                        "nbformat_minor": 5,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.read("/analysis.ipynb")
+            script_exists = script_path.exists()
+            script_text = script_path.read_text(encoding="utf-8")
+
+        self.assertIsNone(result.error)
+        self.assertTrue(script_exists)
+        self.assertIsNotNone(result.file_data)
+        self.assertEqual(result.file_data["encoding"], "utf-8")
+        self.assertIn("# %% [markdown]\n", result.file_data["content"])
+        self.assertIn("value = 2 + 2\n", result.file_data["content"])
+        self.assertNotIn('"cells"', result.file_data["content"])
+        self.assertEqual(result.file_data["content"], script_text)
+
     def test_write_overwrites_existing_file(self) -> None:
         """``write`` должен перезаписывать существующий файл тем же путем.
 
@@ -144,6 +197,27 @@ class Utf8FilesystemBackendTests(unittest.TestCase):
         self.assertIsNone(result.error)
         self.assertEqual(result.path, "/summary.md")
         self.assertEqual(saved_content, "new\n")
+
+    def test_write_ipynb_returns_convert_warning(self) -> None:
+        """Запрещает прямую запись ``.ipynb`` через ``write_file``.
+
+        Returns:
+            ``None``. Тест подтверждает, что notebook не создается, а агент
+            получает предупреждение про специализированный инструмент convert.
+        """
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            notebook_path = root / "analysis.ipynb"
+            backend = Utf8FilesystemBackend(root_dir=root, virtual_mode=True)
+
+            result = backend.write("/analysis.ipynb", "{}")
+            output_exists = notebook_path.exists()
+
+        self.assertIsNotNone(result.error)
+        self.assertIn("Предупреждение", result.error)
+        self.assertIn("convert_jupyter_notebook", result.error)
+        self.assertFalse(output_exists)
 
     def test_workspace_tool_path_uses_virtual_root(self) -> None:
         """Возвращает workspace-путь относительно виртуального ``/``.

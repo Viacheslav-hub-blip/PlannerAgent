@@ -7,6 +7,7 @@
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
+- _converted_notebook_script_path: путь percent-script для принудительного чтения notebook.
 - _rewrite_workspace_paths_in_shell_command: перенос виртуальных workspace-путей в реальные shell-пути.
 - _workspace_shell_path: преобразование одного workspace-пути для shell-команды.
 - _quote_shell_path: безопасное quoting пути для shell-команды.
@@ -22,9 +23,10 @@ from pathlib import Path
 
 import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
-from deepagents.backends.protocol import WriteResult
+from deepagents.backends.protocol import ReadResult, WriteResult
 
 from deep_agent.settings import strip_workspace_tool_prefix, workspace_tool_root
+from deep_agent.tools.jupyter_notebook import convert_jupyter_notebook_file
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +122,8 @@ class WorkspacePathPrefixMixin:
         """Записывает текстовый файл, создавая новый или перезаписывая существующий.
 
         Args:
-            file_path: Виртуальный путь файла внутри workspace.
+            file_path: Виртуальный путь файла внутри workspace. Прямая запись
+                ``.ipynb`` запрещена: notebook нужно создавать через convert tool.
             content: Полное текстовое содержимое, которое нужно сохранить.
 
         Returns:
@@ -131,6 +134,15 @@ class WorkspacePathPrefixMixin:
             resolved_path = self._resolve_path(file_path)
         except (OSError, RuntimeError) as error:
             return WriteResult(error=f"Error writing file '{file_path}': {error}")
+
+        if resolved_path.suffix.lower() == ".ipynb":
+            return WriteResult(
+                error=(
+                    "Предупреждение: write_file не записывает `.ipynb` напрямую. "
+                    "Используйте специализированного агента или инструмент "
+                    "convert_jupyter_notebook."
+                )
+            )
 
         try:
             resolved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -182,16 +194,42 @@ class Utf8SearchMixin(WorkspacePathPrefixMixin):
         """Читает страницу файла и явно сообщает о наличии продолжения.
 
         Args:
-            file_path: Абсолютный виртуальный путь к файлу.
+            file_path: Абсолютный виртуальный путь к файлу. Для ``.ipynb`` сначала
+                принудительно создается ``.py`` percent-script через tool конвертации.
             offset: Смещение первой читаемой строки, начиная с нуля.
             limit: Максимальное число строк содержимого в одной странице.
 
         Returns:
-            Результат чтения backend с маркером следующего ``offset``, если
-            файл не закончился на текущей странице.
+            Результат чтения backend. Для ``.ipynb`` возвращается содержимое
+            сконвертированного ``.py`` файла, а не сырой JSON notebook.
         """
 
-        result = super().read(file_path, offset=offset, limit=limit + 1)
+        read_path = file_path
+        try:
+            resolved_path = self._resolve_path(file_path)
+        except (OSError, RuntimeError) as error:
+            return ReadResult(error=f"Error reading file '{file_path}': {error}")
+
+        if resolved_path.suffix.lower() == ".ipynb":
+            output_path = _converted_notebook_script_path(resolved_path)
+            try:
+                convert_jupyter_notebook_file(
+                    mode="ipynb_to_py",
+                    source_path=self._to_virtual_path(resolved_path),
+                    output_path=self._to_virtual_path(output_path),
+                    workspace_root=self.cwd,
+                    overwrite=True,
+                )
+            except (OSError, ValueError, RuntimeError) as error:
+                return ReadResult(
+                    error=(
+                        f"Error converting notebook '{file_path}' before read_file: "
+                        f"{error}"
+                    )
+                )
+            read_path = self._to_virtual_path(output_path)
+
+        result = super().read(read_path, offset=offset, limit=limit + 1)
         if result.error or result.file_data is None:
             return result
         if result.file_data.get("encoding") != "utf-8":
@@ -303,6 +341,19 @@ class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
 
         rewritten_command = _rewrite_workspace_paths_in_shell_command(command, self.cwd)
         return super().execute(rewritten_command, timeout=timeout)
+
+
+def _converted_notebook_script_path(notebook_path: Path) -> Path:
+    """Возвращает путь ``.py`` percent-script для notebook.
+
+    Args:
+        notebook_path: Реальный путь к ``.ipynb`` файлу внутри workspace.
+
+    Returns:
+        Реальный путь к ``.py`` файлу с тем же stem рядом с notebook.
+    """
+
+    return notebook_path.with_suffix(".py")
 
 
 def _rewrite_workspace_paths_in_shell_command(command: str, workspace_root: Path) -> str:
