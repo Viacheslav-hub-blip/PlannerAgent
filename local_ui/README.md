@@ -60,6 +60,10 @@ Python-инициализация агента не живёт в `local_ui`. La
 `adapters/langgraph_agent_server.py:agent`; сам adapter вызывает core `build_agent(...)`.
 В `local_ui` остаются только launcher/config/frontend-файлы.
 
+Параметры KitAI-модели для UI задаются явно в словаре `KITAI_MODEL_CONFIG` файла
+`adapters/langgraph_agent_server.py`. Env-переменные для ключей и параметров модели не
+используются.
+
 По умолчанию:
 
 - UI: `http://127.0.0.1:3000`;

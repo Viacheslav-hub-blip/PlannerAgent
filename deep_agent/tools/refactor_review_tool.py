@@ -2,7 +2,7 @@
 
 Содержит:
 - REVIEW_REFACTOR_TOOL_NAME: имя tool внутреннего ревью.
-- REVIEW_AGENT_PROMPT: системная инструкция read-only review-agent.
+- REVIEW_REFACTOR_TOOL_DESCRIPTION: описание tool ``review_refactor``.
 - ReviewRefactorInput: схема аргументов tool ``review_refactor``.
 - ReviewRefactorTool: tool запуска внутреннего review-agent.
 - build_review_refactor_tool: фабрика tool ``review_refactor``.
@@ -31,28 +31,17 @@ from deep_agent.agent_settings import (
     strip_workspace_tool_prefix,
     workspace_tool_path,
 )
+from deep_agent.prompts.refactor_review_prompt import (
+    REVIEW_REFACTOR_AGENT_PROMPT,
+    build_refactor_review_prompt,
+)
 
 REVIEW_REFACTOR_TOOL_NAME = "review_refactor"
-REVIEW_AGENT_PROMPT = """
-Ты — внутренний review-agent для проверки рефакторинга.
-
-Твоя задача — сравнить исходную версию файла и текущую измененную версию.
-Не исправляй файлы. Не предлагай полный переписанный файл. Верни краткую критику,
-которую другой агент сможет применить сам.
-
-Проверяй смысловые ошибки:
-- изменены ли входные файлы, периоды, фильтры, имена колонок или выходные артефакты;
-- не придуманы ли новые файлы, форматы данных или поля;
-- не потеряны ли части кода, которые используются ниже;
-- не стал ли рефакторинг шире, чем требовала задача;
-- есть ли проверка эквивалентности поведения там, где она нужна.
-
-Формат ответа свободный текстом:
-Итог ревью: нужно исправить / критичных ошибок не найдено.
-Ошибки.
-Замечания.
-Рекомендации.
-""".strip()
+REVIEW_REFACTOR_TOOL_DESCRIPTION = (
+    "Проведи внутреннее ревью изменения существующего файла по сохраненному snapshot. "
+    "Ревью возвращает короткий текст с ошибками, замечаниями и рекомендациями; "
+    "файлы не изменяются."
+)
 
 
 class ReviewRefactorInput(BaseModel):
@@ -83,11 +72,7 @@ class ReviewRefactorTool(BaseTool):
     """
 
     name: str = REVIEW_REFACTOR_TOOL_NAME
-    description: str = (
-        "Проведи внутреннее ревью изменения существующего файла по сохраненному snapshot. "
-        "Ревью возвращает короткий текст с ошибками, замечаниями и рекомендациями; "
-        "файлы не изменяются."
-    )
+    description: str = REVIEW_REFACTOR_TOOL_DESCRIPTION
     args_schema: type[BaseModel] = ReviewRefactorInput
 
     _model: Any = PrivateAttr()
@@ -138,13 +123,10 @@ class ReviewRefactorTool(BaseTool):
 
         original_path = workspace_tool_path(snapshot_file, self._workspace_root)
         current_path = workspace_tool_path(edited_file, self._workspace_root)
-        prompt = (
-            "Проверь изменение файла.\n\n"
-            f"Задача пользователя:\n{user_request.strip()}\n\n"
-            f"Исходная версия файла: {original_path}\n"
-            f"Текущая измененная версия файла: {current_path}\n\n"
-            "Сначала прочитай обе версии через read_file. Если файл длинный, прочитай "
-            "минимально достаточные фрагменты с offset/limit. Затем верни короткое ревью."
+        prompt = build_refactor_review_prompt(
+            user_request=user_request,
+            original_path=original_path,
+            current_path=current_path,
         )
         result = self._get_review_agent().invoke({"messages": [HumanMessage(content=prompt)]})
         return _last_message_text(result)
@@ -178,7 +160,7 @@ class ReviewRefactorTool(BaseTool):
             self._review_agent = create_deep_agent(
                 model=self._model,
                 tools=[],
-                system_prompt=REVIEW_AGENT_PROMPT,
+                system_prompt=REVIEW_REFACTOR_AGENT_PROMPT,
                 backend=review_backend,
                 middleware=[
                     ThinkToolMiddleware(),
@@ -286,6 +268,7 @@ def _last_message_text(result: Any) -> str:
 
 __all__ = [
     "REVIEW_REFACTOR_TOOL_NAME",
+    "REVIEW_REFACTOR_TOOL_DESCRIPTION",
     "ReviewRefactorInput",
     "ReviewRefactorTool",
     "build_review_refactor_tool",

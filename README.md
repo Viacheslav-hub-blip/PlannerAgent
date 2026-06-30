@@ -28,6 +28,33 @@ from deep_agent.tools.load_data_spark_tool import build_spark_data_tools
 используется тонкий слой `adapters/langgraph_agent_server.py`, который экспортирует
 `agent`.
 
+## Запуск без env
+
+Параметры модели не читаются из переменных окружения. Их нужно передавать явно в Python-коде:
+
+```python
+from deep_agent.agent import build_agent
+from deep_agent.agent_settings import load_agent_settings
+from deep_agent.gigachat_kitai_model import build_gigachat_kitai_model
+
+model = build_gigachat_kitai_model(
+    kitai_host_sdk="https://kitai.example",
+    cert_file="C:/absolute/path/client.crt",
+    key_file="C:/absolute/path/client.key",
+    model="GigaChat-2-Max",
+    temperature=0.05,
+)
+
+agent = build_agent(
+    model=model,
+    settings=load_agent_settings(),
+    data_tools=[],
+)
+```
+
+Для локального UI параметры лежат в `KITAI_MODEL_CONFIG` внутри
+`adapters/langgraph_agent_server.py`.
+
 ## Проверка
 
 ```powershell

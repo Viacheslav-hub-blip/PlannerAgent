@@ -19,7 +19,6 @@ subagents -> custom tools -> ``create_deep_agent``).
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
-- _build_terminal_environment: безопасный набор переменных окружения terminal.
 - _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
@@ -28,7 +27,6 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 from __future__ import annotations
 
-import os
 from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -98,7 +96,7 @@ def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
 
 def build_agent(
     *,
-    model: Any | None = None,
+    model: Any,
     settings: AgentSettings | None = None,
     data_tools: list[BaseTool] | BaseTool,
     workspace_root: str | Path | None = None,
@@ -130,8 +128,7 @@ def build_agent(
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
-        model: Chat model LangChain для supervisor и subagent. Если ``None``, создаётся
-            Gigachat KitAI модель.
+        model: Явно переданная Chat-модель LangChain для supervisor и subagent.
         settings: Готовые настройки; если ``None`` — используются Python-defaults.
         data_tools: Готовые tools чтения данных.
         workspace_root: Рабочая директория coding-agent. Имеет приоритет над settings.
@@ -301,7 +298,7 @@ def build_skills_backend(
             virtual_mode=True,
             timeout=settings.terminal_timeout,
             max_output_bytes=settings.terminal_max_output_bytes,
-            env=_build_terminal_environment(),
+            env={},
             inherit_env=False,
         ),
         routes=routes,
@@ -457,36 +454,6 @@ def _rebase_tool_outputs_path(
     except ValueError:
         return resolved_path
     return (target_workspace_root / relative_path).resolve()
-
-
-def _build_terminal_environment() -> dict[str, str]:
-    """Возвращает системные переменные без API-ключей и пользовательских секретов.
-
-    Returns:
-        Минимальный environment для локальных команд Windows/POSIX.
-    """
-
-    allowed_names = (
-        "COMSPEC",
-        "HOME",
-        "HOMEDRIVE",
-        "HOMEPATH",
-        "LANG",
-        "LOCALAPPDATA",
-        "PATH",
-        "PATHEXT",
-        "PROGRAMDATA",
-        "PROGRAMFILES",
-        "PROGRAMFILES(X86)",
-        "PYTHONIOENCODING",
-        "SYSTEMDRIVE",
-        "SYSTEMROOT",
-        "TEMP",
-        "TMP",
-        "USERPROFILE",
-        "WINDIR",
-    )
-    return {name: os.environ[name] for name in allowed_names if name in os.environ}
 
 
 def _build_runtime_context_prompt(

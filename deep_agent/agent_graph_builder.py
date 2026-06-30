@@ -32,7 +32,6 @@ from deep_agent.agent_settings import AgentSettings, load_agent_settings, worksp
 from deep_agent.data_processing.load_data_result import wrap_data_tools_with_query_code
 from deep_agent.execution.harness_profile import register_analytics_harness_profile
 from deep_agent.execution.python_sandbox import build_python_sandbox
-from deep_agent.gigachat_kitai_model import build_gigachat_kitai_model
 from deep_agent.middleware.skills_context_middleware import PreloadedSkillsContextMiddleware
 from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
 from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
@@ -199,7 +198,9 @@ def _build_agent_context(
     """
 
     resolved_settings = settings or load_agent_settings(workspace_root)
-    resolved_model = model or build_gigachat_kitai_model()
+    if model is None:
+        raise ValueError("Параметр model должен быть передан в build_agent явно.")
+    resolved_model = model
     configure_read_file_default_limit(resolved_settings.read_file_default_limit)
     register_analytics_harness_profile(
         resolved_settings.harness_profile_key,

@@ -39,9 +39,8 @@ GIGACHAT_FILESYSTEM_PRACTICES_PROMPT = """
 
 - Filesystem tools используют канонический POSIX namespace workspace. Корень workspace — ``/``.
 - Используй пути, которые вернули tools, или workspace-пути вроде ``/README.md``, ``/deep_agent/agent.py`` и
-  ``/artifacts/load_data_result.pkl``. Не используй Windows-пути или абсолютные пути хоста в filesystem tools.
+  ``/artifacts/load_data_result.pkl``. 
 - Для кода агента и skills ориентируйся на Agent implementation directory и Skills directory из runtime context;
-  не предполагай, что они всегда находятся в ``/deep_agent``.
 - Если просят структуру файлов, сообщай только пути, увиденные через ``get_project_structure``, ``ls``, ``glob`` или
   другие успешные tools. Не выдумывай типовые директории вроде ``/work``, ``/home``, ``/logs`` и примеры из памяти модели.
 - Перед изменением исходного файла прочитай релевантный контекст и сохрани несвязанный текст.
@@ -51,11 +50,9 @@ GIGACHAT_FILESYSTEM_PRACTICES_PROMPT = """
 GIGACHAT_SHELL_PRACTICES_PROMPT = """
 ## Практики shell tool
 
-- Используй ``execute`` для тестов, linters, сборок, package-команд, перемещения/копирования файлов и короткой диагностики.
-- Не используй shell-команды для чтения или редактирования обычного текста, когда filesystem tools понятнее.
+- Используй ``execute`` для  сборок, package-команд, перемещения/копирования файлов
 - ``execute`` работает в shell workspace. Используй короткие неинтерактивные команды и заключай пути с пробелами в кавычки.
-- Workspace-пути вроде ``/artifacts/run.py`` отображаются backend, когда указывают внутрь workspace. Не используй
-  абсолютные пути хоста вне workspace или Windows-пути.
+- Workspace-пути вроде ``/artifacts/run.py`` отображаются backend, когда указывают внутрь workspace. 
 - Не вставляй многострочный текст в shell-строку в двойных кавычках. Используй filesystem tools, файл-скрипт в
   репозитории или heredoc в одинарных кавычках, если многострочный shell input действительно нужен.
 - Если shell-команда дважды падает с одной ошибкой, перестань повторять ту же форму команды и измени подход.
@@ -160,19 +157,6 @@ def build_runtime_context_prompt(
 Корень workspace: {workspace_tool_root_path} соответствует реальному пути {workspace_real_path}.
 Директория data artifacts: {data_artifacts_tool_path} соответствует реальному пути {data_artifacts_real_path}.
 {agent_root_line}{skills_root_line}{memory_path_line}
-
-Для относительных дат в запросах пользователя рассчитывай период от текущей даты. Например, "последние 2 дня"
-означает два календарных дня, заканчивающихся текущей датой, если пользователь явно не указал другую
-бизнес-конвенцию. Никогда не бери относительные даты из примеров, validation cases, demo data или видимых партиций.
-
-Используй `/artifacts` только для offload-файлов `load_data`, data exports и промежуточных результатов обработки.
-Не перемещай обычные пользовательские файлы, исходный код, документацию, отчеты, notebooks или запрошенные файлы
-репозитория в `/artifacts`, если пользователь явно не назвал этот путь. Для обычного создания файлов используй путь,
-который запросил пользователь, или подходящий workspace-путь под `/`. Когда сообщаешь о сохраненных data artifacts,
-указывай их workspace-путь.
-
-Используй директорию реализации агента и директорию skills из этого runtime context. Не предполагай, что код агента
-или skills находятся в `/deep_agent/`, если runtime context показывает другой путь.
 </runtime_context>
 """.strip()
 

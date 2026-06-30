@@ -5,13 +5,13 @@
 - content_to_text: преобразование content blocks в строку.
 - normalize_kitai_message: создание совместимой копии сообщения LangChain.
 - normalize_kitai_messages: нормализация одного сообщения или списка сообщений.
-- build_gigachat_kitai_model: сборка Gigachat KitAI chat-модели из переменных окружения.
+- build_gigachat_kitai_model: сборка Gigachat KitAI chat-модели из явных параметров.
+- _require_text_parameter: проверка обязательного текстового параметра.
 """
 
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -215,54 +215,86 @@ class DeepAgentsKitaiChatModel(
         )
 
 
-def build_gigachat_kitai_model() -> Any:
-    """Создаёт Gigachat KitAI chat-модель с нормализацией сообщений DeepAgents.
+def build_gigachat_kitai_model(
+    *,
+    kitai_host_sdk: str,
+    cert_file: str,
+    key_file: str,
+    model: str = "GigaChat-2-Max",
+    verify_ssl: bool = False,
+    system_name: str = "lab",
+    module_name: str = "lab_antifraud_edge",
+    polling_retries: int = 500,
+    polling_delay_in_sec: int = 2,
+    polling_start_delay_in_sec: int = 2,
+    polling_timeout_in_sec: int = 180,
+    temperature: float = 0.05,
+    profanity_check: bool = False,
+    verbose: bool = True,
+) -> Any:
+    """Создаёт Gigachat KitAI chat-модель из явно переданных параметров.
+
+    Args:
+        kitai_host_sdk: URL корпоративного KitAI API.
+        cert_file: Абсолютный путь к клиентскому сертификату.
+        key_file: Абсолютный путь к закрытому ключу сертификата.
+        model: Имя модели в KitAI.
+        verify_ssl: Проверять TLS-сертификат сервера.
+        system_name: Имя системы KitAI.
+        module_name: Имя модуля KitAI.
+        polling_retries: Максимальное число проверок готовности ответа.
+        polling_delay_in_sec: Интервал между проверками ответа.
+        polling_start_delay_in_sec: Задержка перед первой проверкой ответа.
+        polling_timeout_in_sec: Общий таймаут ожидания ответа.
+        temperature: Температура генерации.
+        profanity_check: Использовать встроенную проверку контента.
+        verbose: Включить подробный режим SDK.
 
     Returns:
         Экземпляр ``KitaiSystemChatModel``, принимающий content blocks LangChain.
 
     Raises:
         RuntimeError: Корпоративные KitAI SDK не установлены в окружении.
-        KeyError: Не задана обязательная переменная окружения KitAI.
+        ValueError: Не переданы обязательные параметры подключения KitAI.
     """
 
+    _require_text_parameter("kitai_host_sdk", kitai_host_sdk)
+    _require_text_parameter("cert_file", cert_file)
+    _require_text_parameter("key_file", key_file)
     return DeepAgentsKitaiChatModel(
-        model=os.environ.get("DEEP_AGENT_MODEL", "GigaChat-2-Max"),
-        kitai_host_sdk=os.environ["KITAI_HOST_SDK"],
-        cert_file=os.environ["KITAI_CERT_FILE_PATH"],
-        key_file=os.environ["KITAI_CERT_KEY_FILE_PATH"],
-        verify_ssl=_environment_flag("KITAI_VERIFY_SSL", default=False),
-        system_name=os.environ.get("KITAI_SYSTEM_NAME", "lab"),
-        module_name=os.environ.get("KITAI_MODULE_NAME", "lab_antifraud_edge"),
-        polling_retries=int(os.environ.get("KITAI_POLLING_RETRIES", "500")),
-        polling_delay_in_sec=int(os.environ.get("KITAI_POLLING_DELAY_SECONDS", "2")),
-        polling_start_delay_in_sec=int(
-            os.environ.get("KITAI_POLLING_START_DELAY_SECONDS", "2")
-        ),
-        polling_timeout_in_sec=int(
-            os.environ.get("KITAI_POLLING_TIMEOUT_SECONDS", "180")
-        ),
-        temperature=float(os.environ.get("DEEP_AGENT_TEMPERATURE", "0.05")),
-        profanity_check=_environment_flag("KITAI_PROFANITY_CHECK", default=False),
-        verbose=_environment_flag("KITAI_VERBOSE", default=True),
+        model=model,
+        kitai_host_sdk=kitai_host_sdk,
+        cert_file=cert_file,
+        key_file=key_file,
+        verify_ssl=verify_ssl,
+        system_name=system_name,
+        module_name=module_name,
+        polling_retries=polling_retries,
+        polling_delay_in_sec=polling_delay_in_sec,
+        polling_start_delay_in_sec=polling_start_delay_in_sec,
+        polling_timeout_in_sec=polling_timeout_in_sec,
+        temperature=temperature,
+        profanity_check=profanity_check,
+        verbose=verbose,
     )
 
 
-def _environment_flag(name: str, *, default: bool) -> bool:
-    """Читает булеву переменную окружения.
+def _require_text_parameter(name: str, value: str) -> None:
+    """Проверяет, что обязательный текстовый параметр задан.
 
     Args:
-        name: Имя переменной окружения.
-        default: Значение при отсутствии переменной.
+        name: Имя параметра для сообщения об ошибке.
+        value: Значение параметра.
 
     Returns:
-        Нормализованное булево значение.
+        ``None``.
+
+    Raises:
+        ValueError: Значение пустое или состоит только из пробелов.
     """
 
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    if not value or not value.strip():
+        raise ValueError(f"Параметр {name} должен быть передан явно.")
 
 
 __all__ = [

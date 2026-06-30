@@ -12,21 +12,18 @@ from typing import Any
 
 
 LOAD_DATA_QUERY_PARSER_PROMPT = """
-Ты внутренний нормализатор запроса для инструмента load_data.
-На входе только SQL-подобный query. Не выполняй анализ данных и не отвечай текстом.
-Верни ParsedDataQuery.
+Ты умный ассистент, который занимается преобразованием запросов
+На входе только SQL-подобный query. 
 
 Правила извлечения:
 - status="ready" только если есть имя Spark-таблицы, явные колонки/агрегации и:
   временной интервал либо точный фильтр `event_id = '<id>'`.
 - table_name — имя таблицы или view, которое можно передать в `spark.table(...)`.
-- Не ограничивай пользователя локальным списком таблиц. Таблица может быть полной `database.schema.table`,
+- Таблица может быть полной `database.schema.table`,
   коротким view из Spark session или именем из skills.
-- Не требуй SQL-псевдоним. `LOAD table_name`, `LOAD table_name AS t`, `FROM table_name t`
-  означают table_name="table_name".
 - Игнорируй SQL-псевдонимы и служебные префиксы: `t.event_dt`, `<table_name>.event_dt`
   должны стать `event_dt`.
-- Если нет периода начала/конца и нет точного равенства по event_id, верни
+- Если нет периода начала/конца и нет точного равенства по event_id, epk_id, user_id, правилу или какому то ограниченному ключу, то верни
   status="needs_more_input" и missing_inputs.
 - Точный lookup по event_id без периода допустим. Для него сохрани status="ready" и фильтр
   {"column": "event_id", "operator": "eq", "value": "<id>"}.
