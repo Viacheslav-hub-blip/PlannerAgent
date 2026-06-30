@@ -108,36 +108,19 @@ PYTHON_TOOL_DESCRIPTION = """
 python
 ---
 Назначение:
-Выполняет Python-код в persistent REPL-сессии внутри configured workspace.
-Переменные, импорты, функции и загруженные данные сохраняются между вызовами
-в рамках текущей сессии агента.
+Используй этот инструмент для выполнения Python-кода
 
 Используй для:
-- для нетривиальных вычислений, сравнений, преобразований и проверок;
+- для вычислений, сравнений, преобразований и проверок;
 - для обработки `.pkl`, CSV, JSON, DataFrame и результатов `load_data`;
 - для проверки гипотезы на фактических входах перед формулированием вывода;
 - для генерации CSV/JSON/Markdown-выгрузок, таблиц, графиков и других файлов, связанных с обработкой данных;
-- для прототипирования решения до внесения изменений в исходники проекта;
 - для обработки полного `.pkl` или `.jsonl`, сохраненного после `load_data`, вместо выводов
   по ограниченному preview;
-- когда несколько связанных преобразований проще и надежнее выразить кодом.
-
-Правило выбора:
-- если результат зависит от точного вычисления, структуры данных, поведения алгоритма,
-  преобразования формата или проверки условия, сначала выполни код;
-- используй `print()` для важных результатов;
-- не выводи огромные DataFrame целиком: печатай shape, columns, head, агрегаты;
-- сохраняй в `ARTIFACTS_DIR` только результаты выгрузки данных, offload-артефакты и промежуточные файлы
-  преобразований; обычные пользовательские файлы, код, документацию и отчёты репозитория создавай по явно
-  указанному или уместному workspace-пути через filesystem tools;
-- для записи файлов используй `Path(ARTIFACTS_DIR) / "file.ext"`, а не строковый workspace-путь
-  `"/artifacts/file.ext"`: сторонние библиотеки могут воспринять строку с начальным `/` как системный корень ОС;
-- для обычного редактирования исходников используй filesystem tools, а не Python;
-- для тестов, сборки и package-команд используй shell `execute`, а не Python.
 
 Аргументы:
-- `code`: исполняемый Python-код;
-- `description`: краткая цель вычисления на русском языке для трассировки.
+- `code`:  Python-код;
+- `description`: краткая цель вычисления.
 
 Доступные helpers:
 - `PROJECT_ROOT`: корень текущего workspace;
@@ -156,7 +139,6 @@ python
 Видимый результат:
 - результат доступен агенту только если он напечатан через `print(...)`;
 - или если файл создан/изменён обычным Python-кодом внутри `ARTIFACTS_DIR` и появился в `artifacts`;
-- простое присваивание переменной сохраняет её в REPL-сессии, но не показывает итог агенту.
 
 Плохое решение: присвоить результат без вывода.
 ```python
@@ -214,45 +196,6 @@ print(output_path)
 ```python
 df.to_csv("/artifacts/export.csv", index=False)
 ```
-
-Хорошее решение: сохранить временный файл преобразования данных в тот же каталог артефактов.
-```python
-from pathlib import Path
-import json
-
-output_path = Path(ARTIFACTS_DIR) / "scratch.json"
-output_path.write_text(json.dumps({"status": "ok"}, ensure_ascii=False), encoding="utf-8")
-print(output_path)
-```
-
-Хорошее решение: обработать полный offload artifact через workspace-путь.
-```python
-from pathlib import Path
-
-rows = read_pickle_file(r"/artifacts/load_data_x.pkl")
-df = rows_to_dataframe(rows)
-print(df.shape)
-print(df.columns.tolist())
-stats = df.groupby("main_rule")["transaction_amount_in_rub"].agg(["count", "mean"])
-output_path = Path(ARTIFACTS_DIR) / "rule_stats.csv"
-stats.reset_index().to_csv(output_path, index=False)
-print(output_path)
-```
-
-Работа с путями:
-- для data/offload/intermediate артефактов используй `Path(ARTIFACTS_DIR) / "file.ext"`;
-- для сохранения DataFrame используй обычный pandas writer с `Path`-объектом внутри `ARTIFACTS_DIR`;
-- при работе с pickle через pandas бери `artifact_path` из результата tool;
-- `artifact_path` должен быть workspace-путем внутри `/artifacts`;
-- для чтения pickle из offload artifact используй `rows = read_pickle_file(r"<artifact_path>")`,
-  затем `df = rows_to_dataframe(rows)` перед pandas-операциями;
-- если нужен именно pandas reader, передай в него реальный путь:
-  `rows = pd.read_pickle(resolve_workspace_path(r"<artifact_path>"))`;
-- не переопределяй `ARTIFACTS_DIR = Path("/artifacts")` в коде: helper уже содержит реальный путь ОС.
-
-Обработка ошибок:
-- если инструмент вернул ошибку, измени код с учетом причины и повтори вызов;
-- если Python не подходит для следующего шага, используй другой доступный tool.
 """.strip()
 
 
