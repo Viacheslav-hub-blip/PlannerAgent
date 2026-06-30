@@ -1,4 +1,0 @@
-interface:
-  display_name: "Code Workspace"
-  short_description: "Работа с кодом, файлами и terminal в workspace"
-  default_prompt: "Исследуй проект, внеси точечные изменения и проверь их локальными командами."

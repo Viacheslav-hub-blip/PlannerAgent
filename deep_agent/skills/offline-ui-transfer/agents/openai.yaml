@@ -1,4 +1,0 @@
-interface:
-  display_name: "Offline UI Transfer"
-  short_description: "Сборка и перенос Deep Agents UI в закрытый Linux"
-  default_prompt: "Пересобери проверенный Linux-архив Deep Agents UI, подготовь части для переноса и дай команды проверки и установки в закрытой среде."

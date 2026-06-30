@@ -1,15 +1,12 @@
 # Tools
 
-Папка содержит только реализации LangChain tools продукта:
+Папка содержит LangChain tools ядра:
 
-- `load_data` через Spark или совместимую фабрику data tools;
-- `python` для persistent REPL-расчётов по выгруженным артефактам;
-- `load_skills` для загрузки `SKILL.md`;
-- `analyze_image(image_path, query)` для анализа локальных изображений через Qwen VLM;
-- `skill_loader.py` для materialized-загрузки skills.
+- `load_data_spark_tool.py` — сборка production `load_data` поверх Spark.
+- `python_execution_tool.py` — persistent Python tool для расчетов и работы с artifacts.
+- `skill_loader_tool.py` — загрузка выбранных `SKILL.md` и связанных markdown-файлов.
+- `project_structure_tool.py` — краткая карта структуры проекта без содержимого skills.
+- `jupyter_notebook_tool.py` — конвертация notebook/script formats.
+- `refactor_review_tool.py` — локальная проверка результата refactor-задач.
 
-Инфраструктура вокруг tools вынесена из этой папки:
-
-- wrapper результатов data-tools находится в `deep_agent/data/result_wrapper.py`;
-- MCP loader находится в `deep_agent/integrations/mcp.py`;
-- fake Spark backend намеренно находится в `tests/support`.
+Схемы, parser и вспомогательная логика `load_data` находятся в `deep_agent/data_processing/`.

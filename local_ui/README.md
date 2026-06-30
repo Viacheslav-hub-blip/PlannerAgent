@@ -1,4 +1,4 @@
-# Локальный Deep Agents UI
+﻿# Локальный Deep Agents UI
 
 Папка подключает текущий аналитический DeepAgent к официальному
 [`langchain-ai/deep-agents-ui`](https://github.com/langchain-ai/deep-agents-ui)
@@ -26,7 +26,7 @@
 запуском установите Python-зависимости и распакуйте подготовленный Linux frontend:
 
 ```powershell
-python -m pip install -e .[models,data,analytics,ui]
+python -m pip install -e .[data,analytics,ui]
 powershell -ExecutionPolicy Bypass -File local_ui\install.ps1 -Force
 ```
 
@@ -57,10 +57,8 @@ wsl -d Ubuntu -- bash /mnt/c/path/to/deepagent/scripts/build_ui_archive.sh
 ```
 
 Python-инициализация агента не живёт в `local_ui`. LangGraph config указывает на
-`deep_agent/entrypoints/local_ui.py`, а модель локального UI создаётся в
-`deep_agent/models/instances.py` функцией `build_local_ui_model()`. Там же находятся
-настройки Qwen VLM. В `local_ui` остаются только launcher/config/frontend-файлы.
-Env-файл для модели не требуется.
+`adapters/langgraph_agent_server.py:agent`; сам adapter вызывает core `build_agent(...)`.
+В `local_ui` остаются только launcher/config/frontend-файлы.
 
 По умолчанию:
 
@@ -80,22 +78,6 @@ Env-файл для модели не требуется.
 powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiPort 3100
 ```
 
-## Пример из тестовой корзины
-
-Получить актуальный текст кейса 1:
-
-```powershell
-.\.venv\Scripts\python.exe -m deep_agent.entrypoints.validation_query --case-id 1
-```
-
-После запуска UI отправьте напечатанный запрос:
-
-> Сколько сработок правила «DENY оплата обучения после смены устройства» было
-> с 24 января по 6 февраля 2026 года включительно?
-
-В интерфейсе появятся план, вызов `load_data`, его аргументы/результат и итоговый
-ответ. Для этого кейса тестовая корзина ожидает число `7`.
-
 ## Ошибки
 
 - Ошибки запуска backend и frontend печатаются в stderr launcher-а; для backend также
@@ -113,8 +95,8 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 1. **Стриминг графа LangGraph** — обновления шагов агента (tool calls, план, готовые
    сообщения). Его использует `deep-agents-ui`; без него интерфейс не покажет прогресс.
 2. **Token-streaming модели** — посимвольная печать ответа LLM. Поддержка определяется
-   реализацией модели из `local_ui/model_instance.py`. Граф LangGraph, tool calls и
-   промежуточные обновления UI работают независимо от token-streaming провайдера.
+   моделью, которую собирает core adapter. Граф LangGraph, tool calls и промежуточные
+   обновления UI работают независимо от token-streaming провайдера.
 
 ## Артефакты и ограничения
 

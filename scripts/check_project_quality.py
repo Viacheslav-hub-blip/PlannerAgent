@@ -17,11 +17,9 @@ EXCLUDED_PARTS = {
     ".git",
     ".idea",
     ".langgraph_api",
-    ".pytest_cache",
     ".runtime",
     ".venv",
     "__pycache__",
-    "runs",
 }
 
 

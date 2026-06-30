@@ -1,51 +1,38 @@
-"""Сборка native DeepAgents агента для аналитики данных и работы с кодом.
+﻿"""Сборка native DeepAgents агента для аналитики данных и работы с кодом.
 
-Главный файл сборки. Точка входа — :func:`build_analytics_deep_agent`: она собирает
+Главный файл сборки. Точка входа — :func:`build_agent`: она собирает
 supervisor по нумерованным шагам (settings -> data tools -> middleware -> backend ->
 subagents -> custom tools -> ``create_deep_agent``).
 
 Как редактировать/кастомизировать (подробности — в ``README.md``):
-- Данные: передай свои ``data_tools=[...]`` в :func:`build_analytics_deep_agent` или укажи
-  ``data_tools_factory`` в конфиге (``config/defaults.json`` / override через
-  ``DEEP_AGENT_CONFIG_PATH``).
-- Конфиг и пороги: ключи в ``config/defaults.json`` (offload, skills, лимиты).
+- Данные: передай свои ``data_tools=[...]`` в :func:`build_agent`.
+- Конфиг и пороги: Python-defaults в ``agent_settings.py``.
 - Поведение supervisor/subagent: правь тематические модули в ``prompts`` без доменной логики.
-- Доменные знания: добавляй/редактируй ``skills/<name>/SKILL.md`` — менять код не нужно.
-- Новые subagents: добавь отдельный модуль в ``subagents`` и зарегистрируй его в ``registry.py``.
+- Доменные знания: добавляй/редактируй корневые ``skills/<name>/SKILL.md`` — менять код не нужно.
+- Новые subagents: добавь конфигурацию в ``subagents.py``.
 
 Служебные функции:
-- build_data_tools: сборка инструментов чтения данных через фабрику из настроек.
-- _load_callable_from_path: импорт callable по строковому пути.
+- build_agent: сборка supervisor и subagents.
 - _normalize_data_tools: проверка и нормализация списка инструментов.
-- _normalize_extra_tools: проверка и нормализация дополнительных tools.
-- build_analytics_deep_agent: сборка supervisor и subagents.
 - build_skills_backend: сборка shell-capable workspace backend для supervisor и coding-agent.
 - build_supervisor_backend: сборка filesystem-only backend для data-agent.
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_terminal_environment: безопасный набор переменных окружения terminal.
-- _build_load_data_interrupt_on: штатный HITL config для подтверждения ``load_data``.
 - _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
-- _require_workspace_path: проверка принадлежности пути workspace.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
-- register_session_tool_outputs_cleanup: регистрация удаления tool outputs при закрытии агента.
 - cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
 """
 
 from __future__ import annotations
 
-import atexit
-import importlib
 import os
-import weakref
-from collections.abc import Callable
 from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -57,54 +44,35 @@ from langchain.agents.middleware import (
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 
-from deep_agent.runtime.harness import register_analytics_harness_profile
-from deep_agent.runtime.python_sandbox import build_python_sandbox
-from deep_agent.subagents.coding import build_coding_subagent_spec
-from deep_agent.subagents.data_retrieval import (
-    build_data_retrieval_subagent_spec,
-)
-from deep_agent.subagents.registry import build_subagent_specs
-from deep_agent.runtime.filesystem import (
+from deep_agent.execution.filesystem_backend import (
     Utf8FilesystemBackend,
     Utf8LocalShellBackend,
-    configure_read_file_default_limit,
 )
-from deep_agent.data.result_wrapper import wrap_data_tools_with_query_code
-from deep_agent.tools.jupyter_notebook import build_convert_jupyter_notebook_tool
-from deep_agent.tools.python_execution import build_python_tool
-from deep_agent.tools.project_structure import build_get_project_structure_tool
-from deep_agent.tools.refactor_review import build_review_refactor_tool
-from deep_agent.tools.skill_loader import build_load_skills_tool
-from deep_agent.tools.spark_data import build_load_data_approval_description
-from deep_agent.middleware.skills_context import PreloadedSkillsContextMiddleware
-from deep_agent.middleware.filesystem_path_contract import FilesystemPathContractMiddleware
-from deep_agent.middleware.gigachat_runtime import (
+from deep_agent.data_processing.load_data_result import wrap_data_tools_with_query_code
+from deep_agent.middleware.filesystem_path_middleware import FilesystemPathContractMiddleware
+from deep_agent.middleware.gigachat_runtime_middleware import (
     LoopBreakerMiddleware,
     ShellSafetyMiddleware,
     ThinkToolMiddleware,
 )
-from deep_agent.middleware.tool_context_notice import ToolContextNoticeMiddleware
-from deep_agent.middleware.tool_descriptions import (
+from deep_agent.middleware.tool_context_middleware import ToolContextNoticeMiddleware
+from deep_agent.middleware.tool_description_middleware import (
     PromptToolDescriptionsMiddleware,
     PromptToolFilterMiddleware,
 )
-from deep_agent.middleware.todo_reset import TodoResetMiddleware
-from deep_agent.logging import build_postgres_logging_middleware
-from deep_agent.prompts.gigachat import build_gigachat_practices_prompt
-from deep_agent.prompts.tool_contracts import TOOL_DESCRIPTION_OVERRIDES
-from deep_agent.prompts.skills import (
-    DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
+from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
+from deep_agent.prompts.gigachat_runtime_prompt import (
+    build_runtime_context_prompt,
 )
-from deep_agent.prompts.supervisor import SYSTEM_PROMPT
-from deep_agent.settings import (
-    DeepAgentSettings,
-    load_deep_agent_settings,
+from deep_agent.prompts.tool_description_prompt import TOOL_DESCRIPTION_OVERRIDES
+from deep_agent.agent_settings import (
+    AgentSettings,
+    load_agent_settings,
     workspace_tool_root,
     workspace_tool_path,
 )
-from deep_agent.middleware.tool_output_file import ToolOutputFileMiddleware
-from deep_agent.middleware.model_errors import (
+from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
+from deep_agent.middleware.model_error_middleware import (
     format_model_error,
     is_retryable_model_error,
 )
@@ -112,84 +80,31 @@ from deep_agent.middleware.model_errors import (
 _DEFAULT_CHECKPOINTER = object()
 
 
-def build_data_tools(settings: DeepAgentSettings | None = None) -> list[BaseTool]:
-    """Собирает инструменты чтения данных через фабрику из JSON-конфига."""
-
-    settings = settings or load_deep_agent_settings()
-    if not settings.data_tools_factory:
-        raise ValueError(
-            "Не настроена фабрика tools чтения данных. "
-            "Передайте data_tools в build_analytics_deep_agent или укажите "
-            "data_tools_factory в deep_agent/config/defaults.json или override-конфиге."
-        )
-    factory = _load_callable_from_path(settings.data_tools_factory)
-    return _normalize_data_tools(factory(**settings.data_tools_factory_kwargs))
-
-
-def _load_callable_from_path(import_path: str) -> Callable[..., Any]:
-    """Импортирует callable по строке вида ``module:attr`` или ``module.attr``."""
-
-    if ":" in import_path:
-        module_name, attribute_name = import_path.split(":", 1)
-    else:
-        try:
-            module_name, attribute_name = import_path.rsplit(".", 1)
-        except ValueError:
-            raise ValueError(f"Некорректный import path фабрики tools: {import_path}") from None
-    if not module_name or not attribute_name:
-        raise ValueError(f"Некорректный import path фабрики tools: {import_path}")
-
-    module = importlib.import_module(module_name)
-    factory = getattr(module, attribute_name)
-    if not callable(factory):
-        raise TypeError(f"Объект {import_path} не является callable.")
-    return factory
-
-
 def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
-    """Приводит результат фабрики data-tools к списку ``BaseTool`` с проверкой типов."""
+    """Приводит явно переданные data-tools к списку ``BaseTool`` с проверкой типов."""
 
     if isinstance(raw_tools, BaseTool):
         return [raw_tools]
     if not isinstance(raw_tools, (list, tuple)):
-        raise TypeError("Фабрика tools должна вернуть BaseTool или список BaseTool.")
+        raise TypeError("data_tools должен быть BaseTool или списком BaseTool.")
 
     tools: list[BaseTool] = []
     for item in raw_tools:
         if not isinstance(item, BaseTool):
-            raise TypeError(f"Фабрика tools вернула объект не BaseTool: {type(item).__name__}")
+            raise TypeError(f"data_tools содержит объект не BaseTool: {type(item).__name__}")
         tools.append(item)
     return tools
 
 
-def _normalize_extra_tools(raw_tools: Any) -> list[BaseTool]:
-    """Приводит дополнительные tools к списку ``BaseTool`` с проверкой типов.
-
-    Args:
-        raw_tools: ``None``, один ``BaseTool`` или последовательность ``BaseTool``.
-
-    Returns:
-        Нормализованный список дополнительных tools.
-
-    Raises:
-        TypeError: Передан объект не ``BaseTool``.
-    """
-
-    if raw_tools is None:
-        return []
-    return _normalize_data_tools(raw_tools)
-
-
-def build_analytics_deep_agent(
-    model: Any,
-    settings: DeepAgentSettings | None = None,
-    data_tools: list[BaseTool] | None = None,
-    extra_tools: list[BaseTool] | None = None,
+def build_agent(
+    *,
+    model: Any | None = None,
+    settings: AgentSettings | None = None,
+    data_tools: list[BaseTool] | BaseTool,
     workspace_root: str | Path | None = None,
     checkpointer: Any = _DEFAULT_CHECKPOINTER,
     state_artifacts_virtual_dir: str | None = None,
     system_prompt_suffix: str | None = None,
-    enable_general_purpose: bool = True,
 ) -> Any:
     """Собирает гибридный аналитический и coding DeepAgent.
 
@@ -200,10 +115,8 @@ def build_analytics_deep_agent(
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
 
-    1. Settings — все пороги и пути. Кастомизация: `config/defaults.json`, override-файл
-       через env `DEEP_AGENT_CONFIG_PATH`, либо готовый ``settings`` в аргументе.
-    2. Data tools — инструменты чтения данных (`load_data`). Кастомизация: передай свои
-       ``BaseTool`` в ``data_tools`` или укажи фабрику в ``data_tools_factory`` конфига.
+    1. Settings — все пороги и пути из ``agent_settings.py`` или готового ``settings``.
+    2. Data tools — явно переданные инструменты чтения данных (`load_data`).
     3. Middleware — project-specific offload больших tool outputs в pickle плюс
        встроенные middleware LangChain/Deep Agents:
        ContextEditingMiddleware (очистка старых tool-результатов при лимите токенов),
@@ -212,17 +125,15 @@ def build_analytics_deep_agent(
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
     4. Backend — workspace с terminal, skills и spill-файлами.
-    5. Subagents — штатный `general-purpose`, отдельный `coding-agent` для кода
-       и `data-retrieval-agent` для таблиц.
+    5. Subagents — отдельный `coding-agent` для кода и `data-retrieval-agent` для таблиц.
     6. Custom tool supervisor — `python` для REPL-расчётов, чтения `.pkl` и артефактов.
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
-        model: Chat model LangChain для supervisor и subagent.
-        settings: Готовые настройки; если ``None`` — загружаются из JSON-конфига.
-        data_tools: Готовые tools чтения данных; если ``None`` — берутся из фабрики конфига.
-        extra_tools: Дополнительные tools supervisor, например VLM или MCP tools.
-            Они скрыты до загрузки соответствующего skill.
+        model: Chat model LangChain для supervisor и subagent. Если ``None``, создаётся
+            Gigachat KitAI модель.
+        settings: Готовые настройки; если ``None`` — используются Python-defaults.
+        data_tools: Готовые tools чтения данных.
         workspace_root: Рабочая директория coding-agent. Имеет приоритет над settings.
         checkpointer: Checkpointer LangGraph для истории диалога. Если аргумент не передан,
             создаётся штатный ``InMemorySaver``. Явный ``None`` передаёт управление
@@ -231,285 +142,56 @@ def build_analytics_deep_agent(
             сохраняемых в state LangGraph и доступных UI. Если ``None``, state-маршрут
             не создаётся.
         system_prompt_suffix: Дополнительные инструкции, добавляемые к системному prompt.
-        enable_general_purpose: Нужно ли оставлять штатный ``general-purpose`` subagent
-            доступным supervisor-у. Вложенные compiled subagents по-прежнему собираются
-            без собственного ``general-purpose``, чтобы не создавать цепочки универсальных
-            subagents.
-
     Returns:
         Скомпилированный DeepAgents граф (supervisor), готовый к ``invoke``/``stream``.
     """
 
-    # Шаг 1. Настройки: пути skills, папка spill-файлов, пороги offload, thread_id.
-    settings = settings or load_deep_agent_settings()
-    configure_read_file_default_limit(settings.read_file_default_limit)
-    register_analytics_harness_profile(
-        settings.harness_profile_key,
-        enable_general_purpose=False,
-    )
-    resolved_workspace_root = _resolve_workspace_root(
-        workspace_root or settings.workspace_root
-    )
-    resolved_skills_root = _rebase_workspace_path(
-        settings.skills_root,
-        settings.workspace_root,
-        resolved_workspace_root,
-    )
-    resolved_tool_outputs_root = _rebase_tool_outputs_path(
-        settings.tool_outputs_dir,
-        settings.workspace_root,
-        resolved_workspace_root,
-    )
-    session_tool_outputs_dir = create_session_tool_outputs_dir(
-        resolved_tool_outputs_root
-    )
-    skills_workspace_dir = workspace_tool_path(
-        resolved_skills_root,
-        resolved_workspace_root,
-        directory=True,
-    )
-    agents_memory_path = _agents_memory_path(
-        settings.agents_file_name,
-        resolved_workspace_root,
+    from deep_agent.agent_graph_builder import (
+        _build_agent_backends,
+        _build_agent_context,
+        _build_agent_prompts,
+        _build_agent_tools,
+        _build_skills_middleware,
+        _build_subagent_graphs,
+        _build_supervisor_graph,
+        _build_tool_output_file_middleware,
     )
 
-    # Шаг 2. Инструменты чтения данных. Аргумент имеет приоритет над фабрикой из конфига.
-    # Оборачиваем их в слой прозрачности: агент получает сгенерированный код запроса и
-    # счётчики строк, а большие таблицы корректно уходят в offload (artifact с rows).
-    if data_tools is None:
-        data_tools = build_data_tools(settings)
-    data_tools = wrap_data_tools_with_query_code(data_tools)
-    extra_tools = _normalize_extra_tools(extra_tools)
-    # Шаг 3. Единственный project-specific middleware сохраняет табличные результаты
-    # в pickle. Skills, retries, limits, filesystem, memory и subagents собираются
-    # штатными middleware LangChain/Deep Agents.
-    tool_output_file_middleware = ToolOutputFileMiddleware(
-        output_dir=session_tool_outputs_dir,
-        workspace_root=resolved_workspace_root,
-        min_rows_to_save=settings.tool_output_min_rows_to_save,
-        min_content_chars_to_save=settings.tool_output_min_content_chars_to_save,
-        preview_rows=settings.tool_output_preview_rows,
-        inline_original_content_chars=settings.tool_output_inline_original_chars,
-    )
-    data_backend = build_supervisor_backend(
-        settings,
-        tool_outputs_dir=session_tool_outputs_dir,
-        workspace_root=resolved_workspace_root,
-    )
-    supervisor_backend = build_skills_backend(
-        settings,
-        tool_outputs_dir=session_tool_outputs_dir,
-        workspace_root=resolved_workspace_root,
+    context = _build_agent_context(
+        model=model,
+        settings=settings,
+        workspace_root=workspace_root,
+        checkpointer=checkpointer,
         state_artifacts_virtual_dir=state_artifacts_virtual_dir,
+        system_prompt_suffix=system_prompt_suffix,
     )
-    workspace_backend = build_skills_backend(
-        settings,
-        tool_outputs_dir=session_tool_outputs_dir,
-        workspace_root=resolved_workspace_root,
+    normalized_data_tools = wrap_data_tools_with_query_code(_normalize_data_tools(data_tools))
+    tool_output_file_middleware = _build_tool_output_file_middleware(context)
+    backends = _build_agent_backends(context)
+    tools = _build_agent_tools(context, data_tools=normalized_data_tools)
+    prompts = _build_agent_prompts(context)
+    skills_middleware = _build_skills_middleware(context)
+    subagents = _build_subagent_graphs(
+        context=context,
+        backends=backends,
+        tools=tools,
+        prompts=prompts,
+        skills_middleware=skills_middleware,
+        tool_output_file_middleware=tool_output_file_middleware,
     )
-    python_sandbox = build_python_sandbox(
-        settings,
-        tool_outputs_dir=session_tool_outputs_dir,
-        workspace_root=resolved_workspace_root,
-    )
-    python_tool = build_python_tool(python_sandbox)
-    load_skills_tool = build_load_skills_tool(
-        settings,
-        skills_root=resolved_skills_root,
-        workspace_root=resolved_workspace_root,
-    )
-    project_structure_tool = build_get_project_structure_tool(
-        workspace_root=resolved_workspace_root,
-        agent_root=resolved_skills_root.parent,
-        skills_root=resolved_skills_root,
-    )
-    jupyter_notebook_tool = build_convert_jupyter_notebook_tool(
-        workspace_root=resolved_workspace_root,
-    )
-    review_refactor_tool = build_review_refactor_tool(
-        model=model,
-        workspace_root=resolved_workspace_root,
-    )
-    runtime_context_prompt = _build_runtime_context_prompt(
-        resolved_workspace_root,
-        session_tool_outputs_dir,
-        agent_root=resolved_skills_root.parent,
-        skills_root=resolved_skills_root,
-        agents_memory_path=agents_memory_path,
-    )
-    gigachat_practices_prompt = build_gigachat_practices_prompt()
-    shared_skills_selection: dict[str, Any] = {}
-    supervisor_skills_middleware = PreloadedSkillsContextMiddleware(
-        skills_root=resolved_skills_root,
-        skills_workspace_dir=skills_workspace_dir,
-        model=model,
-        select_skills=True,
-        shared_selection=shared_skills_selection,
-        prompt_template=SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    )
-    subagent_skills_middleware = PreloadedSkillsContextMiddleware(
-        skills_root=resolved_skills_root,
-        skills_workspace_dir=skills_workspace_dir,
-        model=model,
-        select_skills=False,
-        shared_selection=shared_skills_selection,
-        prompt_template=DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-    )
-    coding_agent_middleware = _build_native_runtime_middleware(
-        settings,
-        tool_output_file_middleware,
-        filesystem_backend=workspace_backend,
-        workspace_root=resolved_workspace_root,
-        agent_name="coding-agent",
-        limit_model_calls=True,
-        hidden_tool_names=("edit_file",),
-    )
-    coding_agent_spec = build_coding_subagent_spec(
-        model=model,
-        tools=[
-            load_skills_tool,
-            python_tool,
-            project_structure_tool,
-            jupyter_notebook_tool,
-            review_refactor_tool,
-        ],
-        common_middleware=coding_agent_middleware,
-        skill_sources=[skills_workspace_dir],
-    )
-    coding_agent_spec["system_prompt"] = (
-        f"{coding_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
-    )
-    coding_agent = create_deep_agent(
-        **coding_agent_spec,
-        backend=workspace_backend,
-        memory=[agents_memory_path],
-    )
-    data_retrieval_agent_middleware = [
-        subagent_skills_middleware,
-        *_build_native_runtime_middleware(
-            settings,
-            tool_output_file_middleware,
-            filesystem_backend=data_backend,
-            workspace_root=resolved_workspace_root,
-            agent_name="data-retrieval-agent",
-            limit_model_calls=True,
-        ),
-    ]
-    data_retrieval_agent_spec = build_data_retrieval_subagent_spec(
-        model=model,
-        data_tools=[
-            *data_tools,
-            load_skills_tool,
-            python_tool,
-            project_structure_tool,
-        ],
-        common_middleware=data_retrieval_agent_middleware,
-        skill_sources=[skills_workspace_dir],
-    )
-    data_retrieval_agent_spec["system_prompt"] = (
-        f"{data_retrieval_agent_spec['system_prompt']}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
-    )
-    data_retrieval_agent = create_deep_agent(
-        **data_retrieval_agent_spec,
-        backend=data_backend,
-        memory=[agents_memory_path],
-    )
-
-    # Шаг 4. Сборка изолированных compiled subagents.
-    subagents = build_subagent_specs(
-        coding_agent=coding_agent,
-        data_retrieval_agent=data_retrieval_agent,
-    )
-
-    # Шаг 6. Финальная сборка DeepAgents supervisor.
-    system_prompt = f"{SYSTEM_PROMPT}\n\n{gigachat_practices_prompt}\n\n{runtime_context_prompt}"
-    if system_prompt_suffix:
-        system_prompt = f"{system_prompt}\n\n{system_prompt_suffix.strip()}"
-
-    register_analytics_harness_profile(
-        settings.harness_profile_key,
-        enable_general_purpose=enable_general_purpose,
-    )
-    agent = create_deep_agent(
-        model=model,
-        tools=[load_skills_tool, python_tool, project_structure_tool, *extra_tools],
-        system_prompt=system_prompt,
+    return _build_supervisor_graph(
+        context=context,
+        backends=backends,
+        tools=tools,
+        prompts=prompts,
         subagents=subagents,
-        skills=[skills_workspace_dir],
-        backend=supervisor_backend,
-        middleware=[
-            TodoResetMiddleware(),
-            supervisor_skills_middleware,
-            *_build_native_runtime_middleware(
-                settings,
-                tool_output_file_middleware,
-                filesystem_backend=supervisor_backend,
-                workspace_root=resolved_workspace_root,
-                agent_name="supervisor",
-                limit_model_calls=False,
-                hidden_tool_names=("edit_file",),
-            ),
-        ],
-        memory=[agents_memory_path],
-        checkpointer=(
-            build_conversation_checkpointer()
-            if checkpointer is _DEFAULT_CHECKPOINTER
-            else checkpointer
-        ),
+        skills_middleware=skills_middleware,
+        tool_output_file_middleware=tool_output_file_middleware,
     )
-    return agent
-
-
-def _build_load_data_interrupt_on(
-    *,
-    query_parser_model: Any,
-    workspace_root: Path,
-    output_dir: Path,
-) -> dict[str, Any]:
-    """Создаёт штатный LangChain HITL config для подтверждения ``load_data``.
-
-    Args:
-        query_parser_model: Модель, которой строится структурированный разбор SQL-подобного ``query``.
-        workspace_root: Корень workspace для человекочитаемого artifact path.
-        output_dir: Каталог, куда Spark ``load_data`` сохранит JSONL artifact после approval.
-
-    Returns:
-        Конфиг ``interrupt_on`` для ``create_deep_agent``, который останавливает graph до
-        выполнения ``load_data`` и показывает пользователю реальный PySpark-код с
-        подставленными значениями.
-    """
-
-    def describe_load_data(tool_call: Any, _state: Any, _runtime: Any) -> str:
-        """Формирует текст approval request для конкретного tool call ``load_data``.
-
-        Args:
-            tool_call: Tool call LangChain с аргументом ``query``.
-            _state: Текущее состояние агента; не используется.
-            _runtime: Runtime LangGraph; не используется.
-
-        Returns:
-            Описание с исходным запросом, artifact path и реальным PySpark-кодом.
-        """
-
-        args = tool_call.get("args") if isinstance(tool_call, dict) else {}
-        query = str((args or {}).get("query") or "").strip()
-        return build_load_data_approval_description(
-            query=query,
-            query_parser_model=query_parser_model,
-            output_dir=output_dir,
-            workspace_root=workspace_root,
-        )
-
-    return {
-        "load_data": {
-            "allowed_decisions": ["approve", "reject"],
-            "description": describe_load_data,
-        }
-    }
 
 
 def _build_native_runtime_middleware(
-    settings: DeepAgentSettings,
+    settings: AgentSettings,
     tool_output_file_middleware: ToolOutputFileMiddleware,
     *,
     filesystem_backend: Any | None = None,
@@ -533,9 +215,6 @@ def _build_native_runtime_middleware(
         Список middleware для передачи в ``create_deep_agent``.
     """
 
-    postgres_logging_middleware = build_postgres_logging_middleware(
-        agent_name=agent_name
-    )
     middleware: list[Any] = [
         PromptToolDescriptionsMiddleware(TOOL_DESCRIPTION_OVERRIDES),
         ThinkToolMiddleware(),
@@ -569,10 +248,8 @@ def _build_native_runtime_middleware(
                 workspace_root=workspace_root.resolve(),
                 backend=filesystem_backend,
             ),
-        )
+    )
     middleware.append(ToolContextNoticeMiddleware())
-    if postgres_logging_middleware is not None:
-        middleware.insert(3, postgres_logging_middleware)
     if limit_model_calls:
         middleware.append(
             ModelCallLimitMiddleware(
@@ -584,7 +261,7 @@ def _build_native_runtime_middleware(
 
 
 def build_skills_backend(
-    settings: DeepAgentSettings | None = None,
+    settings: AgentSettings | None = None,
     tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
@@ -592,7 +269,7 @@ def build_skills_backend(
     """Собирает backend coding-agent с единым файловым корнем workspace.
 
     Args:
-        settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
+        settings: Настройки агента; если ``None`` — используются Python-defaults.
         tool_outputs_dir: Папка tool outputs текущего запуска; может находиться
             внутри workspace или быть внешним абсолютным путём.
         workspace_root: Корень доступного агенту workspace.
@@ -603,7 +280,7 @@ def build_skills_backend(
         ``CompositeBackend`` с terminal и полным файловым доступом внутри workspace.
     """
 
-    settings = settings or load_deep_agent_settings()
+    settings = settings or load_agent_settings(workspace_root)
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
@@ -633,7 +310,7 @@ def build_skills_backend(
 
 
 def build_supervisor_backend(
-    settings: DeepAgentSettings | None = None,
+    settings: AgentSettings | None = None,
     tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
@@ -651,7 +328,7 @@ def build_supervisor_backend(
         ``CompositeBackend`` без shell, но с чтением и записью всех папок workspace.
     """
 
-    settings = settings or load_deep_agent_settings()
+    settings = settings or load_agent_settings(workspace_root)
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
@@ -770,7 +447,7 @@ def _rebase_tool_outputs_path(
 
     Returns:
         Путь внутри ``target_workspace_root`` для workspace-relative настроек или
-        исходный абсолютный путь для внешних каталогов вроде ``/runs/...``.
+        исходный абсолютный путь для внешних каталогов вроде ``/artifacts/...``.
     """
 
     source_root = source_workspace_root.resolve()
@@ -780,28 +457,6 @@ def _rebase_tool_outputs_path(
     except ValueError:
         return resolved_path
     return (target_workspace_root / relative_path).resolve()
-
-
-def _require_workspace_path(path: Path, workspace_root: Path) -> Path:
-    """Проверяет, что путь находится внутри workspace, и возвращает его абсолютный вид.
-
-    Args:
-        path: Проверяемый путь.
-        workspace_root: Разрешённый корень файловой системы агента.
-
-    Returns:
-        Абсолютный путь внутри workspace.
-
-    Raises:
-        ValueError: Путь выходит за пределы workspace.
-    """
-
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(workspace_root.resolve())
-    except ValueError:
-        raise ValueError(f"Path must be inside workspace_root: {resolved}") from None
-    return resolved
 
 
 def _build_terminal_environment() -> dict[str, str]:
@@ -868,40 +523,28 @@ def _build_runtime_context_prompt(
     agent_root_line = ""
     if agent_root is not None:
         agent_root_line = (
-            "\nAgent implementation directory: "
-            f"{workspace_tool_path(agent_root, workspace_root, directory=True)} maps to real path {agent_root.resolve()}."
+            "\nДиректория реализации агента: "
+            f"{workspace_tool_path(agent_root, workspace_root, directory=True)} соответствует реальному пути {agent_root.resolve()}."
         )
     skills_root_line = ""
     if skills_root is not None:
         skills_root_line = (
-            "\nSkills directory: "
-            f"{workspace_tool_path(skills_root, workspace_root, directory=True)} maps to real path {skills_root.resolve()}."
+            "\nДиректория skills: "
+            f"{workspace_tool_path(skills_root, workspace_root, directory=True)} соответствует реальному пути {skills_root.resolve()}."
         )
     memory_path_line = ""
     if agents_memory_path:
-        memory_path_line = f"\nProject memory file: {agents_memory_path}."
-    return f"""
-<runtime_context>
-## Runtime Context
-
-Current date: {today}.
-Workspace root: {workspace_tool_root(workspace_root)} maps to real path {workspace_root.resolve()}.
-Data artifacts directory: {workspace_outputs_path} maps to real path {tool_outputs_dir.resolve()}.
-{agent_root_line}{skills_root_line}{memory_path_line}
-
-For relative dates in user requests, calculate the period from Current date. For example, "last 2 days" means the
-two calendar days ending on Current date unless the user explicitly defines another business convention. Never take
-relative dates from examples, validation cases, demo data, or visible table partitions.
-
-Use `/artifacts` only for `load_data` offload files, data exports, and intermediate transformation outputs. Do not
-move ordinary user files, source code, documentation, reports, notebooks, or requested repository files into
-`/artifacts` unless the user explicitly names that path. For regular file creation, use the user's requested path or
-an appropriate workspace path under `/`. When reporting saved data artifacts, include their workspace path.
-
-Use the Agent implementation directory and Skills directory from this runtime context. Do not assume that agent code or
-skills live at `/deep_agent/` when the runtime context shows another path.
-</runtime_context>
-""".strip()
+        memory_path_line = f"\nФайл project memory: {agents_memory_path}."
+    return build_runtime_context_prompt(
+        current_date=today,
+        workspace_tool_root_path=workspace_tool_root(workspace_root),
+        workspace_real_path=str(workspace_root.resolve()),
+        data_artifacts_tool_path=workspace_outputs_path,
+        data_artifacts_real_path=str(tool_outputs_dir.resolve()),
+        agent_root_line=agent_root_line,
+        skills_root_line=skills_root_line,
+        memory_path_line=memory_path_line,
+    )
 
 
 def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:
@@ -940,24 +583,6 @@ def create_session_tool_outputs_dir(base_dir: Path) -> Path:
     return base_dir.resolve()
 
 
-def register_session_tool_outputs_cleanup(agent: Any, session_dir: Path) -> None:
-    """Регистрирует удаление pickle-файлов текущего запуска при уничтожении агента.
-
-    Args:
-        agent: Собранный граф агента, жизненный цикл которого ограничивает session.
-        session_dir: Папка tool outputs текущего запуска.
-
-    Returns:
-        ``None``. Очистка выполняется через ``weakref.finalize`` при сборке мусора или
-        завершении процесса Python.
-    """
-
-    try:
-        weakref.finalize(agent, cleanup_session_tool_outputs_dir, session_dir)
-    except TypeError:
-        atexit.register(cleanup_session_tool_outputs_dir, session_dir)
-
-
 def cleanup_session_tool_outputs_dir(session_dir: Path) -> None:
     """Сохраняет единый каталог артефактов и ничего не удаляет.
 
@@ -972,12 +597,12 @@ def cleanup_session_tool_outputs_dir(session_dir: Path) -> None:
 
 
 __all__ = [
-    "build_analytics_deep_agent",
+    "build_agent",
     "build_conversation_checkpointer",
-    "build_data_tools",
     "build_skills_backend",
     "build_supervisor_backend",
     "cleanup_session_tool_outputs_dir",
     "create_session_tool_outputs_dir",
-    "register_session_tool_outputs_cleanup",
 ]
+
+

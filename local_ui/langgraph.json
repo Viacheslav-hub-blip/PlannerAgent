@@ -1,6 +1,6 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "analytics-agent": "./deep_agent/entrypoints/local_ui.py:agent"
+    "analytics-agent": "./adapters/langgraph_agent_server.py:agent"
   }
 }

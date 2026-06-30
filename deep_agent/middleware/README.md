@@ -1,14 +1,15 @@
 # Middleware
 
-Project-specific middleware:
+Папка содержит project-specific middleware:
 
-- `ToolOutputFileMiddleware` пишет полные табличные результаты в pickle и оставляет в
-  контексте компактный preview.
-- `ToolContextNoticeMiddleware` добавляет к успешным tool results понятное текстовое
-  уведомление, что контекст получен и передан агенту.
-- `PostgresLoggingMiddleware` подключается из `deep_agent/logging` и пишет статистику
-  user request, tool events и final answer в PostgreSQL, если logging включён.
-- `model_errors.py` безопасно форматирует финальные ошибки провайдера.
+- `filesystem_path_middleware.py` — проверка workspace-путей в tool calls.
+- `gigachat_runtime_middleware.py` — устойчивость tool loop для GigaChat KitAI.
+- `model_error_middleware.py` — retry predicate и безопасное сообщение об ошибке модели.
+- `skills_context_middleware.py` — выбор и предзагрузка релевантных skills.
+- `todo_reset_middleware.py` — сброс todo state между пользовательскими запросами.
+- `tool_context_middleware.py` — короткое уведомление о переданном tool context.
+- `tool_description_middleware.py` — prompt-visible описания tools.
+- `tool_output_file_middleware.py` — сохранение крупных tool results в artifacts.
 
-Retries, tool/model limits, filesystem, memory, planning и subagents
-предоставляются встроенными middleware LangChain и Deep Agents.
+Retries, лимиты tool/model calls, memory и subagents подключаются через штатные
+middleware LangChain и Deep Agents.
