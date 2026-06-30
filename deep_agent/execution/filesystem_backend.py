@@ -4,6 +4,7 @@
 - configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
 - WorkspacePathPrefixMixin: единое отображение полного workspace-префикса в tools.
 - WorkspacePathPrefixMixin.write: запись текстового файла с разрешенной перезаписью.
+- WorkspacePathPrefixMixin._write_notebook: создание ``.ipynb`` из текста ``write_file``.
 - WorkspacePathPrefixMixin.edit: редактирование файла с сохранением исходного snapshot.
 - Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
@@ -18,6 +19,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -32,7 +34,10 @@ from deep_agent.agent_settings import (
     strip_workspace_tool_prefix,
     workspace_tool_root,
 )
-from deep_agent.tools.jupyter_notebook_tool import convert_jupyter_notebook_file
+from deep_agent.tools.jupyter_notebook_tool import (
+    build_notebook_from_python_text,
+    convert_jupyter_notebook_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +135,8 @@ class WorkspacePathPrefixMixin:
         """Записывает текстовый файл, создавая новый или перезаписывая существующий.
 
         Args:
-            file_path: Виртуальный путь файла внутри workspace. Прямая запись
-                ``.ipynb`` запрещена: notebook нужно создавать через convert tool.
+            file_path: Виртуальный путь файла внутри workspace. Для ``.ipynb``
+                текст преобразуется в notebook через логику ``convert_jupyter_notebook``.
             content: Полное текстовое содержимое, которое нужно сохранить.
 
         Returns:
@@ -144,13 +149,7 @@ class WorkspacePathPrefixMixin:
             return WriteResult(error=f"Error writing file '{file_path}': {error}")
 
         if resolved_path.suffix.lower() == ".ipynb":
-            return WriteResult(
-                error=(
-                    "Предупреждение: write_file не записывает `.ipynb` напрямую. "
-                    "Используйте специализированного агента или инструмент "
-                    "convert_jupyter_notebook."
-                )
-            )
+            return self._write_notebook(file_path, resolved_path, content)
 
         try:
             _save_review_snapshot_if_needed(resolved_path, self.cwd)
@@ -164,6 +163,39 @@ class WorkspacePathPrefixMixin:
             return WriteResult(path=file_path)
         except (OSError, UnicodeEncodeError) as error:
             return WriteResult(error=f"Error writing file '{file_path}': {error}")
+
+    def _write_notebook(
+        self,
+        file_path: str,
+        resolved_path: Path,
+        content: str,
+    ) -> WriteResult:
+        """Создает ``.ipynb`` из текста, переданного в ``write_file``.
+
+        Args:
+            file_path: Исходный виртуальный путь из вызова ``write_file``.
+            resolved_path: Разрешенный локальный путь notebook внутри workspace.
+            content: Текст Python/percent-script для преобразования в notebook.
+
+        Returns:
+            ``WriteResult`` с путем при успешной записи или текстом ошибки при сбое.
+        """
+
+        try:
+            notebook = build_notebook_from_python_text(
+                content,
+                split_comment_markdown=True,
+            )
+            _save_review_snapshot_if_needed(resolved_path, self.cwd)
+            resolved_path.parent.mkdir(parents=True, exist_ok=True)
+            resolved_path.write_text(
+                json.dumps(notebook, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+                newline="",
+            )
+            return WriteResult(path=file_path)
+        except (OSError, UnicodeEncodeError, ValueError) as error:
+            return WriteResult(error=f"Error writing notebook '{file_path}': {error}")
 
     def edit(
         self,

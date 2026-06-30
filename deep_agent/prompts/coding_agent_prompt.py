@@ -93,7 +93,10 @@ execute(command="python -m ruff check file_1.py")
 ```
 
 Notebook workflow:
+Для создания нового `.ipynb` можно вызвать `write_file` с путем `.ipynb`; content должен быть Python/percent-script, где `# %% [markdown]` и верхнеуровневые `#`-блоки станут markdown-ячейками.
+`output_path` при конвертации должен сохранять имя файла без расширения; менять можно только директорию и расширение.
 ```text
+write_file(file_path="/file_1.ipynb", content="<complete percent-script>")
 convert_jupyter_notebook(
   mode="ipynb_to_py",
   source_path="/file_1.ipynb",

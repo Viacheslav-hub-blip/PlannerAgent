@@ -7,9 +7,12 @@
 - ConvertJupyterNotebookTool: LangChain tool конвертации ``.py`` percent-script и ``.ipynb``.
 - build_convert_jupyter_notebook_tool: фабрика tool ``convert_jupyter_notebook``.
 - convert_jupyter_notebook_file: конвертация файла notebook или percent-script.
+- build_notebook_from_python_text: сборка notebook из текстового Python/percent-script.
 - _py_to_ipynb: преобразование ``.py`` percent-script в структуру notebook.
 - _ipynb_to_py: преобразование структуры notebook в ``.py`` percent-script.
 - _parse_percent_script: разбор ``# %%`` ячеек в Python-файле.
+- _parse_write_file_notebook_script: разбор текста write_file для создания notebook.
+- _split_comment_markdown_blocks: перенос ``#``-блоков из code-ячеек в markdown.
 - _normalize_notebook_source: нормализация содержимого ячейки notebook.
 - _format_code_cell_lines: форматирование Python-кода одной code-ячейки.
 - _format_python_text_with_external_formatter: форматирование Python-кода внешним formatter.
@@ -30,6 +33,7 @@
 - _percent_lines_from_markdown_cell: преобразование markdown-ячейки в comment-блок.
 - _resolve_workspace_file_path: разрешение workspace-пути в локальный файл.
 - _assert_inside_workspace: проверка принадлежности пути workspace.
+- _assert_converted_filename_preserved: проверка сохранения имени файла при конвертации.
 - _json_payload: сериализация результата tool в JSON.
 """
 
@@ -40,7 +44,7 @@ import shutil
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
@@ -63,56 +67,15 @@ convert_jupyter_notebook
 форматирует markdown/text-ячейки, сохраняет markdown как реальные notebook markdown-ячейки и очищает
 outputs/execution_count при пересборке из `.ipynb`.
 
-Используй когда:
-- нужно создать `.ipynb` файл: сначала создай `.py` через `write_file` с ячейками `# %%` и `# %% [markdown]`, затем вызови `convert_jupyter_notebook` с `mode="py_to_ipynb"`;
-- нужно изменить существующий notebook: сначала вызови `mode="ipynb_to_py"`, отредактируй полученный `.py`, затем вызови `mode="py_to_ipynb"`;
-- нужно получить читаемый Python-файл из `.ipynb` без выполнения notebook.
-
-Параметры:
-- `mode`: `py_to_ipynb` или `ipynb_to_py`;
-- `source_path`: исходный файл внутри workspace;
-- `output_path`: целевой файл внутри workspace;
-- `kernel_name`: имя kernel для `.ipynb`, обычно `python3`;
-- `overwrite`: можно ли перезаписать существующий целевой файл.
-
 Правила:
 - Для `py_to_ipynb` исходный файл должен иметь расширение `.py`, целевой файл `.ipynb`.
 - Для `ipynb_to_py` исходный файл должен иметь расширение `.ipynb`, целевой файл `.py`.
+- Имя файла без расширения менять нельзя: `output_path` может отличаться директорией и расширением, но не stem.
 - Инструмент только конвертирует файлы и не выполняет код notebook.
 - При `ipynb_to_py` outputs и execution_count игнорируются.
 - Markdown/text-ячейки создаются только из percent-ячеек, помеченных ровно как `# %% [markdown]`.
-- Не помещай текстовые объяснения в code-ячейку как `# Markdown: ...` или отдельные triple-quoted strings.
 - Не добавляй отдельный шаг форматирования: этот tool всегда форматирует содержимое notebook перед записью файла.
-- Python code-ячейки форматируются через `ruff format` или `black`, если formatter доступен. Если formatter не
-  установлен или не смог разобрать ячейку, безопасный встроенный нормализатор сохраняет комментарии и добавляет
-  пустые строки между top-level `def`/`class` блоками.
-- Markdown-ячейки нормализуются в читаемые абзацы с сохранением заголовков, списков, таблиц и fenced code blocks.
-- Для аналитических notebook выноси объяснения, выводы и структуру анализа в markdown-ячейки, а комментарии в коде
-  оставляй только для неочевидной логики, важных ограничений и нестандартных преобразований.
-- Разделяй этапы анализа на отдельные `# %%` ячейки: imports/config, загрузка данных, подготовка, расчёты,
-  визуализация, выводы.
 
-Хороший percent-script:
-```python
-# %% [markdown]
-# # Загрузка данных
-# Этот блок описывает входные файлы и параметры.
-
-# %%
-import pandas as pd
-df = pd.read_csv("/input.csv")
-```
-
-Плохой percent-script:
-```python
-# %%
-# Markdown: Загрузка данных
-'''Этот блок описывает входные файлы и параметры.'''
-import pandas as pd
-```
-
-Результат:
-Возвращает JSON со статусом, режимом, workspace-путями созданных файлов и числом ячеек.
 """.strip()
 
 
@@ -134,7 +97,11 @@ class ConvertJupyterNotebookInput(BaseModel):
         description="Исходный файл внутри workspace. Можно передать абсолютный путь ОС или workspace-путь tools.",
     )
     output_path: str = Field(
-        description="Целевой файл внутри workspace. Для `py_to_ipynb` это `.ipynb`, для `ipynb_to_py` это `.py`.",
+        description=(
+            "Целевой файл внутри workspace. Для `py_to_ipynb` это `.ipynb`, "
+            "для `ipynb_to_py` это `.py`. Имя файла без расширения должно "
+            "совпадать с исходным файлом."
+        ),
     )
     kernel_name: str = Field(
         default="python3",
@@ -297,6 +264,7 @@ def convert_jupyter_notebook_file(
     if mode == "py_to_ipynb":
         if source_file.suffix.lower() != ".py" or output_file.suffix.lower() != ".ipynb":
             raise ValueError("Для `py_to_ipynb` нужен исходный `.py` и целевой `.ipynb`.")
+        _assert_converted_filename_preserved(source_file, output_file)
         source_text = source_file.read_text(encoding="utf-8")
         notebook = _py_to_ipynb(source_text, kernel_name=kernel_name)
         cells_count = len(notebook["cells"])
@@ -308,6 +276,7 @@ def convert_jupyter_notebook_file(
     elif mode == "ipynb_to_py":
         if source_file.suffix.lower() != ".ipynb" or output_file.suffix.lower() != ".py":
             raise ValueError("Для `ipynb_to_py` нужен исходный `.ipynb` и целевой `.py`.")
+        _assert_converted_filename_preserved(source_file, output_file)
         notebook = json.loads(source_file.read_text(encoding="utf-8"))
         cells_count = len(notebook.get("cells", []))
         script_text = _ipynb_to_py(notebook)
@@ -328,19 +297,49 @@ def convert_jupyter_notebook_file(
     )
 
 
-def _py_to_ipynb(source_text: str, *, kernel_name: str) -> dict[str, Any]:
+def build_notebook_from_python_text(
+    source_text: str,
+    *,
+    kernel_name: str = "python3",
+    split_comment_markdown: bool = False,
+) -> dict[str, Any]:
+    """Собирает notebook из текста Python/percent-script.
+    Args:
+        source_text: Исходный текст для ячеек notebook.
+        kernel_name: Имя kernel в metadata.
+        split_comment_markdown: Нужно ли превращать ``#``-блоки в markdown.
+    Returns:
+        Словарь notebook v4.
+    """
+
+    parser = _parse_write_file_notebook_script if split_comment_markdown else _parse_percent_script
+    return _py_to_ipynb(
+        source_text,
+        kernel_name=kernel_name,
+        parse_cells=parser,
+    )
+
+
+def _py_to_ipynb(
+    source_text: str,
+    *,
+    kernel_name: str,
+    parse_cells: Callable[[str], list[tuple[Literal["code", "markdown"], list[str]]]] | None = None,
+) -> dict[str, Any]:
     """Преобразует ``.py`` percent-script в JSON-структуру Jupyter Notebook.
 
     Args:
         source_text: Текст Python-файла с маркерами ``# %%``.
         kernel_name: Имя kernel для metadata notebook.
+        parse_cells: Функция разбиения исходного текста на пары ``(тип, строки)``.
 
     Returns:
         Словарь notebook формата nbformat v4.
     """
 
     cells = []
-    for cell_type, source_lines in _parse_percent_script(source_text):
+    resolved_parse_cells = parse_cells or _parse_percent_script
+    for cell_type, source_lines in resolved_parse_cells(source_text):
         if cell_type == "markdown":
             cells.append(
                 {
@@ -439,6 +438,72 @@ def _parse_percent_script(source_text: str) -> list[tuple[Literal["code", "markd
         cells.append((current_type, current_lines))
     if not cells:
         cells.append(("code", []))
+    return cells
+
+
+def _parse_write_file_notebook_script(
+    source_text: str,
+) -> list[tuple[Literal["code", "markdown"], list[str]]]:
+    """Разбирает текст ``write_file`` для прямой сборки ``.ipynb``.
+
+    Args:
+        source_text: Текст Python/percent-script из ``write_file``.
+
+    Returns:
+        Пары ``(тип_ячейки, строки)`` с markdown из ``# %%`` и ``#``-блоков.
+    """
+
+    cells: list[tuple[Literal["code", "markdown"], list[str]]] = []
+    for cell_type, source_lines in _parse_percent_script(source_text):
+        if cell_type == "markdown":
+            cells.append((cell_type, source_lines))
+            continue
+        cells.extend(_split_comment_markdown_blocks(source_lines))
+    if not cells:
+        cells.append(("code", []))
+    return cells
+
+
+def _split_comment_markdown_blocks(
+    source_lines: list[str],
+) -> list[tuple[Literal["code", "markdown"], list[str]]]:
+    """Выносит верхнеуровневые ``#``-блоки из code-ячейки в markdown.
+
+    Args:
+        source_lines: Строки code-ячейки после разбора ``# %%``.
+
+    Returns:
+        Code- и markdown-ячейки в исходном порядке.
+    """
+
+    cells: list[tuple[Literal["code", "markdown"], list[str]]] = []
+    current_type: Literal["code", "markdown"] = "code"
+    current_lines: list[str] = []
+
+    def flush_current_cell() -> None:
+        """Добавляет непустую накопленную ячейку в ``cells``.
+
+        Args:
+            Отсутствуют.
+
+        Returns:
+            ``None``.
+        """
+
+        if any(line.strip() for line in current_lines):
+            cells.append((current_type, current_lines.copy()))
+        current_lines.clear()
+
+    for line in source_lines:
+        next_type: Literal["code", "markdown"] = (
+            "markdown" if line.startswith("#") else "code"
+        )
+        if next_type != current_type:
+            flush_current_cell()
+            current_type = next_type
+        current_lines.append(line)
+
+    flush_current_cell()
     return cells
 
 
@@ -891,6 +956,27 @@ def _assert_inside_workspace(path: Path, workspace_root: Path) -> None:
         raise ValueError(f"Путь должен быть внутри workspace: {path}") from None
 
 
+def _assert_converted_filename_preserved(source_file: Path, output_file: Path) -> None:
+    """Проверяет, что конвертация не переименовывает файл.
+
+    Args:
+        source_file: Разрешенный путь исходного файла внутри workspace.
+        output_file: Разрешенный путь целевого файла внутри workspace.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        ValueError: Имя целевого файла без расширения отличается от исходного.
+    """
+
+    if source_file.stem != output_file.stem:
+        raise ValueError(
+            "При конвертации Jupyter Notebook нельзя менять имя файла: "
+            f"ожидался stem `{source_file.stem}`, получен `{output_file.stem}`."
+        )
+
+
 def _json_payload(payload: dict[str, Any]) -> str:
     """Сериализует payload tool в JSON-строку.
 
@@ -909,5 +995,6 @@ __all__ = [
     "ConvertJupyterNotebookInput",
     "ConvertJupyterNotebookTool",
     "build_convert_jupyter_notebook_tool",
+    "build_notebook_from_python_text",
     "convert_jupyter_notebook_file",
 ]
