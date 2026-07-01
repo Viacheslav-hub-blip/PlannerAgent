@@ -3,6 +3,7 @@
 Содержит функции:
 - _write_result_to_jsonl: запись Spark DataFrame в один JSONL artifact;
 - _write_result_rows_to_jsonl: потоковая запись строк Spark DataFrame в JSONL artifact;
+- _row_to_json_record: преобразование Spark Row в JSON-совместимую запись;
 - _run_spark_action_with_progress: выполнение Spark action с progress-событиями;
 - _clear_spark_job_group: очистка Spark job group с учётом разных версий PySpark;
 - _cancel_spark_job_group: отмена Spark jobs по job group при ошибке;
@@ -20,6 +21,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -83,9 +85,26 @@ def _write_result_rows_to_jsonl(*, result: Any, final_output_path: Path) -> None
     """
 
     with final_output_path.open("w", encoding="utf-8") as file:
-        for row_json in result.toJSON().toLocalIterator():
-            file.write(row_json)
+        for row in result.toLocalIterator():
+            file.write(json.dumps(_row_to_json_record(row), ensure_ascii=False, default=str))
             file.write("\n")
+
+
+def _row_to_json_record(row: Any) -> dict[str, Any]:
+    """Преобразует Spark Row в запись для JSONL без Spark ``toJSON`` encoder.
+
+    Args:
+        row: Строка Spark DataFrame, полученная через ``toLocalIterator``.
+
+    Returns:
+        Словарь значений строки, пригодный для последующей сериализации через ``json.dumps``.
+    """
+
+    if hasattr(row, "asDict"):
+        return {str(key): value for key, value in row.asDict(recursive=True).items()}
+    if isinstance(row, dict):
+        return {str(key): value for key, value in row.items()}
+    return {"value": row}
 
 
 def _run_spark_action_with_progress(
