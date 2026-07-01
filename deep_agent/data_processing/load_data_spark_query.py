@@ -9,6 +9,7 @@
 - _apply_aggregations: применение агрегаций;
 - _build_aggregation_expression: построение Spark-агрегата;
 - _apply_order_by: сортировка результата;
+- _serialize_complex_columns_for_output: сериализация сложных Spark-типов для вывода;
 - _build_pyspark_query_code: построение воспроизводимого PySpark-кода запроса;
 - _format_pyspark_derived_expression: форматирование PySpark-выражения вычисляемой колонки;
 - _format_pyspark_filter_expression: форматирование PySpark-предиката;
@@ -279,6 +280,30 @@ def _apply_order_by(*, table: Any, order_by: list[Any]) -> Any:
         expression = functions.col(column).asc() if direction == "asc" else functions.col(column).desc()
         expressions.append(expression)
     return table.orderBy(*expressions)
+
+
+def _serialize_complex_columns_for_output(table: Any) -> Any:
+    """Преобразует сложные Spark-колонки в JSON-строки перед выгрузкой результата.
+
+    Args:
+        table: Spark DataFrame после фильтров, выбора колонок, сортировки и лимита.
+
+    Returns:
+        Spark DataFrame с теми же именами колонок, где ``array``, ``map`` и ``struct``
+        сериализованы через ``to_json`` для стабильной записи в JSONL и pandas preview.
+    """
+
+    from pyspark.sql import functions as functions
+    from pyspark.sql.types import ArrayType, MapType, StructType
+
+    expressions = []
+    for field in table.schema.fields:
+        column = functions.col(field.name)
+        if isinstance(field.dataType, (ArrayType, MapType, StructType)):
+            expressions.append(functions.to_json(column).alias(field.name))
+        else:
+            expressions.append(column)
+    return table.select(*expressions)
 
 
 def _build_pyspark_query_code(

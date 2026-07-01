@@ -51,6 +51,7 @@ from deep_agent.data_processing.load_data_spark_query import (
     _apply_order_by,
     _build_pyspark_query_code,
     _resolve_table_name,
+    _serialize_complex_columns_for_output,
 )
 
 READ_TABLE_DESCRIPTION = (
@@ -441,9 +442,10 @@ def _read_table(
             stage="count",
             action=lambda: int(result.count()),
         )
+        output_result = _serialize_complex_columns_for_output(result)
         _write_result_to_jsonl(
             spark=spark,
-            result=result,
+            result=output_result,
             temp_output_dir=temp_output_dir,
             final_output_path=export_path,
             progress_group_id=f"load_data_write_{export_path.stem}",
@@ -454,7 +456,7 @@ def _read_table(
             group_id=f"load_data_preview_{export_path.stem}",
             description=f"load_data preview for {table_alias}",
             stage="preview",
-            action=lambda: result.limit(max(0, int(preview_rows))).toPandas(),
+            action=lambda: output_result.limit(max(0, int(preview_rows))).toPandas(),
         )
         return {
             "artifact_type": "spark_load_data_file",
@@ -465,7 +467,7 @@ def _read_table(
             "absolute_file": str(export_path.resolve()),
             "format": "jsonl",
             "rows": int(row_count),
-            "columns": [str(column) for column in result.columns],
+            "columns": [str(column) for column in output_result.columns],
             "preview_rows": _dataframe_to_records(preview_frame),
             "table_name": table_alias,
             "resolved_table_name": resolved_table_name,
@@ -600,4 +602,3 @@ __all__ = [
     "build_spark_data_tools",
     "stop_active_spark_sessions",
 ]
-
