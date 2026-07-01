@@ -241,7 +241,6 @@ class LoopBreakerMiddleware(AgentMiddleware):
             "command not found",
             "[SHELL-SAFETY]",
             "ValueError:",
-            "FilesystemVerificationError",
         )
         return any(marker in text for marker in markers)
 

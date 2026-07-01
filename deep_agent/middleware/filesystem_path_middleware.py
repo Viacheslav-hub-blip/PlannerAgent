@@ -1,12 +1,10 @@
 """Middleware единого контракта путей для filesystem tools.
 
 Содержит:
-- FilesystemPathContractMiddleware: нормализация путей и проверка записи файлов.
+- FilesystemPathContractMiddleware: нормализация путей filesystem tools.
 - normalize_filesystem_tool_path: приведение tool-пути к POSIX-виду от корня workspace.
 - _normalize_filesystem_tool_call: нормализация аргументов filesystem tool call.
-- _verify_file_write: проверка, что файл доступен после ``write_file`` или ``edit_file``.
 - _file_path_arg_name: имя аргумента пути для filesystem tool.
-- _tool_message_with_content: копирование ``ToolMessage`` с новым содержимым.
 """
 
 from __future__ import annotations
@@ -23,23 +21,18 @@ from langgraph.types import Command
 
 from deep_agent.agent_settings import strip_workspace_tool_prefix, workspace_tool_path
 
-WRITE_TOOLS = {"write_file", "edit_file"}
-MAX_EXACT_WRITE_VERIFY_CHARS = 100_000
-MAX_EXACT_WRITE_VERIFY_LINES = 10_000
-
-
 @dataclass(frozen=True)
 class FilesystemPathContractMiddleware(AgentMiddleware):
-    """Нормализует пути filesystem tools и проверяет успешные записи.
+    """Нормализует пути filesystem tools.
 
     Args:
         workspace_root: Фактический корень workspace текущего запуска.
-        backend: Backend DeepAgents, через который выполняется проверочное чтение.
-        enabled: Включена ли нормализация и проверка.
+        backend: Backend DeepAgents, сохраненный для совместимости конфигурации.
+        enabled: Включена ли нормализация.
 
     Returns:
         Middleware, который передает tool handler только canonical POSIX-пути вида
-        ``/path/from/workspace`` и превращает неподтвержденную запись в error-result.
+        ``/path/from/workspace``.
     """
 
     workspace_root: Path
@@ -111,31 +104,17 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         result: ToolMessage,
     ) -> ToolMessage:
-        """Проверяет успешный результат ``write_file`` или ``edit_file``.
+        """Возвращает результат ``write_file`` или ``edit_file`` без проверки чтением.
 
         Args:
             request: Нормализованный запрос tool call.
             result: Результат, полученный от filesystem tool.
 
         Returns:
-            Исходный результат с добавленным подтверждением или error-result, если
-            файл нельзя прочитать после записи.
+            Исходный результат tool без дополнительной проверки чтением.
         """
 
-        tool_name = _tool_name_from_request(request)
-        if tool_name not in WRITE_TOOLS or result.status == "error":
-            return result
-        verification = _verify_file_write(request, self.backend)
-        if verification["status"] == "error":
-            return _tool_message_with_content(
-                result,
-                str(verification["message"]),
-                status="error",
-            )
-        return _tool_message_with_content(
-            result,
-            f"{result.content.rstrip()}\n\n{verification['message']}",
-        )
+        return result
 
 
 def normalize_filesystem_tool_path(value: str, workspace_root: Path) -> str:
@@ -221,72 +200,6 @@ def _normalize_filesystem_tool_call(
     return request.override(tool_call=tool_call)
 
 
-def _verify_file_write(request: ToolCallRequest, backend: Any) -> dict[str, str]:
-    """Проверяет доступность файла после успешного write/edit tool call.
-
-    Args:
-        request: Нормализованный запрос ``write_file`` или ``edit_file``.
-        backend: Backend DeepAgents с методом ``read``.
-
-    Returns:
-        Словарь со статусом ``success`` или ``error`` и сообщением для модели.
-    """
-
-    tool_name = _tool_name_from_request(request)
-    args = dict((request.tool_call or {}).get("args") or {})
-    file_path = str(args.get("file_path") or "")
-    read = getattr(backend, "read", None)
-    if not callable(read):
-        return {
-            "status": "error",
-            "message": (
-                "FilesystemVerificationError: backend не поддерживает "
-                f"проверочное чтение файла `{file_path}`."
-            ),
-        }
-
-    read_result = read(file_path, offset=0, limit=MAX_EXACT_WRITE_VERIFY_LINES)
-    if getattr(read_result, "error", None):
-        return {
-            "status": "error",
-            "message": (
-                "FilesystemVerificationError: файл не подтвержден после записи "
-                f"`{file_path}`: {read_result.error}"
-            ),
-        }
-    file_data = getattr(read_result, "file_data", None)
-    if not file_data or "content" not in file_data:
-        return {
-            "status": "error",
-            "message": (
-                "FilesystemVerificationError: файл не подтвержден после записи "
-                f"`{file_path}`: содержимое не получено."
-            ),
-        }
-
-    if tool_name == "write_file":
-        expected_content = str(args.get("content") or "")
-        actual_content = str(file_data.get("content") or "")
-        expected_line_count = len(expected_content.splitlines())
-        can_compare_exactly = (
-            len(expected_content) <= MAX_EXACT_WRITE_VERIFY_CHARS
-            and expected_line_count <= MAX_EXACT_WRITE_VERIFY_LINES
-        )
-        if can_compare_exactly and actual_content != expected_content:
-            return {
-                "status": "error",
-                "message": (
-                    "FilesystemVerificationError: файл записан, но проверочное "
-                    f"чтение `{file_path}` вернуло другое содержимое."
-                ),
-            }
-
-    return {
-        "status": "success",
-        "message": f"FilesystemVerification: файл `{file_path}` прочитан после записи; сохранение подтверждено.",
-    }
-
-
 def _file_path_arg_name(tool_name: str) -> str | None:
     """Возвращает имя path-аргумента для filesystem tool.
 
@@ -331,35 +244,6 @@ def _tool_call_id_from_request(request: ToolCallRequest) -> str:
 
     tool_call = request.tool_call or {}
     return str(tool_call.get("id") or "")
-
-
-def _tool_message_with_content(
-    message: ToolMessage,
-    content: str,
-    *,
-    status: str | None = None,
-) -> ToolMessage:
-    """Копирует ``ToolMessage`` с новым содержимым и статусом.
-
-    Args:
-        message: Исходный результат tool call.
-        content: Новый текст результата.
-        status: Новый статус или ``None`` для сохранения исходного.
-
-    Returns:
-        Новый ``ToolMessage`` с сохранением metadata исходного сообщения.
-    """
-
-    return ToolMessage(
-        content=content,
-        artifact=message.artifact,
-        tool_call_id=message.tool_call_id,
-        name=message.name,
-        status=status or message.status,
-        additional_kwargs=message.additional_kwargs,
-        response_metadata=message.response_metadata,
-        id=message.id,
-    )
 
 
 __all__ = [
