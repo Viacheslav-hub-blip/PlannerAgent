@@ -13,6 +13,7 @@
 - _parse_percent_script: разбор ``# %%`` ячеек в Python-файле.
 - _parse_write_file_notebook_script: разбор текста write_file для создания notebook.
 - _split_comment_markdown_blocks: перенос ``#``-блоков из code-ячеек в markdown.
+- _split_unmarked_code_from_markdown_cell: перенос хвоста markdown-ячейки без ``#`` в code-ячейку.
 - _normalize_notebook_source: нормализация содержимого ячейки notebook.
 - _format_code_cell_lines: форматирование Python-кода одной code-ячейки.
 - _format_python_text_with_external_formatter: форматирование Python-кода внешним formatter.
@@ -423,11 +424,26 @@ def _parse_percent_script(source_text: str) -> list[tuple[Literal["code", "markd
     current_lines: list[str] = []
     has_current_cell = False
 
+    def flush_current_cell() -> None:
+        """Добавляет накопленную percent-ячейку в итоговый список.
+
+        Args:
+            Отсутствуют.
+
+        Returns:
+            ``None``.
+        """
+
+        if current_type == "markdown":
+            cells.extend(_split_unmarked_code_from_markdown_cell(current_lines))
+            return
+        cells.append((current_type, current_lines.copy()))
+
     for line in source_text.splitlines(keepends=True):
         stripped_line = line.strip()
         if stripped_line.startswith("# %%"):
             if has_current_cell or current_lines:
-                cells.append((current_type, current_lines))
+                flush_current_cell()
             current_type = "markdown" if "[markdown]" in stripped_line.lower() else "code"
             current_lines = []
             has_current_cell = True
@@ -435,7 +451,7 @@ def _parse_percent_script(source_text: str) -> list[tuple[Literal["code", "markd
         current_lines.append(line)
 
     if has_current_cell or current_lines:
-        cells.append((current_type, current_lines))
+        flush_current_cell()
     if not cells:
         cells.append(("code", []))
     return cells
@@ -504,6 +520,64 @@ def _split_comment_markdown_blocks(
         current_lines.append(line)
 
     flush_current_cell()
+    return cells
+
+
+def _split_unmarked_code_from_markdown_cell(
+    source_lines: list[str],
+) -> list[tuple[Literal["code", "markdown"], list[str]]]:
+    """Отделяет code-хвост из markdown-ячейки с comment-markdown строками.
+
+    Args:
+        source_lines: Строки markdown-ячейки после маркера ``# %% [markdown]``.
+
+    Returns:
+        Список из markdown-ячейки и, при наличии, следующей code-ячейки.
+    """
+
+    cells: list[tuple[Literal["code", "markdown"], list[str]]] = []
+    markdown_lines: list[str] = []
+    code_lines: list[str] = []
+    pending_blank_lines: list[str] = []
+    seen_comment_markdown = False
+    is_code_tail = False
+
+    for line in source_lines:
+        if is_code_tail:
+            code_lines.append(line)
+            continue
+
+        if not line.strip():
+            pending_blank_lines.append(line)
+            continue
+
+        if line.startswith("#"):
+            markdown_lines.extend(pending_blank_lines)
+            pending_blank_lines.clear()
+            markdown_lines.append(line)
+            seen_comment_markdown = True
+            continue
+
+        if seen_comment_markdown:
+            markdown_lines.extend(pending_blank_lines)
+            pending_blank_lines.clear()
+            code_lines.append(line)
+            is_code_tail = True
+            continue
+
+        markdown_lines.extend(pending_blank_lines)
+        pending_blank_lines.clear()
+        markdown_lines.append(line)
+
+    if not is_code_tail:
+        markdown_lines.extend(pending_blank_lines)
+
+    if any(line.strip() for line in markdown_lines):
+        cells.append(("markdown", markdown_lines))
+    if any(line.strip() for line in code_lines):
+        cells.append(("code", code_lines))
+    if not cells:
+        cells.append(("markdown", source_lines.copy()))
     return cells
 
 
