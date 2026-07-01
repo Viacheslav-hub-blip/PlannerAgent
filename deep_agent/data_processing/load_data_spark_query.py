@@ -374,24 +374,28 @@ def _build_pyspark_query_code(
     if output_path is None:
         lines.append("pdf = result.toPandas()")
     else:
+        temp_output = str(Path(output_path).resolve())
         output_file = str(Path(final_output_path or output_path).resolve())
         lines.extend(
             [
                 "from pathlib import Path",
+                "import shutil",
                 "",
                 "row_count = result.count()",
+                f"temp_output_dir = Path({_pyspark_literal(temp_output)})",
                 f"output_file = Path({_pyspark_literal(output_file)})",
                 "output_file.parent.mkdir(parents=True, exist_ok=True)",
+                "result.coalesce(1).write.mode('overwrite').json(str(temp_output_dir))",
                 "with output_file.open('w', encoding='utf-8') as file:",
-                "    for row_json in result.toJSON().toLocalIterator():",
-                "        file.write(row_json)",
-                "        file.write('\\n')",
+                "    for part_file in sorted(temp_output_dir.glob('part-*.json')):",
+                "        with part_file.open('r', encoding='utf-8') as part:",
+                "            shutil.copyfileobj(part, file)",
             ]
         )
         if final_output_path is not None:
             lines.extend(
                 [
-                    "# Spark отдает JSON-строки драйверу, а Python пишет итоговый JSONL локально.",
+                    "# Spark пишет JSON part-файл штатным writer, Python только собирает artifact.",
                 ]
             )
     return "\n".join(lines)

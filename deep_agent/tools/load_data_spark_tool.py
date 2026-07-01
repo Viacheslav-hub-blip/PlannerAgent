@@ -40,7 +40,7 @@ from deep_agent.data_processing.load_data_query_values import (
 from deep_agent.data_processing.load_data_spark_execution import (
     _build_export_file_path,
     _cancel_all_spark_jobs,
-    _dataframe_to_records,
+    _read_jsonl_preview,
     _resolve_output_dir,
     _run_spark_action_with_progress,
     _workspace_artifact_path,
@@ -470,12 +470,9 @@ def _read_table(
             progress_description=f"load_data write for {table_alias}",
         )
         stage = "preview"
-        preview_frame = _run_spark_action_with_progress(
-            spark=spark,
-            group_id=f"load_data_preview_{export_path.stem}",
-            description=f"load_data preview for {table_alias}",
-            stage="preview",
-            action=lambda: output_result.limit(max(0, int(preview_rows))).toPandas(),
+        preview_records = _read_jsonl_preview(
+            file_path=export_path,
+            max_rows=max(0, int(preview_rows)),
         )
         return {
             "artifact_type": "spark_load_data_file",
@@ -487,7 +484,7 @@ def _read_table(
             "format": "jsonl",
             "rows": int(row_count),
             "columns": [str(column) for column in output_result.columns],
-            "preview_rows": _dataframe_to_records(preview_frame),
+            "preview_rows": preview_records,
             "table_name": table_alias,
             "resolved_table_name": resolved_table_name,
             "source_file": table_alias,

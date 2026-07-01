@@ -2,8 +2,9 @@
 
 Содержит функции:
 - _write_result_to_jsonl: запись Spark DataFrame в один JSONL artifact;
-- _write_result_rows_to_jsonl: потоковая запись строк Spark DataFrame в JSONL artifact;
-- _row_to_json_record: преобразование Spark Row в JSON-совместимую запись;
+- _write_result_rows_to_jsonl: запись Spark DataFrame через стандартный Spark writer;
+- _merge_spark_json_parts: объединение Spark part-файлов в один JSONL artifact;
+- _read_jsonl_preview: чтение preview из готового JSONL artifact;
 - _run_spark_action_with_progress: выполнение Spark action с progress-событиями;
 - _clear_spark_job_group: очистка Spark job group с учётом разных версий PySpark;
 - _cancel_spark_job_group: отмена Spark jobs по job group при ошибке;
@@ -67,44 +68,74 @@ def _write_result_to_jsonl(
         group_id=progress_group_id,
         description=progress_description,
         stage="write_jsonl",
-        action=lambda: _write_result_rows_to_jsonl(result=result, final_output_path=final_output_path),
+        action=lambda: _write_result_rows_to_jsonl(
+            result=result,
+            temp_output_dir=temp_output_dir,
+            final_output_path=final_output_path,
+        ),
     )
     _remove_path_inside_parent(temp_output_dir, final_output_path.parent)
     return final_output_path.resolve()
 
 
-def _write_result_rows_to_jsonl(*, result: Any, final_output_path: Path) -> None:
-    """Потоково записывает Spark DataFrame в локальный JSONL-файл.
+def _write_result_rows_to_jsonl(*, result: Any, temp_output_dir: Path, final_output_path: Path) -> None:
+    """Записывает Spark DataFrame в JSONL-файл через стандартный Spark writer.
 
     Args:
         result: Spark DataFrame результата.
+        temp_output_dir: Временная папка Spark output с ``part-*.json`` файлами.
         final_output_path: Итоговый ``.jsonl`` файл в каталоге artifacts.
 
     Returns:
         ``None``.
     """
 
-    with final_output_path.open("w", encoding="utf-8") as file:
-        for row in result.toLocalIterator():
-            file.write(json.dumps(_row_to_json_record(row), ensure_ascii=False, default=str))
-            file.write("\n")
+    result.coalesce(1).write.mode("overwrite").json(str(temp_output_dir))
+    _merge_spark_json_parts(temp_output_dir=temp_output_dir, final_output_path=final_output_path)
 
 
-def _row_to_json_record(row: Any) -> dict[str, Any]:
-    """Преобразует Spark Row в запись для JSONL без Spark ``toJSON`` encoder.
+def _merge_spark_json_parts(*, temp_output_dir: Path, final_output_path: Path) -> None:
+    """Склеивает Spark ``part-*.json`` файлы в один локальный JSONL artifact.
 
     Args:
-        row: Строка Spark DataFrame, полученная через ``toLocalIterator``.
+        temp_output_dir: Временная папка, которую создал Spark writer.
+        final_output_path: Итоговый файл, доступный агенту как artifact.
 
     Returns:
-        Словарь значений строки, пригодный для последующей сериализации через ``json.dumps``.
+        ``None``.
     """
 
-    if hasattr(row, "asDict"):
-        return {str(key): value for key, value in row.asDict(recursive=True).items()}
-    if isinstance(row, dict):
-        return {str(key): value for key, value in row.items()}
-    return {"value": row}
+    part_files = sorted(temp_output_dir.glob("part-*.json"))
+    with final_output_path.open("w", encoding="utf-8") as file:
+        for part_file in part_files:
+            with part_file.open("r", encoding="utf-8") as part:
+                shutil.copyfileobj(part, file)
+
+
+def _read_jsonl_preview(*, file_path: Path, max_rows: int) -> list[dict[str, Any]]:
+    """Читает первые строки JSONL artifact для preview без Spark action.
+
+    Args:
+        file_path: JSONL-файл, созданный ``load_data``.
+        max_rows: Максимальное число строк preview.
+
+    Returns:
+        Список JSON-записей из начала файла.
+    """
+
+    rows: list[dict[str, Any]] = []
+    if max_rows <= 0 or not file_path.exists():
+        return rows
+    with file_path.open("r", encoding="utf-8") as file:
+        for line in file:
+            if len(rows) >= max_rows:
+                break
+            text = line.strip()
+            if not text:
+                continue
+            value = json.loads(text)
+            rows.append(value if isinstance(value, dict) else {"value": value})
+    return rows
 
 
 def _run_spark_action_with_progress(
