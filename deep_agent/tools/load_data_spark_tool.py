@@ -10,6 +10,7 @@
 - _register_spark_shutdown_handlers: регистрация cleanup при завершении процесса;
 - _spark_shutdown_signals: список сигналов для cleanup Spark session;
 - _read_table: выполнение подготовленного запроса;
+- _format_unexpected_load_data_error: форматирование непредвиденной ошибки выполнения;
 - _request_spark_query_approval: запрос HITL-подтверждения перед Spark action;
 - build_load_data_approval_description: построение preview для HITL-подтверждения.
 """
@@ -19,6 +20,7 @@ from __future__ import annotations
 import atexit
 import signal
 import threading
+import traceback
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -144,16 +146,19 @@ def build_spark_data_tools(
         except ValueError as exc:
             return f"Ошибка load_data: {exc}"
 
-        with _managed_spark_session(spark_session_factory) as spark:
-            result = _read_table(
-                spark=spark,
-                original_query=query,
-                output_dir=resolved_output_dir,
-                workspace_root=resolved_workspace_root,
-                preview_rows=preview_rows,
-                require_approval=require_approval,
-                **parsed,
-            )
+        try:
+            with _managed_spark_session(spark_session_factory) as spark:
+                result = _read_table(
+                    spark=spark,
+                    original_query=query,
+                    output_dir=resolved_output_dir,
+                    workspace_root=resolved_workspace_root,
+                    preview_rows=preview_rows,
+                    require_approval=require_approval,
+                    **parsed,
+                )
+        except Exception as exc:
+            return _format_unexpected_load_data_error(stage="spark_session_or_read", exc=exc)
         if isinstance(result, dict):
             result["original_query"] = query.strip()
             result["query_language"] = "pyspark"
@@ -364,6 +369,7 @@ def _read_table(
         Словарь с metadata сохраненного JSONL artifact или текст ошибки.
     """
 
+    stage = "prepare_paths"
     try:
         resolved_output_dir = _resolve_output_dir(
             output_dir=output_dir or DEFAULT_SPARK_OUTPUT_DIR,
@@ -372,6 +378,7 @@ def _read_table(
         resolved_workspace_root = Path(workspace_root or Path.cwd()).resolve()
         table_alias = table_name.strip()
         resolved_table_name = _resolve_table_name(table_alias)
+        stage = "build_export_path"
         export_path = _build_export_file_path(
             output_dir=resolved_output_dir,
             table_alias=table_alias,
@@ -384,6 +391,7 @@ def _read_table(
             max_rows=max_rows,
         )
         temp_output_dir = export_path.with_suffix(export_path.suffix + ".tmp")
+        stage = "build_query_code"
         query_code = _build_pyspark_query_code(
             resolved_table_name=resolved_table_name,
             select_columns=select_columns,
@@ -396,10 +404,14 @@ def _read_table(
             output_path=temp_output_dir,
             final_output_path=export_path,
         )
+        stage = "load_table"
         table = spark.table(resolved_table_name)
+        stage = "apply_derived_columns"
         table = _apply_derived_columns(table=table, derived_columns=derived_columns)
+        stage = "apply_filters"
         table = _apply_filters(table=table, filters=filters)
 
+        stage = "select_or_aggregate"
         group_columns = _parse_columns(group_by)
         aggregation_items = _split_items(aggregations)
         if aggregation_items:
@@ -411,6 +423,7 @@ def _read_table(
                 return select_error
             result = table.select(*columns)
 
+        stage = "apply_order_by"
         order_items = _split_items(order_by)
         if order_items:
             order_error = _validate_columns(
@@ -423,9 +436,11 @@ def _read_table(
             result = _apply_order_by(table=result, order_by=order_items)
 
         if max_rows is not None:
+            stage = "apply_limit"
             result = result.limit(max(0, int(max_rows)))
 
         if require_approval:
+            stage = "request_approval"
             approval_result = _request_spark_query_approval(
                 original_query=original_query,
                 query_code=query_code,
@@ -435,6 +450,7 @@ def _read_table(
             if approval_result:
                 return approval_result
 
+        stage = "count"
         row_count = _run_spark_action_with_progress(
             spark=spark,
             group_id=f"load_data_count_{export_path.stem}",
@@ -442,7 +458,9 @@ def _read_table(
             stage="count",
             action=lambda: int(result.count()),
         )
+        stage = "serialize_complex_columns"
         output_result = _serialize_complex_columns_for_output(result)
+        stage = "write_jsonl"
         _write_result_to_jsonl(
             spark=spark,
             result=output_result,
@@ -451,6 +469,7 @@ def _read_table(
             progress_group_id=f"load_data_write_{export_path.stem}",
             progress_description=f"load_data write for {table_alias}",
         )
+        stage = "preview"
         preview_frame = _run_spark_action_with_progress(
             spark=spark,
             group_id=f"load_data_preview_{export_path.stem}",
@@ -475,6 +494,29 @@ def _read_table(
         }
     except ValueError as exc:
         return f"Ошибка load_data: {exc}"
+    except Exception as exc:
+        return _format_unexpected_load_data_error(stage=stage, exc=exc)
+
+
+def _format_unexpected_load_data_error(*, stage: str, exc: Exception) -> str:
+    """Формирует диагностическое сообщение для непредвиденной ошибки ``load_data``.
+
+    Args:
+        stage: Логический этап выполнения, на котором возникла ошибка.
+        exc: Исключение Python или PySpark, которое не было обработано штатной валидацией.
+
+    Returns:
+        Текст ошибки с типом исключения, этапом и коротким traceback для диагностики.
+    """
+
+    trace = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__, limit=8)).strip()
+    return (
+        "Ошибка load_data: непредвиденная ошибка выполнения.\n"
+        f"Этап: {stage}.\n"
+        f"Тип: {type(exc).__name__}.\n"
+        f"Сообщение: {exc}\n"
+        f"Traceback:\n{trace}"
+    )
 
 
 def _request_spark_query_approval(
