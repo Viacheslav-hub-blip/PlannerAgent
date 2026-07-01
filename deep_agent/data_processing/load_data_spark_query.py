@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -376,20 +377,35 @@ def _build_pyspark_query_code(
     else:
         temp_output = str(Path(output_path).resolve())
         output_file = str(Path(final_output_path or output_path).resolve())
+        output_digest = hashlib.sha256(output_file.encode("utf-8")).hexdigest()[:12]
         lines.extend(
             [
                 "from pathlib import Path",
                 "import shutil",
                 "",
                 "row_count = result.count()",
-                f"temp_output_dir = Path({_pyspark_literal(temp_output)})",
+                "jvm = spark.sparkContext._jvm",
+                "hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()",
+                "hadoop_fs = jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)",
+                "hadoop_home = hadoop_fs.getHomeDirectory().toString().rstrip('/')",
+                f"hadoop_output = hadoop_home + '/.deepagent/load_data/{Path(output_file).stem}_{output_digest}.json_tmp'",
+                f"local_parts_dir = Path({_pyspark_literal(temp_output)})",
                 f"output_file = Path({_pyspark_literal(output_file)})",
                 "output_file.parent.mkdir(parents=True, exist_ok=True)",
-                "result.coalesce(1).write.mode('overwrite').json(str(temp_output_dir))",
+                "if local_parts_dir.exists():",
+                "    shutil.rmtree(local_parts_dir)",
+                "local_parts_dir.mkdir(parents=True, exist_ok=True)",
+                "result.write.mode('overwrite').json(hadoop_output)",
+                "for status in hadoop_fs.listStatus(jvm.org.apache.hadoop.fs.Path(hadoop_output)):",
+                "    source_path = status.getPath()",
+                "    name = source_path.getName()",
+                "    if name.startswith('part-') and name.endswith('.json'):",
+                "        hadoop_fs.copyToLocalFile(False, source_path, jvm.org.apache.hadoop.fs.Path(str(local_parts_dir / name)), True)",
                 "with output_file.open('w', encoding='utf-8') as file:",
-                "    for part_file in sorted(temp_output_dir.glob('part-*.json')):",
+                "    for part_file in sorted(local_parts_dir.glob('part-*.json')):",
                 "        with part_file.open('r', encoding='utf-8') as part:",
                 "            shutil.copyfileobj(part, file)",
+                "hadoop_fs.delete(jvm.org.apache.hadoop.fs.Path(hadoop_output), True)",
             ]
         )
         if final_output_path is not None:

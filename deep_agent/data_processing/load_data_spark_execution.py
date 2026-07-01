@@ -3,6 +3,9 @@
 Содержит функции:
 - _write_result_to_jsonl: запись Spark DataFrame в один JSONL artifact;
 - _write_result_rows_to_jsonl: запись Spark DataFrame через стандартный Spark writer;
+- _build_hadoop_temp_output_path: построение временного Hadoop output-пути;
+- _copy_hadoop_json_parts_to_local: копирование Spark part-файлов в локальный artifact;
+- _delete_hadoop_path: удаление временной Hadoop-папки;
 - _merge_spark_json_parts: объединение Spark part-файлов в один JSONL artifact;
 - _read_jsonl_preview: чтение preview из готового JSONL artifact;
 - _run_spark_action_with_progress: выполнение Spark action с progress-событиями;
@@ -70,6 +73,7 @@ def _write_result_to_jsonl(
         stage="write_jsonl",
         action=lambda: _write_result_rows_to_jsonl(
             result=result,
+            spark=spark,
             temp_output_dir=temp_output_dir,
             final_output_path=final_output_path,
         ),
@@ -78,20 +82,113 @@ def _write_result_to_jsonl(
     return final_output_path.resolve()
 
 
-def _write_result_rows_to_jsonl(*, result: Any, temp_output_dir: Path, final_output_path: Path) -> None:
+def _write_result_rows_to_jsonl(*, result: Any, spark: Any, temp_output_dir: Path, final_output_path: Path) -> None:
     """Записывает Spark DataFrame в JSONL-файл через стандартный Spark writer.
 
     Args:
         result: Spark DataFrame результата.
-        temp_output_dir: Временная папка Spark output с ``part-*.json`` файлами.
+        spark: Активная Spark session с Hadoop configuration.
+        temp_output_dir: Локальная временная папка для копии Spark ``part-*.json`` файлов.
         final_output_path: Итоговый ``.jsonl`` файл в каталоге artifacts.
 
     Returns:
         ``None``.
     """
 
-    result.coalesce(1).write.mode("overwrite").json(str(temp_output_dir))
-    _merge_spark_json_parts(temp_output_dir=temp_output_dir, final_output_path=final_output_path)
+    hadoop_output_path = _build_hadoop_temp_output_path(
+        spark=spark,
+        final_output_path=final_output_path,
+    )
+    try:
+        result.write.mode("overwrite").json(hadoop_output_path)
+        _copy_hadoop_json_parts_to_local(
+            spark=spark,
+            hadoop_output_path=hadoop_output_path,
+            local_parts_dir=temp_output_dir,
+        )
+        _merge_spark_json_parts(temp_output_dir=temp_output_dir, final_output_path=final_output_path)
+    finally:
+        _delete_hadoop_path(spark=spark, hadoop_output_path=hadoop_output_path)
+
+
+def _build_hadoop_temp_output_path(*, spark: Any, final_output_path: Path) -> str:
+    """Строит временный Hadoop-путь в домашнем каталоге пользователя Spark.
+
+    Args:
+        spark: Активная Spark session.
+        final_output_path: Итоговый локальный artifact-путь, из которого берется стабильный суффикс.
+
+    Returns:
+        Hadoop URI временной папки для ``DataFrameWriter``.
+    """
+
+    sc = spark.sparkContext
+    jvm = sc._jvm
+    configuration = sc._jsc.hadoopConfiguration()
+    filesystem = jvm.org.apache.hadoop.fs.FileSystem.get(configuration)
+    home_dir = filesystem.getHomeDirectory().toString().rstrip("/")
+    digest = hashlib.sha256(str(final_output_path.resolve()).encode("utf-8")).hexdigest()[:12]
+    safe_stem = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in final_output_path.stem)
+    return f"{home_dir}/.deepagent/load_data/{safe_stem}_{digest}.json_tmp"
+
+
+def _copy_hadoop_json_parts_to_local(*, spark: Any, hadoop_output_path: str, local_parts_dir: Path) -> None:
+    """Копирует Spark ``part-*.json`` из Hadoop output в локальную временную папку.
+
+    Args:
+        spark: Активная Spark session.
+        hadoop_output_path: Hadoop-папка, созданная Spark writer.
+        local_parts_dir: Локальная папка рядом с итоговым artifact.
+
+    Returns:
+        ``None``.
+
+    Raises:
+        ValueError: Spark writer не создал ни одного JSON part-файла.
+    """
+
+    _remove_path_inside_parent(local_parts_dir, local_parts_dir.parent)
+    local_parts_dir.mkdir(parents=True, exist_ok=True)
+
+    sc = spark.sparkContext
+    jvm = sc._jvm
+    configuration = sc._jsc.hadoopConfiguration()
+    filesystem = jvm.org.apache.hadoop.fs.FileSystem.get(configuration)
+    output_path = jvm.org.apache.hadoop.fs.Path(hadoop_output_path)
+    local_path_class = jvm.org.apache.hadoop.fs.Path
+
+    copied = 0
+    for status in filesystem.listStatus(output_path):
+        source_path = status.getPath()
+        file_name = source_path.getName()
+        if not file_name.startswith("part-") or not file_name.endswith(".json"):
+            continue
+        target_path = local_parts_dir / file_name
+        filesystem.copyToLocalFile(False, source_path, local_path_class(str(target_path)), True)
+        copied += 1
+    if copied == 0:
+        raise ValueError(f"Spark writer не создал JSON part-файлы в {hadoop_output_path}.")
+
+
+def _delete_hadoop_path(*, spark: Any, hadoop_output_path: str) -> None:
+    """Удаляет временную Hadoop-папку после выгрузки.
+
+    Args:
+        spark: Активная Spark session.
+        hadoop_output_path: Hadoop-путь для удаления.
+
+    Returns:
+        ``None``. Ошибки очистки не перекрывают основной результат.
+    """
+
+    try:
+        sc = spark.sparkContext
+        jvm = sc._jvm
+        configuration = sc._jsc.hadoopConfiguration()
+        filesystem = jvm.org.apache.hadoop.fs.FileSystem.get(configuration)
+        filesystem.delete(jvm.org.apache.hadoop.fs.Path(hadoop_output_path), True)
+    except Exception:
+        return
 
 
 def _merge_spark_json_parts(*, temp_output_dir: Path, final_output_path: Path) -> None:
