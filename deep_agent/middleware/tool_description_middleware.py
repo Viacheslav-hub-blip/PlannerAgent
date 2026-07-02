@@ -9,13 +9,81 @@
 
 from __future__ import annotations
 
+import time
+import traceback
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.tools import BaseTool
+
+
+@dataclass(frozen=True)
+class DiagnosticLoggingMiddleware(AgentMiddleware):
+    """Печатает этапы вызова модели в stdout backend для первичной диагностики UI.
+
+    Args:
+        agent_name: Имя агента или subagent, для которого выполняется model call.
+
+    Returns:
+        Middleware, который не меняет запрос и ответ, а только пишет читаемые
+        диагностические строки и traceback при ошибке.
+    """
+
+    agent_name: str
+
+    def wrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """Синхронно логирует старт, успех или ошибку model call.
+
+        Args:
+            request: Запрос к модели.
+            handler: Следующий обработчик model call.
+
+        Returns:
+            Ответ модели без изменений.
+        """
+
+        started_at = time.perf_counter()
+        _print_model_call_start(self.agent_name, request)
+        try:
+            response = handler(request)
+        except Exception as error:
+            _print_model_call_failure(self.agent_name, started_at, error)
+            raise
+        _print_model_call_success(self.agent_name, started_at, response)
+        return response
+
+    async def awrap_model_call(
+        self,
+        request: ModelRequest,
+        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
+    ) -> ModelResponse:
+        """Асинхронно логирует старт, успех или ошибку model call.
+
+        Args:
+            request: Запрос к модели.
+            handler: Следующий асинхронный обработчик model call.
+
+        Returns:
+            Ответ модели без изменений.
+        """
+
+        started_at = time.perf_counter()
+        _print_model_call_start(self.agent_name, request)
+        try:
+            response = await handler(request)
+        except Exception as error:
+            _print_model_call_failure(self.agent_name, started_at, error)
+            raise
+        _print_model_call_success(self.agent_name, started_at, response)
+        return response
 
 
 @dataclass(frozen=True)
@@ -196,4 +264,110 @@ def _filter_tools_by_name(
     ]
 
 
-__all__ = ["PromptToolDescriptionsMiddleware", "PromptToolFilterMiddleware"]
+def _diagnostic_timestamp() -> str:
+    """Возвращает timestamp для диагностических строк backend.
+
+    Returns:
+        Строка времени с точностью до секунд.
+    """
+
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _tool_name(tool: BaseTool | dict[str, Any]) -> str:
+    """Возвращает имя инструмента из dict или LangChain ``BaseTool``.
+
+    Args:
+        tool: Описание инструмента, переданное модели.
+
+    Returns:
+        Имя инструмента или ``unknown``.
+    """
+
+    name = tool.get("name") if isinstance(tool, dict) else getattr(tool, "name", None)
+    return str(name or "unknown")
+
+
+def _print_model_call_start(agent_name: str, request: ModelRequest) -> None:
+    """Печатает строку старта model call.
+
+    Args:
+        agent_name: Имя агента.
+        request: Запрос к модели.
+
+    Returns:
+        ``None``.
+    """
+
+    messages = getattr(request, "messages", []) or []
+    tools = getattr(request, "tools", []) or []
+    tool_names = [_tool_name(tool) for tool in tools]
+    print(
+        f"[{_diagnostic_timestamp()}] [model-call] START "
+        f"agent={agent_name} messages={len(messages)} tools={len(tools)} "
+        f"tool_names={tool_names}",
+        flush=True,
+    )
+
+
+def _print_model_call_success(
+    agent_name: str,
+    started_at: float,
+    response: ModelResponse,
+) -> None:
+    """Печатает строку успешного завершения model call.
+
+    Args:
+        agent_name: Имя агента.
+        started_at: Время старта из ``time.perf_counter``.
+        response: Ответ модели.
+
+    Returns:
+        ``None``.
+    """
+
+    elapsed = time.perf_counter() - started_at
+    result = getattr(response, "result", response)
+    content = getattr(result, "content", "")
+    tool_calls = getattr(result, "tool_calls", []) or []
+    content_chars = len(content) if isinstance(content, str) else len(str(content))
+    print(
+        f"[{_diagnostic_timestamp()}] [model-call] SUCCESS "
+        f"agent={agent_name} elapsed_sec={elapsed:.2f} "
+        f"response_type={type(response).__name__} content_chars={content_chars} "
+        f"tool_calls={len(tool_calls)}",
+        flush=True,
+    )
+
+
+def _print_model_call_failure(
+    agent_name: str,
+    started_at: float,
+    error: Exception,
+) -> None:
+    """Печатает строку ошибки model call и полный traceback.
+
+    Args:
+        agent_name: Имя агента.
+        started_at: Время старта из ``time.perf_counter``.
+        error: Исключение, возникшее при вызове модели.
+
+    Returns:
+        ``None``.
+    """
+
+    elapsed = time.perf_counter() - started_at
+    print(
+        f"[{_diagnostic_timestamp()}] [model-call] FAILED "
+        f"agent={agent_name} elapsed_sec={elapsed:.2f} "
+        f"error={type(error).__name__}: {error}",
+        flush=True,
+    )
+    print(traceback.format_exc(), flush=True)
+
+
+__all__ = [
+    "DiagnosticLoggingMiddleware",
+    "PromptToolDescriptionsMiddleware",
+    "PromptToolFilterMiddleware",
+]

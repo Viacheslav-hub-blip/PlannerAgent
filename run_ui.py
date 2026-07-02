@@ -39,6 +39,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TextIO
 
 ASSISTANT_ID = "analytics-agent"
 REQUIRED_FRONTEND_SDK_VERSION = "1.9.21"
@@ -393,6 +394,114 @@ def _write_frontend_env(frontend_root: Path, *, agent_host: str, agent_port: int
     )
 
 
+def _write_startup_diagnostics(
+    log_file: TextIO,
+    *,
+    args: argparse.Namespace,
+    python: Path,
+    frontend_root: Path,
+    langgraph_config: Path,
+    langgraph_command: list[str],
+    child_env: dict[str, str],
+) -> None:
+    """Пишет краткую диагностику запуска backend в общий stdout-лог.
+
+    Args:
+        log_file: Открытый файл общего backend-лога.
+        args: Аргументы запуска UI и Agent Server.
+        python: Python-интерпретатор, выбранный launcher-ом.
+        frontend_root: Директория frontend.
+        langgraph_config: Путь к ``langgraph.json``.
+        langgraph_command: Команда запуска LangGraph CLI.
+        child_env: Окружение дочернего backend-процесса.
+
+    Returns:
+        ``None``.
+    """
+
+    sdk_package = frontend_root / "node_modules" / "@langchain" / "langgraph-sdk" / "package.json"
+    sdk_version = "not-found"
+    if sdk_package.exists():
+        try:
+            sdk_version = str(json.loads(sdk_package.read_text(encoding="utf-8")).get("version", "unknown"))
+        except (OSError, json.JSONDecodeError):
+            sdk_version = "read-error"
+
+    deployment_url = f"http://{args.agent_host}:{args.agent_port}"
+    print("===== DEEPAGENT UI STARTUP DIAGNOSTICS =====", file=log_file)
+    print(f"python={python}", file=log_file)
+    print(f"project_root={PROJECT_ROOT}", file=log_file)
+    print(f"frontend_root={frontend_root}", file=log_file)
+    print(f"langgraph_config={langgraph_config} exists={langgraph_config.exists()}", file=log_file)
+    print(f"langgraph_command={' '.join(langgraph_command)}", file=log_file)
+    print(f"deployment_url={deployment_url}", file=log_file)
+    print(f"assistant_id={args.assistant_id}", file=log_file)
+    print(f"frontend_sdk_version={sdk_version}", file=log_file)
+    print(f"PYTHONPATH={child_env.get('PYTHONPATH', '')}", file=log_file)
+    print("python_packages:", file=log_file)
+    print(_collect_python_package_report(python, child_env), file=log_file)
+    print("============================================", file=log_file, flush=True)
+
+
+def _collect_python_package_report(python: Path, child_env: dict[str, str]) -> str:
+    """Собирает версии и пути ключевых Python-пакетов выбранным интерпретатором.
+
+    Args:
+        python: Python-интерпретатор backend.
+        child_env: Окружение backend-процесса.
+
+    Returns:
+        Многострочный отчёт для startup-лога.
+    """
+
+    script = r'''
+import importlib.metadata
+import importlib.util
+import sys
+
+print(f"  executable={sys.executable}")
+print(f"  version={sys.version.replace(chr(10), ' ')}")
+packages = {
+    "deepagents": "deepagents",
+    "langchain": "langchain",
+    "langchain_core": "langchain-core",
+    "langgraph": "langgraph",
+    "langgraph_cli": "langgraph-cli",
+    "pydantic": "pydantic",
+    "openai": "openai",
+    "sber_kitai_sdk_langchain": "sber-kitai-sdk-langchain",
+    "sber_kitai_sdk_py": "sber-kitai-sdk-py",
+}
+for module_name, package_name in packages.items():
+    try:
+        version = importlib.metadata.version(package_name)
+    except importlib.metadata.PackageNotFoundError:
+        version = "not-installed"
+    try:
+        spec = importlib.util.find_spec(module_name)
+        origin = spec.origin if spec is not None else "not-found"
+    except Exception as error:
+        origin = f"ERROR={type(error).__name__}: {error}"
+    print(f"  {module_name} version={version} file={origin}")
+'''
+    try:
+        result = subprocess.run(
+            [str(python), "-c", script],
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as error:
+        return f"  package-report-failed={type(error).__name__}: {error}"
+
+    output = result.stdout.strip()
+    if result.stderr.strip():
+        output = f"{output}\n  stderr={result.stderr.strip()}" if output else f"  stderr={result.stderr.strip()}"
+    return output or f"  package-report-empty returncode={result.returncode}"
+
+
 def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
     """Останавливает дочерний процесс с принудительным fallback.
 
@@ -437,10 +546,8 @@ def _make_log_paths() -> tuple[Path, Path]:
     RUNTIME_LOGS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = f"{stamp}-{os.getpid()}"
-    return (
-        RUNTIME_LOGS / f"agent-server-{suffix}.out.log",
-        RUNTIME_LOGS / f"agent-server-{suffix}.err.log",
-    )
+    log_path = RUNTIME_LOGS / f"agent-server-{suffix}.out.log"
+    return (log_path, log_path)
 
 
 def _start_services(args: argparse.Namespace, python: Path) -> int:
@@ -464,13 +571,20 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
         raise RuntimeError(f"Не найден LangGraph config: {langgraph_config}")
 
     child_env = _child_env()
-    backend_out, backend_err = _make_log_paths()
+    backend_out, _ = _make_log_paths()
     langgraph = _langgraph_command(python)
     creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
-    with backend_out.open("w", encoding="utf-8") as stdout_file, backend_err.open(
-        "w", encoding="utf-8"
-    ) as stderr_file:
+    with backend_out.open("w", encoding="utf-8") as stdout_file:
+        _write_startup_diagnostics(
+            stdout_file,
+            args=args,
+            python=python,
+            frontend_root=frontend_root,
+            langgraph_config=langgraph_config,
+            langgraph_command=langgraph,
+            child_env=child_env,
+        )
         _backend_process = _popen(
             [
                 *langgraph,
@@ -488,17 +602,16 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
             cwd=PROJECT_ROOT,
             env=child_env,
             stdout=stdout_file,
-            stderr=stderr_file,
+            stderr=subprocess.STDOUT,
             creationflags=creationflags,
         )
 
     if not _wait_for_port(args.agent_host, args.agent_port, args.backend_timeout):
-        tail = backend_err.read_text(encoding="utf-8", errors="replace")[-4000:]
+        tail = backend_out.read_text(encoding="utf-8", errors="replace")[-4000:]
         raise RuntimeError(
             f"Agent Server не открыл порт {args.agent_port} за {args.backend_timeout} секунд.\n"
-            f"stdout: {backend_out}\n"
-            f"stderr: {backend_err}\n"
-            f"Последние строки stderr:\n{tail}"
+            f"backend log: {backend_out}\n"
+            f"Последние строки backend log:\n{tail}"
         )
 
     _write_frontend_env(
@@ -514,8 +627,7 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
     print(f"Agent Server: {deployment_url}")
     print(f"Assistant ID: {args.assistant_id}")
     print(f"UI: {ui_url}")
-    print(f"Backend stdout: {backend_out}")
-    print(f"Backend stderr: {backend_err}")
+    print(f"Backend log: {backend_out}")
     print("Остановка обоих процессов: Ctrl+C")
 
     frontend_command = _frontend_dev_command(

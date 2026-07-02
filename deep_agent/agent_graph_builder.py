@@ -121,6 +121,7 @@ class _AgentTools:
 
     Args:
         data_tools: Инструменты чтения данных после нормализации.
+        supervisor_tools: Внешние инструменты, доступные только supervisor.
         python_tool: Инструмент Python REPL.
         load_skills_tool: Инструмент загрузки skills.
         project_structure_tool: Инструмент просмотра структуры проекта.
@@ -132,6 +133,7 @@ class _AgentTools:
     """
 
     data_tools: list[BaseTool]
+    supervisor_tools: list[BaseTool]
     python_tool: Any
     load_skills_tool: Any
     project_structure_tool: Any
@@ -292,12 +294,18 @@ def _build_agent_backends(context: _AgentBuildContext) -> _AgentBackends:
     )
 
 
-def _build_agent_tools(context: _AgentBuildContext, *, data_tools: list[BaseTool]) -> _AgentTools:
+def _build_agent_tools(
+    context: _AgentBuildContext,
+    *,
+    data_tools: list[BaseTool],
+    supervisor_tools: list[BaseTool],
+) -> _AgentTools:
     """Собирает tools, которые используются supervisor и subagents.
 
     Args:
         context: Контекст сборки агента.
         data_tools: Уже нормализованные инструменты чтения данных.
+        supervisor_tools: Уже нормализованные внешние инструменты для supervisor.
 
     Returns:
         Контейнер tools для сборки graph.
@@ -310,6 +318,7 @@ def _build_agent_tools(context: _AgentBuildContext, *, data_tools: list[BaseTool
     )
     return _AgentTools(
         data_tools=data_tools,
+        supervisor_tools=supervisor_tools,
         python_tool=build_python_tool(python_sandbox),
         load_skills_tool=build_load_skills_tool(
             context.settings,
@@ -584,7 +593,12 @@ def _build_supervisor_graph(
     )
     return create_deep_agent(
         model=context.model,
-        tools=[tools.load_skills_tool, tools.python_tool, tools.project_structure_tool],
+        tools=[
+            tools.load_skills_tool,
+            tools.python_tool,
+            tools.project_structure_tool,
+            *tools.supervisor_tools,
+        ],
         system_prompt=prompts.supervisor_system_prompt,
         subagents=subagents,
         skills=[context.skills_workspace_dir],

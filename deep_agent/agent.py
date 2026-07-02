@@ -6,6 +6,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 Как редактировать/кастомизировать (подробности — в ``README.md``):
 - Данные: передай свои ``data_tools=[...]`` в :func:`build_agent`.
+- Внешние инструменты supervisor: передай свои ``supervisor_tools=[...]`` в :func:`build_agent`.
 - Конфиг и пороги: Python-defaults в ``agent_settings.py``.
 - Поведение supervisor/subagent: правь тематические модули в ``prompts`` без доменной логики.
 - Доменные знания: добавляй/редактируй корневые ``skills/<name>/SKILL.md`` — менять код не нужно.
@@ -14,6 +15,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 Служебные функции:
 - build_agent: сборка supervisor и subagents.
 - _normalize_data_tools: проверка и нормализация списка инструментов.
+- _normalize_supervisor_tools: проверка и нормализация supervisor-инструментов.
 - build_skills_backend: сборка shell-capable workspace backend для supervisor и coding-agent.
 - build_supervisor_backend: сборка filesystem-only backend для data-agent.
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
@@ -55,6 +57,7 @@ from deep_agent.middleware.gigachat_runtime_middleware import (
 )
 from deep_agent.middleware.tool_context_middleware import ToolContextNoticeMiddleware
 from deep_agent.middleware.tool_description_middleware import (
+    DiagnosticLoggingMiddleware,
     PromptToolDescriptionsMiddleware,
     PromptToolFilterMiddleware,
 )
@@ -79,7 +82,14 @@ _DEFAULT_CHECKPOINTER = object()
 
 
 def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
-    """Приводит явно переданные data-tools к списку ``BaseTool`` с проверкой типов."""
+    """Приводит явно переданные data-tools к списку ``BaseTool`` с проверкой типов.
+
+    Args:
+        raw_tools: Один ``BaseTool`` или список/кортеж ``BaseTool`` для data-agent.
+
+    Returns:
+        Список валидированных data-tools.
+    """
 
     if isinstance(raw_tools, BaseTool):
         return [raw_tools]
@@ -94,11 +104,37 @@ def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
     return tools
 
 
+def _normalize_supervisor_tools(raw_tools: Any) -> list[BaseTool]:
+    """Приводит явно переданные supervisor-tools к списку ``BaseTool`` с проверкой типов.
+
+    Args:
+        raw_tools: ``None``, один ``BaseTool`` или список/кортеж ``BaseTool`` для supervisor.
+
+    Returns:
+        Список валидированных supervisor-tools.
+    """
+
+    if raw_tools is None:
+        return []
+    if isinstance(raw_tools, BaseTool):
+        return [raw_tools]
+    if not isinstance(raw_tools, (list, tuple)):
+        raise TypeError("supervisor_tools должен быть BaseTool, списком BaseTool или None.")
+
+    tools: list[BaseTool] = []
+    for item in raw_tools:
+        if not isinstance(item, BaseTool):
+            raise TypeError(f"supervisor_tools содержит объект не BaseTool: {type(item).__name__}")
+        tools.append(item)
+    return tools
+
+
 def build_agent(
     *,
     model: Any,
     settings: AgentSettings | None = None,
     data_tools: list[BaseTool] | BaseTool,
+    supervisor_tools: list[BaseTool] | BaseTool | None = None,
     workspace_root: str | Path | None = None,
     checkpointer: Any = _DEFAULT_CHECKPOINTER,
     state_artifacts_virtual_dir: str | None = None,
@@ -108,7 +144,7 @@ def build_agent(
 
     Это главная точка сборки агента. Сборка нативная для DeepAgents: supervisor получает
     встроенные tools (`write_todos`, `task`, filesystem, `execute`), custom tools
-    `python`, project memory из ``AGENTS.md`` и два
+    `python`, явно переданные supervisor-tools, project memory из ``AGENTS.md`` и два
     специализированных subagents.
 
     Шаги инициализации (см. нумерацию в теле функции) и точки кастомизации:
@@ -124,13 +160,14 @@ def build_agent(
        Кастомизация: пороги в settings; модель выбора skills.
     4. Backend — workspace с terminal, skills и spill-файлами.
     5. Subagents — отдельный `coding-agent` для кода и `data-retrieval-agent` для таблиц.
-    6. Custom tool supervisor — `python` для REPL-расчётов, чтения `.pkl` и артефактов.
+    6. Custom tools supervisor — `python` и явно переданные внешние tools.
     7. Сборка `create_deep_agent(...)` со всеми частями.
 
     Args:
         model: Явно переданная Chat-модель LangChain для supervisor и subagent.
         settings: Готовые настройки; если ``None`` — используются Python-defaults.
         data_tools: Готовые tools чтения данных.
+        supervisor_tools: Готовые внешние tools, доступные только supervisor.
         workspace_root: Рабочая директория coding-agent. Имеет приоритет над settings.
         checkpointer: Checkpointer LangGraph для истории диалога. Если аргумент не передан,
             создаётся штатный ``InMemorySaver``. Явный ``None`` передаёт управление
@@ -163,9 +200,14 @@ def build_agent(
         system_prompt_suffix=system_prompt_suffix,
     )
     normalized_data_tools = wrap_data_tools_with_query_code(_normalize_data_tools(data_tools))
+    normalized_supervisor_tools = _normalize_supervisor_tools(supervisor_tools)
     tool_output_file_middleware = _build_tool_output_file_middleware(context)
     backends = _build_agent_backends(context)
-    tools = _build_agent_tools(context, data_tools=normalized_data_tools)
+    tools = _build_agent_tools(
+        context,
+        data_tools=normalized_data_tools,
+        supervisor_tools=normalized_supervisor_tools,
+    )
     prompts = _build_agent_prompts(context)
     skills_middleware = _build_skills_middleware(context)
     subagents = _build_subagent_graphs(
@@ -213,6 +255,7 @@ def _build_native_runtime_middleware(
     """
 
     middleware: list[Any] = [
+        DiagnosticLoggingMiddleware(agent_name),
         PromptToolDescriptionsMiddleware(TOOL_DESCRIPTION_OVERRIDES),
         ThinkToolMiddleware(),
         ShellSafetyMiddleware(),
