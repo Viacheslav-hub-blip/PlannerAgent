@@ -46,6 +46,23 @@ python run_ui.py --agent-port 2124 --ui-port 3100
 python run_ui.py --frontend-dir C:\path\to\deep-agents-ui
 ```
 
+Для закрытых сред, где из браузера доступен только порт UI, launcher пишет
+`NEXT_PUBLIC_DEPLOYMENT_URL=/api/langgraph`, а Next.js проксирует запросы к локальному
+Agent Server через `LANGGRAPH_PROXY_URL`. Внешний backend-порт в этом режиме не нужен:
+
+```powershell
+python run_ui.py --agent-host 127.0.0.1 --agent-port 5555 --ui-host 0.0.0.0 --ui-port 8042
+```
+
+Открывать нужно только UI:
+
+```text
+http://<server-host>:8042
+```
+
+Host/port UI и Agent Server передаются через параметры `run_ui.py`. KitAI-параметры
+для конкретной машины настраиваются в `adapters/langgraph_agent_server.py`.
+
 Архив содержит Linux x86_64 `node_modules`, собранные для Node.js 20. Его нельзя
 заменять архивом Windows `node_modules`. При изменении файлов frontend, patch,
 `package.json` или `yarn.lock` архив и `SHA256SUMS` нужно пересоздать.

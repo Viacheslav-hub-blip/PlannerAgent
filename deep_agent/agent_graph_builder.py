@@ -33,6 +33,10 @@ from deep_agent.data_processing.load_data_result import wrap_data_tools_with_que
 from deep_agent.execution.harness_profile import register_analytics_harness_profile
 from deep_agent.execution.python_sandbox import build_python_sandbox
 from deep_agent.middleware.skills_context_middleware import PreloadedSkillsContextMiddleware
+from deep_agent.middleware.request_logging_middleware import (
+    AgentRequestLogger,
+    AgentRequestLoggingMiddleware,
+)
 from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
 from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
 from deep_agent.prompts.gigachat_runtime_prompt import build_gigachat_practices_prompt
@@ -80,6 +84,7 @@ class _AgentBuildContext:
         state_artifacts_virtual_dir: Виртуальная директория state-артефактов UI.
         checkpointer: Checkpointer LangGraph или маркер штатной памяти.
         system_prompt_suffix: Дополнительный prompt supervisor.
+        request_logger: Логгер пользовательских запросов или ``None``.
 
     Returns:
         Контейнер без поведения, используемый helper-функциями сборки.
@@ -95,6 +100,7 @@ class _AgentBuildContext:
     state_artifacts_virtual_dir: str | None
     checkpointer: Any
     system_prompt_suffix: str | None
+    request_logger: AgentRequestLogger | None
 
 
 @dataclass(frozen=True)
@@ -184,6 +190,7 @@ def _build_agent_context(
     checkpointer: Any,
     state_artifacts_virtual_dir: str | None,
     system_prompt_suffix: str | None,
+    request_logger: AgentRequestLogger | None = None,
 ) -> _AgentBuildContext:
     """Готовит настройки, модель и вычисленные пути одного запуска агента.
 
@@ -194,6 +201,7 @@ def _build_agent_context(
         checkpointer: Checkpointer LangGraph или маркер штатного ``InMemorySaver``.
         state_artifacts_virtual_dir: Виртуальная директория state-артефактов UI.
         system_prompt_suffix: Дополнительный prompt supervisor.
+        request_logger: Логгер пользовательских запросов или ``None``.
 
     Returns:
         Контекст сборки с нормализованными путями и моделью.
@@ -240,6 +248,7 @@ def _build_agent_context(
         state_artifacts_virtual_dir=state_artifacts_virtual_dir,
         checkpointer=checkpointer,
         system_prompt_suffix=system_prompt_suffix,
+        request_logger=request_logger,
     )
 
 
@@ -605,6 +614,11 @@ def _build_supervisor_graph(
         backend=backends.supervisor,
         middleware=[
             TodoResetMiddleware(),
+            *(
+                [AgentRequestLoggingMiddleware(context.request_logger)]
+                if context.request_logger is not None
+                else []
+            ),
             skills_middleware.supervisor,
             *_build_native_runtime_middleware(
                 context.settings,

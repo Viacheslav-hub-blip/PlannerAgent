@@ -100,12 +100,24 @@ class DeepAgentPythonSandbox:
                 path = project_root / path
             return path.expanduser().resolve()
 
-        def _assert_readable_path(path: Path) -> Path:
-            """Разрешает путь и проверяет, что файл существует."""
+        def _assert_readable_path(path: Path, source_path: str | os.PathLike[str] | None = None) -> Path:
+            """Разрешает путь и проверяет, что файл существует.
+
+            Args:
+                path: Путь, который нужно проверить после нормализации.
+                source_path: Исходное значение из пользовательского Python-кода.
+
+            Returns:
+                Реальный путь к существующему файлу.
+            """
 
             resolved = _resolve_workspace_path(path)
             if not resolved.exists():
-                raise FileNotFoundError(f"Файл не найден: {resolved}")
+                source_text = "" if source_path is None else f" source_path={source_path!s};"
+                raise FileNotFoundError(
+                    f"Файл не найден:{source_text} resolved_path={resolved}; "
+                    f"workspace_root={project_root}"
+                )
             return resolved
 
         def resolve_workspace_path(file_path: str | os.PathLike[str]) -> Path:
@@ -124,7 +136,7 @@ class DeepAgentPythonSandbox:
         def read_pickle_file(file_path: str) -> Any:
             """Читает pickle-файл по абсолютному или относительному пути."""
 
-            path = _assert_readable_path(resolve_workspace_path(file_path))
+            path = _assert_readable_path(resolve_workspace_path(file_path), file_path)
             with path.open("rb") as file:
                 return pickle.load(file)
 
@@ -133,7 +145,7 @@ class DeepAgentPythonSandbox:
 
             data = read_pickle_file(file_path)
             description: dict[str, Any] = {
-                "file_path": str(_assert_readable_path(resolve_workspace_path(file_path))),
+                "file_path": str(_assert_readable_path(resolve_workspace_path(file_path), file_path)),
                 "python_type": type(data).__name__,
             }
             if isinstance(data, list):

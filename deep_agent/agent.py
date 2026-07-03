@@ -139,6 +139,7 @@ def build_agent(
     checkpointer: Any = _DEFAULT_CHECKPOINTER,
     state_artifacts_virtual_dir: str | None = None,
     system_prompt_suffix: str | None = None,
+    request_logger: Any | None = None,
 ) -> Any:
     """Собирает гибридный аналитический и coding DeepAgent.
 
@@ -176,6 +177,8 @@ def build_agent(
             сохраняемых в state LangGraph и доступных UI. Если ``None``, state-маршрут
             не создаётся.
         system_prompt_suffix: Дополнительные инструкции, добавляемые к системному prompt.
+        request_logger: Логгер пользовательских запросов или ``None``, если запись в БД
+            не нужна.
     Returns:
         Скомпилированный DeepAgents граф (supervisor), готовый к ``invoke``/``stream``.
     """
@@ -198,6 +201,7 @@ def build_agent(
         checkpointer=checkpointer,
         state_artifacts_virtual_dir=state_artifacts_virtual_dir,
         system_prompt_suffix=system_prompt_suffix,
+        request_logger=request_logger,
     )
     normalized_data_tools = wrap_data_tools_with_query_code(_normalize_data_tools(data_tools))
     normalized_supervisor_tools = _normalize_supervisor_tools(supervisor_tools)

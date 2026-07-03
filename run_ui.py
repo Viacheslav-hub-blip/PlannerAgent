@@ -380,13 +380,16 @@ def _write_frontend_env(frontend_root: Path, *, agent_host: str, agent_port: int
         ``None``.
     """
 
-    deployment_url = f"http://{agent_host}:{agent_port}"
+    proxy_host = "127.0.0.1" if agent_host == "0.0.0.0" else agent_host
+    deployment_url = "/api/langgraph"
+    proxy_url = f"http://{proxy_host}:{agent_port}"
     frontend_env_path = frontend_root / ".env.local"
     frontend_env_path.write_text(
         "\n".join(
             [
                 f"NEXT_PUBLIC_DEPLOYMENT_URL={deployment_url}",
                 f"NEXT_PUBLIC_ASSISTANT_ID={assistant_id}",
+                f"LANGGRAPH_PROXY_URL={proxy_url}",
             ]
         )
         + "\n",
@@ -427,14 +430,17 @@ def _write_startup_diagnostics(
         except (OSError, json.JSONDecodeError):
             sdk_version = "read-error"
 
-    deployment_url = f"http://{args.agent_host}:{args.agent_port}"
+    proxy_host = "127.0.0.1" if args.agent_host == "0.0.0.0" else args.agent_host
+    deployment_url = "/api/langgraph"
+    proxy_url = f"http://{proxy_host}:{args.agent_port}"
     print("===== DEEPAGENT UI STARTUP DIAGNOSTICS =====", file=log_file)
     print(f"python={python}", file=log_file)
     print(f"project_root={PROJECT_ROOT}", file=log_file)
     print(f"frontend_root={frontend_root}", file=log_file)
     print(f"langgraph_config={langgraph_config} exists={langgraph_config.exists()}", file=log_file)
     print(f"langgraph_command={' '.join(langgraph_command)}", file=log_file)
-    print(f"deployment_url={deployment_url}", file=log_file)
+    print(f"frontend_deployment_url={deployment_url}", file=log_file)
+    print(f"langgraph_proxy_url={proxy_url}", file=log_file)
     print(f"assistant_id={args.assistant_id}", file=log_file)
     print(f"frontend_sdk_version={sdk_version}", file=log_file)
     print(f"PYTHONPATH={child_env.get('PYTHONPATH', '')}", file=log_file)

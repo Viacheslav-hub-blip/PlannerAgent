@@ -136,6 +136,11 @@ python
 Для JSONL artifact из Spark `load_data` используй:
 `df = pd.read_json(resolve_workspace_path(r"<artifact_path>"), lines=True)`.
 
+Правило путей:
+- В Python-коде не передавай строки вида `"/file"` или `"/artifacts/file.csv"` напрямую в pandas, open, pathlib или subprocess.
+- Сначала преобразуй workspace-путь в реальный путь: `path = resolve_workspace_path(r"/file")`.
+- Для новых файлов используй `Path(ARTIFACTS_DIR) / "file.csv"` или `Path(WORKSPACE_ROOT) / "relative/file"`.
+
 Видимый результат:
 - результат доступен агенту только если он напечатан через `print(...)`;
 - или если файл создан/изменён обычным Python-кодом внутри `ARTIFACTS_DIR` и появился в `artifacts`;
@@ -598,6 +603,10 @@ def _python_error_possible_causes(exc: Exception) -> list[str]:
         return ["В DataFrame/dict отсутствует запрошенная колонка или ключ."]
     if isinstance(exc, ImportError):
         return ["Импортируемая библиотека недоступна в текущем Python runtime."]
+    if isinstance(exc, FileNotFoundError):
+        return [
+            "Python-код обратился к несуществующему пути или передал workspace-путь вида `/file` как обычный OS-путь."
+        ]
     if isinstance(exc, ValueError):
         return ["Аргумент, имя переменной или операция имеют недопустимое значение."]
     return ["Код столкнулся с ошибкой выполнения; точная причина указана в traceback."]
@@ -627,6 +636,11 @@ def _python_error_solution_options(exc: Exception) -> list[str]:
         options.insert(0, "Проверь реальные названия колонок через preview/schema перед обращением к ним.")
     if isinstance(exc, ImportError):
         options.insert(0, "Используй доступную библиотеку, установи зависимость другим tool или примени pandas/numpy helpers.")
+    if isinstance(exc, FileNotFoundError):
+        options.insert(
+            0,
+            "Если путь начинается с `/`, преобразуй его через `resolve_workspace_path(r\"/path\")` или собери путь через `Path(WORKSPACE_ROOT)`/`Path(ARTIFACTS_DIR)`.",
+        )
     return options
 
 

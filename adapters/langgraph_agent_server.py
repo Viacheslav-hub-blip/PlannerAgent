@@ -2,6 +2,7 @@
 
 Содержит:
 - KITAI_MODEL_CONFIG: явные параметры KitAI-модели для локального запуска.
+- _load_local_model_config: загрузка локальных переопределений KitAI-конфига.
 - build_ui_agent_settings: сборка путей UI с workspace на уровень выше проекта.
 - create_spark_session: фабрика SparkSession для пользовательского Spark-конфига.
 - build_langgraph_agent_server_agent: сборка агента для LangGraph Agent Server.
@@ -13,12 +14,14 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+import importlib
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from deep_agent.agent import build_agent
+from deep_agent._request_log_config import build_default_agent_request_logger
 from deep_agent.agent_settings import AgentSettings, load_agent_settings
 from deep_agent.gigachat_kitai_model import build_gigachat_kitai_model
 from deep_agent.tools.load_data_spark_tool import build_spark_data_tools
@@ -26,6 +29,7 @@ from deep_agent.tools.load_data_spark_tool import build_spark_data_tools
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = PROJECT_ROOT.parent
 ARTIFACTS_VIRTUAL_DIR = "/artifacts/"
+LOCAL_RUNTIME_CONFIG_MODULE = "adapters.local_runtime_config"
 KITAI_MODEL_CONFIG = {
     "kitai_host_sdk": "",
     "cert_file": "",
@@ -42,6 +46,34 @@ KITAI_MODEL_CONFIG = {
     "profanity_check": False,
     "verbose": True,
 }
+
+
+def _load_local_model_config() -> dict[str, Any]:
+    """Загружает локальные параметры KitAI из ``adapters/local_runtime_config.py``.
+
+    Args:
+        Отсутствуют.
+
+    Returns:
+        Словарь локальных переопределений ``KITAI_MODEL_CONFIG`` или пустой словарь.
+    """
+
+    try:
+        module = importlib.import_module(LOCAL_RUNTIME_CONFIG_MODULE)
+    except ModuleNotFoundError as error:
+        if error.name == LOCAL_RUNTIME_CONFIG_MODULE:
+            return {}
+        raise
+
+    overrides = getattr(module, "KITAI_MODEL_CONFIG_OVERRIDES", {})
+    if not isinstance(overrides, dict):
+        raise RuntimeError(
+            f"{LOCAL_RUNTIME_CONFIG_MODULE}.KITAI_MODEL_CONFIG_OVERRIDES должен быть словарём."
+        )
+    return dict(overrides)
+
+
+KITAI_MODEL_CONFIG.update(_load_local_model_config())
 
 
 def _diagnostic_log(message: str) -> None:
@@ -210,6 +242,18 @@ def build_langgraph_agent_server_agent() -> Any:
             f"tool_outputs_dir={settings.tool_outputs_dir}"
         )
 
+        last_step = "request_logger.created"
+        request_logger = build_default_agent_request_logger()
+        if request_logger is None:
+            _diagnostic_log(f"{last_step} enabled=False")
+        else:
+            request_logger.initialize()
+            _diagnostic_log(
+                f"{last_step} enabled=True "
+                f"schema={request_logger.schema_name} "
+                f"table={request_logger.table_name}"
+            )
+
         last_step = "model.created"
         model = build_gigachat_kitai_model(**KITAI_MODEL_CONFIG)
         _diagnostic_log(f"{last_step} type={type(model).__name__}")
@@ -230,6 +274,7 @@ def build_langgraph_agent_server_agent() -> Any:
             data_tools=data_tools,
             checkpointer=None,
             state_artifacts_virtual_dir=ARTIFACTS_VIRTUAL_DIR,
+            request_logger=request_logger,
         )
         _diagnostic_log(f"{last_step} type={type(agent_graph).__name__}")
         return agent_graph

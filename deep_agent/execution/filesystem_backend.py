@@ -10,6 +10,8 @@
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
 - _converted_notebook_script_path: путь percent-script для принудительного чтения notebook.
+- _has_more_text_lines: проверка наличия строк за пределами прочитанной страницы.
+- _append_incomplete_read_notice: добавление предупреждения о неполном чтении.
 - review_snapshot_path_for_file: путь snapshot исходника для внутреннего ревью.
 - _save_review_snapshot_if_needed: сохранение первой версии файла перед правкой.
 - _rewrite_workspace_paths_in_shell_command: перенос виртуальных workspace-путей в реальные shell-пути.
@@ -286,6 +288,7 @@ class Utf8SearchMixin(WorkspacePathPrefixMixin):
             resolved_path = self._resolve_path(file_path)
         except (OSError, RuntimeError) as error:
             return ReadResult(error=f"Error reading file '{file_path}': {error}")
+        read_resolved_path = resolved_path
 
         if resolved_path.suffix.lower() == ".ipynb":
             output_path = _converted_notebook_script_path(resolved_path)
@@ -305,25 +308,17 @@ class Utf8SearchMixin(WorkspacePathPrefixMixin):
                     )
                 )
             read_path = self._to_virtual_path(output_path)
+            read_resolved_path = output_path
 
-        result = super().read(read_path, offset=offset, limit=limit + 1)
+        result = super().read(read_path, offset=offset, limit=limit)
         if result.error or result.file_data is None:
             return result
         if result.file_data.get("encoding") != "utf-8":
             return result
 
-        lines = result.file_data["content"].splitlines(keepends=True)
-        if len(lines) <= limit:
-            return result
-
-        page = "".join(lines[:limit])
-        if page and not page.endswith(("\n", "\r")):
-            page += "\n"
         next_offset = offset + limit
-        result.file_data["content"] = (
-            page
-            + f"[Файл прочитан не полностью; продолжите чтение с offset={next_offset}.]"
-        )
+        if _has_more_text_lines(read_resolved_path, next_offset):
+            _append_incomplete_read_notice(result, next_offset)
         return result
 
     def _python_search(
@@ -431,6 +426,49 @@ def _converted_notebook_script_path(notebook_path: Path) -> Path:
     """
 
     return notebook_path.with_suffix(".py")
+
+
+def _has_more_text_lines(file_path: Path, next_offset: int) -> bool:
+    """Проверяет, есть ли в UTF-8 файле строки после прочитанной страницы.
+
+    Args:
+        file_path: Реальный путь к текстовому файлу.
+        next_offset: Нулевой номер первой строки следующей страницы.
+
+    Returns:
+        ``True``, если после ``next_offset`` есть хотя бы одна строка.
+    """
+
+    try:
+        with file_path.open("r", encoding="utf-8") as file:
+            for line_number, _ in enumerate(file):
+                if line_number >= next_offset:
+                    return True
+    except (OSError, UnicodeDecodeError):
+        return False
+    return False
+
+
+def _append_incomplete_read_notice(result: ReadResult, next_offset: int) -> None:
+    """Добавляет в ``read_file`` явное предупреждение о неполном чтении.
+
+    Args:
+        result: Результат чтения файла, который нужно дополнить предупреждением.
+        next_offset: Значение ``offset`` для следующего вызова ``read_file``.
+
+    Returns:
+        ``None``. Содержимое ``result.file_data`` изменяется на месте.
+    """
+
+    if result.file_data is None:
+        return
+    content = str(result.file_data.get("content") or "")
+    if content and not content.endswith(("\n", "\r")):
+        content += "\n"
+    result.file_data["content"] = (
+        content
+        + f"[Файл прочитан не полностью; продолжите чтение с offset={next_offset}.]"
+    )
 
 
 def review_snapshot_path_for_file(file_path: str | Path, workspace_root: Path) -> Path:
