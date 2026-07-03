@@ -213,7 +213,7 @@ def _validate_python_runtime(python: Path) -> None:
     raise RuntimeError(
         "Python-зависимости для запуска LangGraph CLI не установлены.\n"
         "Установите их отдельной командой в вашей закрытой среде, затем повторите запуск.\n"
-        "Пример: python -m pip install -e .[models,data,analytics,ui]"
+        "Пример: python -m pip install -e .[kitai,data,analytics,ui]"
     )
 
 
@@ -552,8 +552,9 @@ def _make_log_paths() -> tuple[Path, Path]:
     RUNTIME_LOGS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = f"{stamp}-{os.getpid()}"
-    log_path = RUNTIME_LOGS / f"agent-server-{suffix}.out.log"
-    return (log_path, log_path)
+    stdout_log_path = RUNTIME_LOGS / f"agent-server-{suffix}.out.log"
+    stderr_log_path = RUNTIME_LOGS / f"agent-server-{suffix}.err.log"
+    return stdout_log_path, stderr_log_path
 
 
 def _start_services(args: argparse.Namespace, python: Path) -> int:
@@ -577,11 +578,14 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
         raise RuntimeError(f"Не найден LangGraph config: {langgraph_config}")
 
     child_env = _child_env()
-    backend_out, _ = _make_log_paths()
+    backend_out, backend_err = _make_log_paths()
     langgraph = _langgraph_command(python)
     creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
-    with backend_out.open("w", encoding="utf-8") as stdout_file:
+    with (
+        backend_out.open("w", encoding="utf-8") as stdout_file,
+        backend_err.open("w", encoding="utf-8") as stderr_file,
+    ):
         _write_startup_diagnostics(
             stdout_file,
             args=args,
@@ -608,16 +612,20 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
             cwd=PROJECT_ROOT,
             env=child_env,
             stdout=stdout_file,
-            stderr=subprocess.STDOUT,
+            stderr=stderr_file,
             creationflags=creationflags,
         )
 
-    if not _wait_for_port(args.agent_host, args.agent_port, args.backend_timeout):
+    backend_probe_host = "127.0.0.1" if args.agent_host == "0.0.0.0" else args.agent_host
+    if not _wait_for_port(backend_probe_host, args.agent_port, args.backend_timeout):
         tail = backend_out.read_text(encoding="utf-8", errors="replace")[-4000:]
+        err_tail = backend_err.read_text(encoding="utf-8", errors="replace")[-4000:]
         raise RuntimeError(
             f"Agent Server не открыл порт {args.agent_port} за {args.backend_timeout} секунд.\n"
-            f"backend log: {backend_out}\n"
-            f"Последние строки backend log:\n{tail}"
+            f"backend stdout log: {backend_out}\n"
+            f"backend stderr log: {backend_err}\n"
+            f"Последние строки backend stdout log:\n{tail}\n"
+            f"Последние строки backend stderr log:\n{err_tail}"
         )
 
     _write_frontend_env(
@@ -633,7 +641,8 @@ def _start_services(args: argparse.Namespace, python: Path) -> int:
     print(f"Agent Server: {deployment_url}")
     print(f"Assistant ID: {args.assistant_id}")
     print(f"UI: {ui_url}")
-    print(f"Backend log: {backend_out}")
+    print(f"Backend stdout log: {backend_out}")
+    print(f"Backend stderr log: {backend_err}")
     print("Остановка обоих процессов: Ctrl+C")
 
     frontend_command = _frontend_dev_command(

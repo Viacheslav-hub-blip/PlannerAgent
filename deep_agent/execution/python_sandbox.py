@@ -18,7 +18,6 @@ from typing import Any
 from deep_agent.agent_settings import (
     AgentSettings,
     strip_workspace_tool_prefix,
-    workspace_tool_path,
 )
 
 SANDBOX_HELPER_NAMES = frozenset(

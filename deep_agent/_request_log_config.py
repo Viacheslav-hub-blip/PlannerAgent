@@ -6,31 +6,37 @@
 
 from __future__ import annotations
 
+import os
+
 from deep_agent.middleware.request_logging_middleware import AgentRequestLogger
 
 DB_POOL_RECYCLE = 3600
-REQUEST_LOGGING_ENABLED = True
-REQUEST_LOG_SCHEMA = "user"
-REQUEST_LOG_TABLE = "agent_request_logs"
-CONNECTION_STRING = (
-    "postgresql+psycopg2://ci04257537_pg_kv_user:"
-    "QPzXJhf3ax_Ytf8kBZgyI244B@pvlod-lab000030.cloud.omega.sbrf.ru:"
-    "5433/lab_antifraud_rag_postgre"
+REQUEST_LOGGING_ENABLED = os.getenv(
+    "DEEP_AGENT_REQUEST_LOGGING_ENABLED",
+    "",
+).strip().lower() in {"1", "true", "yes", "on"}
+REQUEST_LOG_SCHEMA = os.getenv("DEEP_AGENT_REQUEST_LOG_SCHEMA", "user").strip() or "user"
+REQUEST_LOG_TABLE = (
+    os.getenv("DEEP_AGENT_REQUEST_LOG_TABLE", "agent_request_logs").strip()
+    or "agent_request_logs"
 )
+CONNECTION_STRING = os.getenv("DEEP_AGENT_REQUEST_LOG_DSN", "").strip()
 
 
 def build_default_agent_request_logger() -> AgentRequestLogger | None:
     """Собирает штатный логгер пользовательских запросов агента.
 
     Args:
-        Отсутствуют. Все параметры подключения заданы константами этого модуля.
+        Отсутствуют. Параметры подключения читаются из переменных окружения
+        ``DEEP_AGENT_REQUEST_LOGGING_ENABLED``, ``DEEP_AGENT_REQUEST_LOG_DSN``,
+        ``DEEP_AGENT_REQUEST_LOG_SCHEMA`` и ``DEEP_AGENT_REQUEST_LOG_TABLE``.
 
     Returns:
         ``AgentRequestLogger`` для записи запросов в PostgreSQL или ``None``, если
-        логирование отключено константой ``REQUEST_LOGGING_ENABLED``.
+        логирование отключено или строка подключения не передана.
     """
 
-    if not REQUEST_LOGGING_ENABLED:
+    if not REQUEST_LOGGING_ENABLED or not CONNECTION_STRING:
         return None
     return AgentRequestLogger(
         connection_string=CONNECTION_STRING,

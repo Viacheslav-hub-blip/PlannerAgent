@@ -2,7 +2,6 @@
 
 Содержит:
 - KITAI_MODEL_CONFIG: явные параметры KitAI-модели для локального запуска.
-- _load_local_model_config: загрузка локальных переопределений KitAI-конфига.
 - build_ui_agent_settings: сборка путей UI с workspace на уровень выше проекта.
 - create_spark_session: фабрика SparkSession для пользовательского Spark-конфига.
 - build_langgraph_agent_server_agent: сборка агента для LangGraph Agent Server.
@@ -14,7 +13,6 @@ from __future__ import annotations
 import os
 import sys
 import traceback
-import importlib
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +27,6 @@ from deep_agent.tools.load_data_spark_tool import build_spark_data_tools
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = PROJECT_ROOT.parent
 ARTIFACTS_VIRTUAL_DIR = "/artifacts/"
-LOCAL_RUNTIME_CONFIG_MODULE = "adapters.local_runtime_config"
 KITAI_MODEL_CONFIG = {
     "kitai_host_sdk": "",
     "cert_file": "",
@@ -46,34 +43,6 @@ KITAI_MODEL_CONFIG = {
     "profanity_check": False,
     "verbose": True,
 }
-
-
-def _load_local_model_config() -> dict[str, Any]:
-    """Загружает локальные параметры KitAI из ``adapters/local_runtime_config.py``.
-
-    Args:
-        Отсутствуют.
-
-    Returns:
-        Словарь локальных переопределений ``KITAI_MODEL_CONFIG`` или пустой словарь.
-    """
-
-    try:
-        module = importlib.import_module(LOCAL_RUNTIME_CONFIG_MODULE)
-    except ModuleNotFoundError as error:
-        if error.name == LOCAL_RUNTIME_CONFIG_MODULE:
-            return {}
-        raise
-
-    overrides = getattr(module, "KITAI_MODEL_CONFIG_OVERRIDES", {})
-    if not isinstance(overrides, dict):
-        raise RuntimeError(
-            f"{LOCAL_RUNTIME_CONFIG_MODULE}.KITAI_MODEL_CONFIG_OVERRIDES должен быть словарём."
-        )
-    return dict(overrides)
-
-
-KITAI_MODEL_CONFIG.update(_load_local_model_config())
 
 
 def _diagnostic_log(message: str) -> None:

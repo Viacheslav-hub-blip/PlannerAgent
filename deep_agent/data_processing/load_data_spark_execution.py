@@ -17,9 +17,7 @@
 - _resolve_output_dir: нормализация каталога artifacts;
 - _build_export_file_path: построение стабильного пути JSONL artifact;
 - _workspace_artifact_path: построение workspace-пути artifact;
-- _remove_path_inside_parent: безопасное удаление временного пути;
-- _dataframe_to_records: преобразование pandas preview в JSON-совместимые записи;
-- _clean_preview_value: приведение scalar preview к JSON-совместимому значению.
+- _remove_path_inside_parent: безопасное удаление временного пути.
 """
 
 from __future__ import annotations
@@ -515,45 +513,4 @@ def _remove_path_inside_parent(path: Path, parent: Path) -> None:
         shutil.rmtree(resolved_path)
     elif resolved_path.exists():
         resolved_path.unlink()
-
-
-def _dataframe_to_records(frame: Any) -> list[dict[str, Any]]:
-    """Преобразует pandas DataFrame preview в JSON-совместимые записи.
-
-    Args:
-        frame: pandas DataFrame, полученный через небольшой ``limit(...).toPandas()``.
-
-    Returns:
-        Список строк-словарей для preview.
-    """
-
-    records = frame.to_dict(orient="records")
-    return [{str(key): _clean_preview_value(value) for key, value in record.items()} for record in records]
-
-
-def _clean_preview_value(value: Any) -> Any:
-    """Приводит значение preview к JSON-совместимому scalar.
-
-    Args:
-        value: Значение из pandas DataFrame preview.
-
-    Returns:
-        JSON-совместимое значение или строковое представление сложного scalar.
-    """
-
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):
-        try:
-            return value.isoformat()
-        except (TypeError, ValueError):
-            pass
-    if hasattr(value, "item"):
-        try:
-            return value.item()
-        except (TypeError, ValueError):
-            pass
-    if isinstance(value, (str, int, float, bool, list, dict)):
-        return value
-    return str(value)
 

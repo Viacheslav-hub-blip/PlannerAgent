@@ -14,6 +14,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+kitai = [
+  "sber-kitai-sdk-langchain",
+  "sber-kitai-sdk-py",
+]
 data = [
   "pyspark>=3.5.0",
   "pandas>=2.0.0",

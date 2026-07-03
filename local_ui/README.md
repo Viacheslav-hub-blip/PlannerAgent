@@ -26,7 +26,7 @@
 запуском установите Python-зависимости и распакуйте подготовленный Linux frontend:
 
 ```powershell
-python -m pip install -e .[data,analytics,ui]
+python -m pip install -e .[kitai,data,analytics,ui]
 powershell -ExecutionPolicy Bypass -File local_ui\install.ps1 -Force
 ```
 
@@ -61,7 +61,8 @@ http://<server-host>:8042
 ```
 
 Host/port UI и Agent Server передаются через параметры `run_ui.py`. KitAI-параметры
-для конкретной машины настраиваются в `adapters/langgraph_agent_server.py`.
+для конкретной машины настраиваются в словаре `KITAI_MODEL_CONFIG` файла
+`adapters/langgraph_agent_server.py`.
 
 Архив содержит Linux x86_64 `node_modules`, собранные для Node.js 20. Его нельзя
 заменять архивом Windows `node_modules`. При изменении файлов frontend, patch,
@@ -77,9 +78,9 @@ Python-инициализация агента не живёт в `local_ui`. La
 `adapters/langgraph_agent_server.py:agent`; сам adapter вызывает core `build_agent(...)`.
 В `local_ui` остаются только launcher/config/frontend-файлы.
 
-Параметры KitAI-модели для UI задаются явно в словаре `KITAI_MODEL_CONFIG` файла
-`adapters/langgraph_agent_server.py`. Env-переменные для ключей и параметров модели не
-используются.
+Базовые параметры KitAI-модели для UI задаются в словаре `KITAI_MODEL_CONFIG` файла
+`adapters/langgraph_agent_server.py`. Env-переменные для ключей и параметров модели
+не используются.
 
 По умолчанию:
 

@@ -29,7 +29,6 @@ from deepagents import create_deep_agent
 from langchain_core.tools import BaseTool
 
 from deep_agent.agent_settings import AgentSettings, load_agent_settings, workspace_tool_path
-from deep_agent.data_processing.load_data_result import wrap_data_tools_with_query_code
 from deep_agent.execution.harness_profile import register_analytics_harness_profile
 from deep_agent.execution.python_sandbox import build_python_sandbox
 from deep_agent.middleware.skills_context_middleware import PreloadedSkillsContextMiddleware

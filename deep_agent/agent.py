@@ -61,7 +61,6 @@ from deep_agent.middleware.tool_description_middleware import (
     PromptToolDescriptionsMiddleware,
     PromptToolFilterMiddleware,
 )
-from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
 from deep_agent.prompts.gigachat_runtime_prompt import (
     build_runtime_context_prompt,
 )
@@ -328,11 +327,6 @@ def build_skills_backend(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_tool_outputs_path(
-        settings.tool_outputs_dir,
-        settings.workspace_root,
-        resolved_workspace_root,
-    )
     routes: dict[str, Any] = {}
     artifacts_root = "/"
     if state_artifacts_virtual_dir:
@@ -375,11 +369,6 @@ def build_supervisor_backend(
     settings = settings or load_agent_settings(workspace_root)
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
-    )
-    resolved_tool_outputs_dir = tool_outputs_dir or _rebase_tool_outputs_path(
-        settings.tool_outputs_dir,
-        settings.workspace_root,
-        resolved_workspace_root,
     )
     routes: dict[str, Any] = {}
     artifacts_root = "/"
