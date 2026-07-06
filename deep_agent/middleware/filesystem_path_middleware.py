@@ -5,10 +5,16 @@
 - normalize_filesystem_tool_path: приведение tool-пути к POSIX-виду от корня workspace.
 - _normalize_filesystem_tool_call: нормализация аргументов filesystem tool call.
 - _file_path_arg_name: имя аргумента пути для filesystem tool.
+- _append_file_operation_preview: добавление проверки и preview после записи файла.
+- _build_file_operation_preview: сборка JSON-проверки созданного или измененного файла.
+- _resolve_workspace_local_path: преобразование canonical tool-пути в реальный путь workspace.
+- _read_text_preview: чтение первых строк текстового файла.
+- _copy_tool_message_with_content: копирование ToolMessage с новым content.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -104,17 +110,21 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         result: ToolMessage,
     ) -> ToolMessage:
-        """Возвращает результат ``write_file`` или ``edit_file`` без проверки чтением.
+        """Добавляет к успешной записи проверку существования файла и preview.
 
         Args:
             request: Нормализованный запрос tool call.
             result: Результат, полученный от filesystem tool.
 
         Returns:
-            Исходный результат tool без дополнительной проверки чтением.
+            ToolMessage с исходным результатом и проверочным блоком для записи.
         """
 
-        return result
+        return _append_file_operation_preview(
+            request,
+            result,
+            workspace_root=self.workspace_root,
+        )
 
 
 def normalize_filesystem_tool_path(value: str, workspace_root: Path) -> str:
@@ -216,6 +226,186 @@ def _file_path_arg_name(tool_name: str) -> str | None:
     if tool_name in {"ls", "glob", "grep"}:
         return "path"
     return None
+
+
+def _append_file_operation_preview(
+    request: ToolCallRequest,
+    result: ToolMessage,
+    *,
+    workspace_root: Path,
+) -> ToolMessage:
+    """Добавляет к результату файловой записи JSON с проверкой и preview.
+
+    Args:
+        request: Нормализованный запрос tool call.
+        result: Результат filesystem tool.
+        workspace_root: Реальный корень workspace текущего запуска.
+
+    Returns:
+        Исходный ToolMessage или копия с добавленным блоком ``file_operation_verification``.
+    """
+
+    tool_name = _tool_name_from_request(request)
+    if tool_name not in {"write_file", "edit_file"}:
+        return result
+    if result.status == "error" or not isinstance(result.content, str):
+        return result
+
+    args = dict((request.tool_call or {}).get("args") or {})
+    file_path = str(args.get("file_path") or "").strip()
+    if not file_path:
+        return result
+
+    verification = _build_file_operation_preview(
+        tool_name=tool_name,
+        file_path=file_path,
+        workspace_root=workspace_root,
+        preview_lines=30,
+    )
+    content = result.content.rstrip()
+    appended = (
+        f"{content}\n\nfile_operation_verification:\n"
+        f"{json.dumps(verification, ensure_ascii=False, indent=2)}"
+    )
+    return _copy_tool_message_with_content(result, appended)
+
+
+def _build_file_operation_preview(
+    *,
+    tool_name: str,
+    file_path: str,
+    workspace_root: Path,
+    preview_lines: int,
+) -> dict[str, Any]:
+    """Собирает проверочную информацию по файлу после ``write_file`` или ``edit_file``.
+
+    Args:
+        tool_name: Имя файлового инструмента.
+        file_path: Canonical tool-путь файла внутри workspace.
+        workspace_root: Реальный корень workspace.
+        preview_lines: Максимальное число строк preview.
+
+    Returns:
+        Словарь с фактом существования, размером, абсолютным путем и preview.
+    """
+
+    try:
+        local_path = _resolve_workspace_local_path(file_path, workspace_root)
+    except ValueError as error:
+        return {
+            "tool": tool_name,
+            "file_path": file_path,
+            "verified": False,
+            "error": f"ValueError: {error}",
+        }
+
+    exists = local_path.is_file()
+    preview = _read_text_preview(local_path, max_lines=preview_lines) if exists else {
+        "available": False,
+        "error": "Файл не найден после выполнения tool.",
+        "lines": [],
+    }
+    return {
+        "tool": tool_name,
+        "file_path": file_path,
+        "absolute_path": str(local_path),
+        "verified": exists,
+        "size_bytes": local_path.stat().st_size if exists else 0,
+        "preview": preview,
+    }
+
+
+def _resolve_workspace_local_path(file_path: str, workspace_root: Path) -> Path:
+    """Преобразует canonical POSIX tool-путь в реальный путь внутри workspace.
+
+    Args:
+        file_path: Путь вида ``/dir/file.txt`` после нормализации middleware.
+        workspace_root: Реальный корень workspace.
+
+    Returns:
+        Абсолютный путь внутри workspace.
+
+    Raises:
+        ValueError: Путь выходит за пределы workspace.
+    """
+
+    relative_path = str(file_path or "").lstrip("/\\")
+    resolved_root = workspace_root.resolve()
+    resolved_path = (resolved_root / relative_path).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(f"Путь выходит за пределы workspace: {file_path}") from None
+    return resolved_path
+
+
+def _read_text_preview(file_path: Path, *, max_lines: int) -> dict[str, Any]:
+    """Читает первые строки текстового файла для подтверждения записи.
+
+    Args:
+        file_path: Реальный путь файла.
+        max_lines: Максимальное число строк preview.
+
+    Returns:
+        Словарь с preview-строками или ошибкой чтения.
+    """
+
+    lines: list[str] = []
+    truncated = False
+    total_chars = 0
+    max_chars = 8000
+    try:
+        with file_path.open("r", encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                if line_number > max(0, max_lines):
+                    truncated = True
+                    break
+                clean_line = line.rstrip("\n\r")
+                total_chars += len(clean_line)
+                if total_chars > max_chars:
+                    lines.append(clean_line[: max(0, len(clean_line) - (total_chars - max_chars))])
+                    truncated = True
+                    break
+                lines.append(clean_line)
+    except (OSError, UnicodeDecodeError) as error:
+        return {
+            "available": False,
+            "error": f"{type(error).__name__}: {error}",
+            "lines": [],
+        }
+    return {
+        "available": True,
+        "line_count": len(lines),
+        "max_lines": max_lines,
+        "truncated": truncated,
+        "lines": lines,
+    }
+
+
+def _copy_tool_message_with_content(
+    message: ToolMessage,
+    content: str,
+) -> ToolMessage:
+    """Копирует ToolMessage, заменяя только content.
+
+    Args:
+        message: Исходный результат инструмента.
+        content: Новый текстовый content.
+
+    Returns:
+        Новый ToolMessage с сохранением metadata исходного сообщения.
+    """
+
+    return ToolMessage(
+        content=content,
+        artifact=message.artifact,
+        tool_call_id=message.tool_call_id,
+        name=message.name,
+        status=message.status,
+        additional_kwargs=message.additional_kwargs,
+        response_metadata=message.response_metadata,
+        id=message.id,
+    )
 
 
 def _tool_name_from_request(request: ToolCallRequest) -> str:

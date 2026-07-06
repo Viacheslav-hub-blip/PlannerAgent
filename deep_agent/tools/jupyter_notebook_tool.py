@@ -17,6 +17,7 @@
 - _resolve_workspace_file_path: разрешение workspace-пути в локальный файл.
 - _assert_inside_workspace: проверка принадлежности пути workspace.
 - _assert_converted_filename_preserved: проверка сохранения имени файла при конвертации.
+- _build_text_file_preview: сборка preview записанного текстового файла.
 - _json_payload: сериализация результата tool в JSON.
 """
 
@@ -57,6 +58,8 @@ outputs/execution_count при пересборке из `.ipynb`.
 - Для `py_to_ipynb` исходный файл должен иметь расширение `.py`, целевой файл `.ipynb`.
 - Для `ipynb_to_py` исходный файл должен иметь расширение `.ipynb`, целевой файл `.py`.
 - Имя файла без расширения менять нельзя: `output_path` может отличаться директорией и расширением, но не stem.
+- По умолчанию существующий `output_path` НЕ перезаписывается. Передавай `overwrite=True` только если пользователь явно
+  попросил заменить именно этот файл или текущая задача явно является обновлением существующего результата.
 - Инструмент только конвертирует файлы и не выполняет код notebook.
 - При `ipynb_to_py` outputs и execution_count игнорируются.
 - Markdown/text-ячейки создаются только из percent-ячеек, помеченных ровно как `# %% [markdown]`.
@@ -94,8 +97,11 @@ class ConvertJupyterNotebookInput(BaseModel):
         description="Имя kernel для metadata создаваемого `.ipynb`; обычно `python3`.",
     )
     overwrite: bool = Field(
-        default=True,
-        description="Если `False`, существующий целевой файл не перезаписывается.",
+        default=False,
+        description=(
+            "Разрешает перезапись существующего целевого файла. По умолчанию `False`: "
+            "не перезаписывай файл без явного подтверждения пользователя."
+        ),
     )
 
 
@@ -135,7 +141,7 @@ class ConvertJupyterNotebookTool(BaseTool):
         source_path: str,
         output_path: str,
         kernel_name: str = "python3",
-        overwrite: bool = True,
+        overwrite: bool = False,
         **_: Any,
     ) -> str:
         """Выполняет синхронную конвертацию notebook-файла.
@@ -167,7 +173,7 @@ class ConvertJupyterNotebookTool(BaseTool):
         source_path: str,
         output_path: str,
         kernel_name: str = "python3",
-        overwrite: bool = True,
+        overwrite: bool = False,
         **kwargs: Any,
     ) -> str:
         """Выполняет асинхронную конвертацию notebook-файла через синхронную реализацию.
@@ -217,7 +223,7 @@ def convert_jupyter_notebook_file(
     output_path: str,
     workspace_root: str | Path,
     kernel_name: str = "python3",
-    overwrite: bool = True,
+    overwrite: bool = False,
 ) -> str:
     """Конвертирует файл между ``.py`` percent-script и ``.ipynb``.
 
@@ -241,11 +247,17 @@ def convert_jupyter_notebook_file(
     resolved_workspace_root = Path(workspace_root).expanduser().resolve()
     source_file = _resolve_workspace_file_path(source_path, resolved_workspace_root)
     output_file = _resolve_workspace_file_path(output_path, resolved_workspace_root)
+    output_exists_before = output_file.exists()
 
     if not source_file.is_file():
         raise FileNotFoundError(f"Исходный файл не найден: {source_path}")
-    if output_file.exists() and not overwrite:
-        raise FileExistsError(f"Целевой файл уже существует: {output_path}")
+    if output_exists_before and not overwrite:
+        raise FileExistsError(
+            "Целевой файл уже существует и не был перезаписан: "
+            f"{workspace_tool_path(output_file, resolved_workspace_root)}. "
+            "Передайте overwrite=True только после явного подтверждения пользователя "
+            "или выберите другой output_path."
+        )
 
     if mode == "py_to_ipynb":
         if source_file.suffix.lower() != ".py" or output_file.suffix.lower() != ".ipynb":
@@ -277,7 +289,12 @@ def convert_jupyter_notebook_file(
             "mode": mode,
             "source_path": workspace_tool_path(source_file, resolved_workspace_root),
             "output_path": workspace_tool_path(output_file, resolved_workspace_root),
+            "absolute_output_path": str(output_file.resolve()),
+            "overwrite": overwrite,
+            "output_existed_before": output_exists_before,
+            "output_size_bytes": output_file.stat().st_size,
             "cells_count": cells_count,
+            "output_preview": _build_text_file_preview(output_file, max_lines=30),
             "message": "Файл успешно сконвертирован.",
         }
     )
@@ -643,6 +660,40 @@ def _assert_converted_filename_preserved(source_file: Path, output_file: Path) -
             "При конвертации Jupyter Notebook нельзя менять имя файла: "
             f"ожидался stem `{source_file.stem}`, получен `{output_file.stem}`."
         )
+
+
+def _build_text_file_preview(file_path: Path, *, max_lines: int) -> dict[str, Any]:
+    """Возвращает первые строки записанного текстового файла для проверки результата.
+
+    Args:
+        file_path: Реальный путь к файлу, который нужно показать в preview.
+        max_lines: Максимальное число строк preview.
+
+    Returns:
+        Словарь с первыми строками, числом строк и признаком усечения.
+    """
+
+    preview_lines: list[str] = []
+    truncated = False
+    try:
+        with file_path.open("r", encoding="utf-8") as file:
+            for line_number, line in enumerate(file, start=1):
+                if line_number > max(0, max_lines):
+                    truncated = True
+                    break
+                preview_lines.append(line.rstrip("\n\r"))
+    except (OSError, UnicodeDecodeError) as error:
+        return {
+            "available": False,
+            "error": f"{type(error).__name__}: {error}",
+            "lines": [],
+        }
+    return {
+        "available": True,
+        "line_count": len(preview_lines),
+        "truncated": truncated,
+        "lines": preview_lines,
+    }
 
 
 def _json_payload(payload: dict[str, Any]) -> str:

@@ -15,6 +15,10 @@
 - _python_error_solution_options: варианты исправления ошибки выполнения.
 - _python_retry_guidance: инструкция для повторного запуска после ошибки.
 - _visible_variable_names: список пользовательских переменных sandbox.
+- _artifact_file_snapshot: снимок файлов артефактов до выполнения Python-кода.
+- _changed_artifacts: список созданных или измененных artifact-файлов.
+- _workspace_artifact_path: преобразование artifact-пути в workspace-путь.
+- _artifact_type: определение типа artifact по расширению.
 - _json_default: JSON-сериализация нестандартных объектов.
 - _limit_text: ограничение длинного текста.
 - _compact_error_message: краткая строка с причиной ошибки.
@@ -40,6 +44,10 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from deep_agent.execution.python_sandbox import DeepAgentPythonSandbox, SANDBOX_HELPER_NAMES
+from deep_agent.tools.python_execution_helpers import (
+    artifact_preview,
+    normalize_workspace_path_arguments,
+)
 
 PYTHON_TOOL_NAME = "python"
 MAX_STDIO_CHARS = 8_000
@@ -73,7 +81,7 @@ class PythonExecutionResult:
     message: str
     generated_code: str
     execution_output: str = ""
-    artifacts: list[dict[str, str]] | None = None
+    artifacts: list[dict[str, Any]] | None = None
     error: str = ""
     traceback_text: str = ""
     available_variables: list[str] | None = None
@@ -140,10 +148,13 @@ python
 - В Python-коде не передавай строки вида `"/file"` или `"/artifacts/file.csv"` напрямую в pandas, open, pathlib или subprocess.
 - Сначала преобразуй workspace-путь в реальный путь: `path = resolve_workspace_path(r"/file")`.
 - Для новых файлов используй `Path(ARTIFACTS_DIR) / "file.csv"` или `Path(WORKSPACE_ROOT) / "relative/file"`.
+- Если в `generated_code` после вызова видно, что путь был автоматически заменен на `resolve_workspace_path(...)`, используй
+  этот исправленный вариант в следующих вызовах. Для переменных с путями всё равно нормализуй значение явно.
 
 Видимый результат:
 - результат доступен агенту только если он напечатан через `print(...)`;
-- или если файл создан/изменён обычным Python-кодом внутри `ARTIFACTS_DIR` и появился в `artifacts`;
+- или если файл создан/изменён обычным Python-кодом внутри `ARTIFACTS_DIR` и появился в `artifacts` с `change`,
+  `size_bytes`, `absolute_path` и `preview`;
 
 Плохое решение: присвоить результат без вывода.
 ```python
@@ -268,7 +279,10 @@ class PythonTool(BaseTool):
             JSON-строка с результатом или краткая строка ошибки.
         """
 
-        generated_code = _normalize_code_text(str(code or ""))
+        generated_code = normalize_workspace_path_arguments(
+            _normalize_code_text(str(code or "")),
+            self._sandbox,
+        )
         try:
             _validate_code_policy(generated_code)
         except Exception as exc:
@@ -362,7 +376,10 @@ def _execute_python_repl(
         ``PythonExecutionResult`` с результатом выполнения или подробной ошибкой.
     """
 
-    generated_code = _normalize_code_text(str(code or ""))
+    generated_code = normalize_workspace_path_arguments(
+        _normalize_code_text(str(code or "")),
+        sandbox,
+    )
     try:
         _validate_code_policy(generated_code)
         compiled = compile(generated_code, "<python>", "exec")
@@ -450,7 +467,7 @@ def _changed_artifacts(
     *,
     sandbox: DeepAgentPythonSandbox,
     before: dict[Path, tuple[int, int]],
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Возвращает файлы, созданные или изменённые в каталоге артефактов после выполнения кода.
 
     Args:
@@ -462,15 +479,20 @@ def _changed_artifacts(
     """
 
     after = _artifact_file_snapshot(sandbox.tool_outputs_dir)
-    artifacts: list[dict[str, str]] = []
+    artifacts: list[dict[str, Any]] = []
     for path, signature in sorted(after.items(), key=lambda item: item[0].as_posix()):
         if before.get(path) == signature:
             continue
+        previous_signature = before.get(path)
         artifacts.append(
             {
                 "path": _workspace_artifact_path(path, sandbox.working_directory),
+                "absolute_path": str(path.resolve()),
                 "type": _artifact_type(path),
-                "description": "",
+                "change": "modified" if previous_signature is not None else "created",
+                "size_bytes": signature[0],
+                "previous_size_bytes": previous_signature[0] if previous_signature else None,
+                "preview": artifact_preview(path),
             }
         )
     return artifacts

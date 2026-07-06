@@ -44,6 +44,7 @@ from deep_agent.tools.jupyter_notebook_tool import (
 logger = logging.getLogger(__name__)
 
 REVIEW_SNAPSHOT_DIR = ".deep_agent/review_snapshots"
+NOTEBOOK_SCRIPT_CACHE_DIR = ".deep_agent/notebook_scripts"
 
 
 def configure_read_file_default_limit(limit: int) -> None:
@@ -291,7 +292,7 @@ class Utf8SearchMixin(WorkspacePathPrefixMixin):
         read_resolved_path = resolved_path
 
         if resolved_path.suffix.lower() == ".ipynb":
-            output_path = _converted_notebook_script_path(resolved_path)
+            output_path = _converted_notebook_script_path(resolved_path, self.cwd)
             try:
                 convert_jupyter_notebook_file(
                     mode="ipynb_to_py",
@@ -415,17 +416,23 @@ class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
         return super().execute(rewritten_command, timeout=timeout)
 
 
-def _converted_notebook_script_path(notebook_path: Path) -> Path:
+def _converted_notebook_script_path(notebook_path: Path, workspace_root: Path) -> Path:
     """Возвращает путь ``.py`` percent-script для notebook.
 
     Args:
         notebook_path: Реальный путь к ``.ipynb`` файлу внутри workspace.
+        workspace_root: Корень workspace, внутри которого хранится служебный cache.
 
     Returns:
-        Реальный путь к ``.py`` файлу с тем же stem рядом с notebook.
+        Реальный путь к служебному ``.py`` файлу с тем же stem внутри ``.deep_agent``.
     """
 
-    return notebook_path.with_suffix(".py")
+    root = workspace_root.resolve()
+    try:
+        relative_notebook_path = notebook_path.resolve().relative_to(root)
+    except ValueError:
+        relative_notebook_path = Path(notebook_path.name)
+    return root / NOTEBOOK_SCRIPT_CACHE_DIR / relative_notebook_path.with_suffix(".py")
 
 
 def _has_more_text_lines(file_path: Path, next_offset: int) -> bool:
