@@ -20,6 +20,8 @@ subagents -> custom tools -> ``create_deep_agent``).
 - build_supervisor_backend: сборка filesystem-only backend для data-agent.
 - build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
+- _build_state_artifact_routes: сборка безопасных route-ов для state-артефактов.
+- _is_reserved_workspace_artifact_route: проверка конфликта route-а с реальными artifacts.
 - _resolve_workspace_root: проверка рабочей директории.
 - _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
@@ -67,6 +69,7 @@ from deep_agent.prompts.gigachat_runtime_prompt import (
 from deep_agent.prompts.tool_description_prompt import TOOL_DESCRIPTION_OVERRIDES
 from deep_agent.agent_settings import (
     AgentSettings,
+    DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH,
     load_agent_settings,
     workspace_tool_root,
     workspace_tool_path,
@@ -327,11 +330,7 @@ def build_skills_backend(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    routes: dict[str, Any] = {}
-    artifacts_root = "/"
-    if state_artifacts_virtual_dir:
-        artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
-        routes[artifacts_root] = StateBackend()
+    routes, artifacts_root = _build_state_artifact_routes(state_artifacts_virtual_dir)
 
     return CompositeBackend(
         default=Utf8LocalShellBackend(
@@ -370,11 +369,7 @@ def build_supervisor_backend(
     resolved_workspace_root = _resolve_workspace_root(
         workspace_root or settings.workspace_root
     )
-    routes: dict[str, Any] = {}
-    artifacts_root = "/"
-    if state_artifacts_virtual_dir:
-        artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
-        routes[artifacts_root] = StateBackend()
+    routes, artifacts_root = _build_state_artifact_routes(state_artifacts_virtual_dir)
 
     return CompositeBackend(
         default=Utf8FilesystemBackend(
@@ -403,6 +398,44 @@ def _normalize_virtual_directory(value: str) -> str:
     if not normalized:
         raise ValueError("Виртуальная директория артефактов не может быть пустой или корневой.")
     return f"/{normalized}/"
+
+
+def _build_state_artifact_routes(
+    state_artifacts_virtual_dir: str | None,
+) -> tuple[dict[str, Any], str]:
+    """Собирает route-ы state-артефактов без перехвата реальных файлов workspace.
+
+    Args:
+        state_artifacts_virtual_dir: Виртуальная директория для state-файлов UI.
+
+    Returns:
+        Кортеж из словаря route-ов ``CompositeBackend`` и корня артефактов.
+        Если путь совпадает с рабочей директорией artifacts, route не создаётся,
+        чтобы supervisor и subagents читали одни и те же файлы с диска.
+    """
+
+    if not state_artifacts_virtual_dir:
+        return {}, "/"
+
+    artifacts_root = _normalize_virtual_directory(state_artifacts_virtual_dir)
+    if _is_reserved_workspace_artifact_route(artifacts_root):
+        return {}, artifacts_root
+    return {artifacts_root: StateBackend()}, artifacts_root
+
+
+def _is_reserved_workspace_artifact_route(virtual_dir: str) -> bool:
+    """Проверяет, конфликтует ли state route с реальной папкой artifacts.
+
+    Args:
+        virtual_dir: Нормализованный виртуальный путь вида ``/name/``.
+
+    Returns:
+        ``True``, если route занимает стандартную директорию файловых артефактов
+        workspace и не должен направляться в ``StateBackend``.
+    """
+
+    first_part = virtual_dir.strip("/").split("/", 1)[0]
+    return first_part == DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH
 
 
 def build_conversation_checkpointer() -> InMemorySaver:
