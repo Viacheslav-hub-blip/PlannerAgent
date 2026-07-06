@@ -16,7 +16,6 @@
 - _split_unmarked_code_from_markdown_cell: перенос хвоста markdown-ячейки без ``#`` в code-ячейку.
 - _resolve_workspace_file_path: разрешение workspace-пути в локальный файл.
 - _assert_inside_workspace: проверка принадлежности пути workspace.
-- _assert_converted_filename_preserved: проверка сохранения имени файла при конвертации.
 - _build_text_file_preview: сборка preview записанного текстового файла.
 - _json_payload: сериализация результата tool в JSON.
 """
@@ -57,7 +56,7 @@ outputs/execution_count при пересборке из `.ipynb`.
 Правила:
 - Для `py_to_ipynb` исходный файл должен иметь расширение `.py`, целевой файл `.ipynb`.
 - Для `ipynb_to_py` исходный файл должен иметь расширение `.ipynb`, целевой файл `.py`.
-- Имя файла без расширения менять нельзя: `output_path` может отличаться директорией и расширением, но не stem.
+- `output_path` может отличаться директорией и именем файла; обязательны только корректное расширение и путь внутри workspace.
 - По умолчанию существующий `output_path` НЕ перезаписывается. Передавай `overwrite=True` только если пользователь явно
   попросил заменить именно этот файл или текущая задача явно является обновлением существующего результата.
 - Инструмент только конвертирует файлы и не выполняет код notebook.
@@ -88,8 +87,8 @@ class ConvertJupyterNotebookInput(BaseModel):
     output_path: str = Field(
         description=(
             "Целевой файл внутри workspace. Для `py_to_ipynb` это `.ipynb`, "
-            "для `ipynb_to_py` это `.py`. Имя файла без расширения должно "
-            "совпадать с исходным файлом."
+            "для `ipynb_to_py` это `.py`. Имя файла можно менять, если нужен "
+            "новый безопасный output_path без перезаписи существующего файла."
         ),
     )
     kernel_name: str = Field(
@@ -262,7 +261,6 @@ def convert_jupyter_notebook_file(
     if mode == "py_to_ipynb":
         if source_file.suffix.lower() != ".py" or output_file.suffix.lower() != ".ipynb":
             raise ValueError("Для `py_to_ipynb` нужен исходный `.py` и целевой `.ipynb`.")
-        _assert_converted_filename_preserved(source_file, output_file)
         source_text = source_file.read_text(encoding="utf-8")
         notebook = _py_to_ipynb(source_text, kernel_name=kernel_name)
         cells_count = len(notebook["cells"])
@@ -274,7 +272,6 @@ def convert_jupyter_notebook_file(
     elif mode == "ipynb_to_py":
         if source_file.suffix.lower() != ".ipynb" or output_file.suffix.lower() != ".py":
             raise ValueError("Для `ipynb_to_py` нужен исходный `.ipynb` и целевой `.py`.")
-        _assert_converted_filename_preserved(source_file, output_file)
         notebook = json.loads(source_file.read_text(encoding="utf-8"))
         cells_count = len(notebook.get("cells", []))
         script_text = _ipynb_to_py(notebook)
@@ -639,27 +636,6 @@ def _assert_inside_workspace(path: Path, workspace_root: Path) -> None:
         path.relative_to(workspace_root)
     except ValueError:
         raise ValueError(f"Путь должен быть внутри workspace: {path}") from None
-
-
-def _assert_converted_filename_preserved(source_file: Path, output_file: Path) -> None:
-    """Проверяет, что конвертация не переименовывает файл.
-
-    Args:
-        source_file: Разрешенный путь исходного файла внутри workspace.
-        output_file: Разрешенный путь целевого файла внутри workspace.
-
-    Returns:
-        ``None``.
-
-    Raises:
-        ValueError: Имя целевого файла без расширения отличается от исходного.
-    """
-
-    if source_file.stem != output_file.stem:
-        raise ValueError(
-            "При конвертации Jupyter Notebook нельзя менять имя файла: "
-            f"ожидался stem `{source_file.stem}`, получен `{output_file.stem}`."
-        )
 
 
 def _build_text_file_preview(file_path: Path, *, max_lines: int) -> dict[str, Any]:
