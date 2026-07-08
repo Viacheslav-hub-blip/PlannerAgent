@@ -62,7 +62,7 @@ http://<server-host>:8042
 
 Host/port UI и Agent Server передаются через параметры `run_ui.py`. KitAI-параметры
 для конкретной машины настраиваются в словаре `KITAI_MODEL_CONFIG` файла
-`adapters/langgraph_agent_server.py`.
+`user_config/langgraph_agent_server.py`.
 
 Архив содержит Linux x86_64 `node_modules`, собранные для Node.js 20. Его нельзя
 заменять архивом Windows `node_modules`. При изменении файлов frontend, patch,
@@ -75,11 +75,11 @@ wsl -d Ubuntu -- bash /mnt/c/path/to/deepagent/scripts/build_ui_archive.sh
 ```
 
 Python-инициализация агента не живёт в `local_ui`. LangGraph config указывает на
-`adapters/langgraph_agent_server.py:agent`; сам adapter вызывает core `build_agent(...)`.
+`user_config/langgraph_agent_server.py:agent`; сам adapter вызывает core `build_agent(...)`.
 В `local_ui` остаются только launcher/config/frontend-файлы.
 
 Базовые параметры KitAI-модели для UI задаются в словаре `KITAI_MODEL_CONFIG` файла
-`adapters/langgraph_agent_server.py`. Env-переменные для ключей и параметров модели
+`user_config/langgraph_agent_server.py`. Env-переменные для ключей и параметров модели
 не используются.
 
 По умолчанию:

@@ -88,11 +88,11 @@ edit_file(
 Проверки:
 ```text
 execute(command="python -m compileall -q file_1.py")
-execute(command="python -m compileall -q deep_agent adapters scripts run_ui.py")
+execute(command="python -m compileall -q deep_agent user_config scripts run_ui.py")
 execute(command="python -m ruff check file_1.py")
 ```
 
-Notebook workflow:
+Работа с notebook:
 Для создания нового `.ipynb` можно вызвать `write_file` с путем `.ipynb`; content должен быть Python/percent-script, где `# %% [markdown]` и верхнеуровневые `#`-блоки станут markdown-ячейками.
 `output_path` при конвертации может менять директорию, имя файла и расширение; обязательны только корректное расширение и путь внутри workspace.
 `convert_jupyter_notebook` не перезаписывает существующий output по умолчанию. Передавай `overwrite=True` только если пользователь явно подтвердил замену именно этого файла.

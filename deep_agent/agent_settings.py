@@ -23,7 +23,6 @@ DEFAULT_AGENTS_FILE_NAME = "AGENTS.md"
 DEFAULT_SKILLS_RELATIVE_PATH = "skills"
 DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH = "artifacts"
 DEFAULT_TRACE_LOG_RELATIVE_PATH = "artifacts"
-DEFAULT_HARNESS_PROFILE_KEY = "kitai"
 DEFAULT_THREAD_ID = "analytics-chat-001"
 DEFAULT_TERMINAL_TIMEOUT = 120
 DEFAULT_TERMINAL_MAX_OUTPUT_BYTES = 100_000
@@ -44,7 +43,6 @@ DEFAULT_GRAPH_RECURSION_LIMIT = 100
 class AgentSettings:
     """Настройки сборки и запуска аналитического DeepAgent."""
 
-    harness_profile_key: str
     thread_id: str
     workspace_root: Path
     agents_file_name: str
@@ -80,7 +78,6 @@ def load_agent_settings(workspace_root: str | Path | None = None) -> AgentSettin
         PROJECT_ROOT,
     )
     return AgentSettings(
-        harness_profile_key=DEFAULT_HARNESS_PROFILE_KEY,
         thread_id=DEFAULT_THREAD_ID,
         workspace_root=resolved_workspace_root,
         agents_file_name=DEFAULT_AGENTS_FILE_NAME,
@@ -271,7 +268,6 @@ __all__ = [
     "DEFAULT_CONTEXT_EDIT_KEEP_TOOL_RESULTS",
     "DEFAULT_CONTEXT_EDIT_TRIGGER_TOKENS",
     "DEFAULT_GRAPH_RECURSION_LIMIT",
-    "DEFAULT_HARNESS_PROFILE_KEY",
     "DEFAULT_MAX_MODEL_RETRIES",
     "DEFAULT_MAX_SUBAGENT_MODEL_CALLS",
     "DEFAULT_MAX_TOOL_CALLS_PER_RUN",

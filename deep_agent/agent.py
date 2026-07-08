@@ -23,7 +23,6 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _build_state_artifact_routes: сборка безопасных route-ов для state-артефактов.
 - _is_reserved_workspace_artifact_route: проверка конфликта route-а с реальными artifacts.
 - _resolve_workspace_root: проверка рабочей директории.
-- _build_runtime_context_prompt: формирование runtime-контекста с текущей датой и путями.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
 - cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
@@ -31,7 +30,6 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -63,15 +61,11 @@ from deep_agent.middleware.tool_description_middleware import (
     PromptToolDescriptionsMiddleware,
     PromptToolFilterMiddleware,
 )
-from deep_agent.prompts.gigachat_runtime_prompt import (
-    build_runtime_context_prompt,
-)
 from deep_agent.prompts.tool_description_prompt import TOOL_DESCRIPTION_OVERRIDES
 from deep_agent.agent_settings import (
     AgentSettings,
     DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH,
     load_agent_settings,
-    workspace_tool_root,
     workspace_tool_path,
 )
 from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
@@ -220,7 +214,6 @@ def build_agent(
         context=context,
         backends=backends,
         tools=tools,
-        prompts=prompts,
         skills_middleware=skills_middleware,
         tool_output_file_middleware=tool_output_file_middleware,
     )
@@ -523,64 +516,6 @@ def _rebase_tool_outputs_path(
     except ValueError:
         return resolved_path
     return (target_workspace_root / relative_path).resolve()
-
-
-def _build_runtime_context_prompt(
-    workspace_root: Path,
-    tool_outputs_dir: Path,
-    *,
-    agent_root: Path | None = None,
-    skills_root: Path | None = None,
-    agents_memory_path: str | None = None,
-) -> str:
-    """Формирует runtime-блок для system prompt с датой запуска и путями.
-
-    Args:
-        workspace_root: Реальный корень workspace текущего запуска.
-        tool_outputs_dir: Реальный каталог session tool outputs.
-        agent_root: Реальная папка реализации агента внутри workspace.
-        skills_root: Реальная папка skills внутри workspace.
-        agents_memory_path: Workspace-путь к файлу project memory.
-
-    Returns:
-        XML-подобный блок system prompt с текущей датой, корнем workspace и правилами
-        интерпретации относительных дат.
-    """
-
-    today = date.today().isoformat()
-    try:
-        workspace_outputs_path = workspace_tool_path(
-            tool_outputs_dir,
-            workspace_root,
-            directory=True,
-        )
-    except ValueError:
-        workspace_outputs_path = str(tool_outputs_dir.resolve())
-    agent_root_line = ""
-    if agent_root is not None:
-        agent_root_line = (
-            "\nДиректория реализации агента: "
-            f"{workspace_tool_path(agent_root, workspace_root, directory=True)} соответствует реальному пути {agent_root.resolve()}."
-        )
-    skills_root_line = ""
-    if skills_root is not None:
-        skills_root_line = (
-            "\nДиректория skills: "
-            f"{workspace_tool_path(skills_root, workspace_root, directory=True)} соответствует реальному пути {skills_root.resolve()}."
-        )
-    memory_path_line = ""
-    if agents_memory_path:
-        memory_path_line = f"\nФайл project memory: {agents_memory_path}."
-    return build_runtime_context_prompt(
-        current_date=today,
-        workspace_tool_root_path=workspace_tool_root(workspace_root),
-        workspace_real_path=str(workspace_root.resolve()),
-        data_artifacts_tool_path=workspace_outputs_path,
-        data_artifacts_real_path=str(tool_outputs_dir.resolve()),
-        agent_root_line=agent_root_line,
-        skills_root_line=skills_root_line,
-        memory_path_line=memory_path_line,
-    )
 
 
 def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:

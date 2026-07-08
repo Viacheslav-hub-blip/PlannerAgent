@@ -1,8 +1,7 @@
 # Deep Agent Core
 
 `deep_agent` — ядро агента. Пакет собирает supervisor, subagents, prompts,
-middleware, tools и execution backend. UI и LangGraph Agent Server adapter находятся
-вне core package.
+middleware, tools и слой выполнения.
 
 ## Основные файлы
 
@@ -18,10 +17,10 @@ middleware, tools и execution backend. UI и LangGraph Agent Server adapter н�
 - `data_processing/` — модели, parser, нормализация и helper-ы `load_data`.
 - `tools/` — LangChain tools.
 - `middleware/` — middleware агента.
-- `execution/` — filesystem backend, Python sandbox, trace logger, harness profile.
+- `execution/` — файловый доступ, Python sandbox и trace logger.
 
 ## Границы ответственности
 
 Core запускается напрямую через `build_agent(...)` и не импортирует `local_ui`.
-LangGraph Agent Server использует `adapters/langgraph_agent_server.py`; это
+LangGraph Agent Server использует `user_config/langgraph_agent_server.py`; это
 интеграционный слой, а не публичный API ядра.

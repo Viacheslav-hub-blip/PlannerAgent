@@ -1,6 +1,6 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "analytics-agent": "./adapters/langgraph_agent_server.py:agent"
+    "analytics-agent": "./user_config/langgraph_agent_server.py:agent"
   }
 }

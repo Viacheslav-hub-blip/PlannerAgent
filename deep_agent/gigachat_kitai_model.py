@@ -2,6 +2,7 @@
 
 Содержит:
 - DeepAgentsKitaiChatModel: KitAI-модель с нормализацией сообщений DeepAgents.
+- DeepAgentsKitaiChatModel._get_ls_params: служебные параметры provider/model для DeepAgents.
 - content_to_text: преобразование content blocks в строку.
 - normalize_kitai_message: создание совместимой копии сообщения LangChain.
 - normalize_kitai_messages: нормализация одного сообщения или списка сообщений.
@@ -213,6 +214,45 @@ class DeepAgentsKitaiChatModel(
             run_manager=run_manager,
             **kwargs,
         )
+
+    def _get_ls_params(
+        self,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Возвращает provider/model, по которым DeepAgents выбирает профиль.
+
+        Args:
+            stop: Последовательности остановки, переданные в вызов модели.
+            **kwargs: Дополнительные параметры вызова модели.
+
+        Returns:
+            Словарь LangSmith-параметров с явным ``ls_provider="kitai"`` и
+            именем модели из вызова или текущего экземпляра.
+        """
+
+        params: dict[str, Any] = {
+            "ls_provider": "kitai",
+            "ls_model_type": "chat",
+        }
+        if stop:
+            params["ls_stop"] = stop
+
+        model_name = kwargs.get("model")
+        if not isinstance(model_name, str) or not model_name:
+            model_name = getattr(self, "model_name", None)
+        if not isinstance(model_name, str) or not model_name:
+            model_name = getattr(self, "model", None)
+        if isinstance(model_name, str) and model_name:
+            params["ls_model_name"] = model_name
+
+        temperature = kwargs.get("temperature")
+        if not isinstance(temperature, (int, float)):
+            temperature = getattr(self, "temperature", None)
+        if isinstance(temperature, (int, float)):
+            params["ls_temperature"] = temperature
+
+        return params
 
 
 def build_gigachat_kitai_model(

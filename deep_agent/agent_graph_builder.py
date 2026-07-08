@@ -12,7 +12,6 @@
 - _build_agent_tools: сборка tools.
 - _build_agent_prompts: сборка prompt-блоков.
 - _build_skills_middleware: сборка skills middleware.
-- _extend_subagent_prompt: добавление общих prompt-блоков к subagent.
 - _build_subagent_graphs: сборка compiled subagents.
 - _build_coding_agent_graph: сборка coding-agent.
 - _build_data_retrieval_agent_graph: сборка data-retrieval-agent.
@@ -29,7 +28,6 @@ from deepagents import create_deep_agent
 from langchain_core.tools import BaseTool
 
 from deep_agent.agent_settings import AgentSettings, load_agent_settings, workspace_tool_path
-from deep_agent.execution.harness_profile import register_analytics_harness_profile
 from deep_agent.execution.python_sandbox import build_python_sandbox
 from deep_agent.middleware.skills_context_middleware import PreloadedSkillsContextMiddleware
 from deep_agent.middleware.request_logging_middleware import (
@@ -38,7 +36,6 @@ from deep_agent.middleware.request_logging_middleware import (
 )
 from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
 from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
-from deep_agent.prompts.gigachat_runtime_prompt import build_gigachat_practices_prompt
 from deep_agent.prompts.skills_context_prompt import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -58,7 +55,6 @@ from deep_agent.agent import (
     _DEFAULT_CHECKPOINTER,
     _agents_memory_path,
     _build_native_runtime_middleware,
-    _build_runtime_context_prompt,
     _rebase_tool_outputs_path,
     _rebase_workspace_path,
     _resolve_workspace_root,
@@ -148,19 +144,15 @@ class _AgentTools:
 
 @dataclass(frozen=True)
 class _AgentPromptBundle:
-    """Хранит prompt-блоки, добавляемые к supervisor и subagents.
+    """Хранит итоговый prompt главного агента.
 
     Args:
-        runtime_context: Runtime-контекст с датой и путями.
-        gigachat_practices: Дополнительные практики выполнения задач.
         supervisor_system_prompt: Итоговый системный prompt supervisor.
 
     Returns:
-        Контейнер prompt-текстов для сборки graph.
+        Контейнер prompt-текста для сборки graph.
     """
 
-    runtime_context: str
-    gigachat_practices: str
     supervisor_system_prompt: str
 
 
@@ -211,10 +203,6 @@ def _build_agent_context(
         raise ValueError("Параметр model должен быть передан в build_agent явно.")
     resolved_model = model
     configure_read_file_default_limit(resolved_settings.read_file_default_limit)
-    register_analytics_harness_profile(
-        resolved_settings.harness_profile_key,
-        enable_general_purpose=False,
-    )
     resolved_workspace_root = _resolve_workspace_root(workspace_root or resolved_settings.workspace_root)
     resolved_skills_root = _rebase_workspace_path(
         resolved_settings.skills_root,
@@ -349,29 +337,19 @@ def _build_agent_tools(
 
 
 def _build_agent_prompts(context: _AgentBuildContext) -> _AgentPromptBundle:
-    """Собирает общие prompt-блоки для supervisor и subagents.
+    """Собирает итоговый prompt для supervisor.
 
     Args:
         context: Контекст сборки агента.
 
     Returns:
-        Контейнер runtime, GigaChat и supervisor prompts.
+        Контейнер supervisor prompt.
     """
 
-    runtime_context = _build_runtime_context_prompt(
-        context.workspace_root,
-        context.tool_outputs_dir,
-        agent_root=context.skills_root.parent,
-        skills_root=context.skills_root,
-        agents_memory_path=context.agents_memory_path,
-    )
-    gigachat_practices = build_gigachat_practices_prompt()
-    supervisor_system_prompt = f"{SYSTEM_PROMPT}\n\n{gigachat_practices}\n\n{runtime_context}"
+    supervisor_system_prompt = SYSTEM_PROMPT
     if context.system_prompt_suffix:
         supervisor_system_prompt = f"{supervisor_system_prompt}\n\n{context.system_prompt_suffix.strip()}"
     return _AgentPromptBundle(
-        runtime_context=runtime_context,
-        gigachat_practices=gigachat_practices,
         supervisor_system_prompt=supervisor_system_prompt,
     )
 
@@ -407,30 +385,11 @@ def _build_skills_middleware(context: _AgentBuildContext) -> _SkillsMiddlewareBu
     )
 
 
-def _extend_subagent_prompt(config: dict[str, Any], prompts: _AgentPromptBundle) -> dict[str, Any]:
-    """Добавляет общие runtime prompt-блоки к конфигурации subagent.
-
-    Args:
-        config: Конфигурация subagent перед ``create_deep_agent``.
-        prompts: Общие prompt-блоки агента.
-
-    Returns:
-        Копия конфигурации с дополненным ``system_prompt``.
-    """
-
-    result = dict(config)
-    result["system_prompt"] = (
-        f"{result['system_prompt']}\n\n{prompts.gigachat_practices}\n\n{prompts.runtime_context}"
-    )
-    return result
-
-
 def _build_subagent_graphs(
     *,
     context: _AgentBuildContext,
     backends: _AgentBackends,
     tools: _AgentTools,
-    prompts: _AgentPromptBundle,
     skills_middleware: _SkillsMiddlewareBundle,
     tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> list[dict[str, Any]]:
@@ -440,7 +399,6 @@ def _build_subagent_graphs(
         context: Контекст сборки агента.
         backends: Backend-ы graph.
         tools: Общие tools.
-        prompts: Общие prompt-блоки.
         skills_middleware: Middleware предзагрузки skills.
         tool_output_file_middleware: Middleware сохранения крупных outputs.
 
@@ -452,14 +410,12 @@ def _build_subagent_graphs(
         context=context,
         backends=backends,
         tools=tools,
-        prompts=prompts,
         tool_output_file_middleware=tool_output_file_middleware,
     )
     data_retrieval_agent = _build_data_retrieval_agent_graph(
         context=context,
         backends=backends,
         tools=tools,
-        prompts=prompts,
         skills_middleware=skills_middleware,
         tool_output_file_middleware=tool_output_file_middleware,
     )
@@ -474,7 +430,6 @@ def _build_coding_agent_graph(
     context: _AgentBuildContext,
     backends: _AgentBackends,
     tools: _AgentTools,
-    prompts: _AgentPromptBundle,
     tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> Any:
     """Собирает compiled coding-agent.
@@ -483,7 +438,6 @@ def _build_coding_agent_graph(
         context: Контекст сборки агента.
         backends: Backend-ы graph.
         tools: Общие tools.
-        prompts: Общие prompt-блоки.
         tool_output_file_middleware: Middleware сохранения крупных outputs.
 
     Returns:
@@ -512,7 +466,7 @@ def _build_coding_agent_graph(
         skill_sources=[context.skills_workspace_dir],
     )
     return create_deep_agent(
-        **_extend_subagent_prompt(config, prompts),
+        **config,
         backend=backends.coding,
         memory=[context.agents_memory_path],
     )
@@ -523,7 +477,6 @@ def _build_data_retrieval_agent_graph(
     context: _AgentBuildContext,
     backends: _AgentBackends,
     tools: _AgentTools,
-    prompts: _AgentPromptBundle,
     skills_middleware: _SkillsMiddlewareBundle,
     tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> Any:
@@ -533,7 +486,6 @@ def _build_data_retrieval_agent_graph(
         context: Контекст сборки агента.
         backends: Backend-ы graph.
         tools: Общие tools.
-        prompts: Общие prompt-блоки.
         skills_middleware: Middleware предзагрузки skills.
         tool_output_file_middleware: Middleware сохранения крупных outputs.
 
@@ -550,6 +502,7 @@ def _build_data_retrieval_agent_graph(
             workspace_root=context.workspace_root,
             agent_name="data-retrieval-agent",
             limit_model_calls=True,
+            hidden_tool_names=("get_project_structure", "edit_file"),
         ),
     ]
     config = build_data_retrieval_subagent_config(
@@ -558,13 +511,12 @@ def _build_data_retrieval_agent_graph(
             *tools.data_tools,
             tools.load_skills_tool,
             tools.python_tool,
-            tools.project_structure_tool,
         ],
         common_middleware=middleware,
         skill_sources=[context.skills_workspace_dir],
     )
     return create_deep_agent(
-        **_extend_subagent_prompt(config, prompts),
+        **config,
         backend=backends.data,
         memory=[context.agents_memory_path],
     )
@@ -595,10 +547,6 @@ def _build_supervisor_graph(
         Скомпилированный supervisor graph.
     """
 
-    register_analytics_harness_profile(
-        context.settings.harness_profile_key,
-        enable_general_purpose=False,
-    )
     return create_deep_agent(
         model=context.model,
         tools=[
