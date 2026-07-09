@@ -1,13 +1,13 @@
-"""User profile memory initialization.
+"""Инициализация памяти профиля пользователя.
 
-Contains:
-- UserProfileMemory: user profile memory parameters.
-- build_user_profile_memory_reference: creates memory reference without Spark query.
-- ensure_user_profile_memory: creates user profile memory file when missing.
-- extract_login_from_path: extracts login from runtime workspace path.
-- fetch_user_info: reads full name from Spark addressbook.
-- _build_user_profile_memory_content: builds markdown memory file.
-- _login_in_memory: checks whether memory file contains current login.
+Содержит:
+- UserProfileMemory: параметры памяти профиля пользователя.
+- build_user_profile_memory_reference: создает ссылку на память без Spark-запроса.
+- ensure_user_profile_memory: создает файл памяти профиля, если его еще нет.
+- extract_login_from_path: извлекает login из runtime workspace path.
+- fetch_user_info: читает ФИО пользователя из Spark addressbook.
+- _build_user_profile_memory_content: формирует markdown-файл памяти.
+- _login_in_memory: проверяет наличие текущего login в файле памяти.
 """
 
 from __future__ import annotations
@@ -27,34 +27,32 @@ USER_PROFILE_STORE_KEY = "/user_profile.md"
 
 @dataclass(frozen=True)
 class UserProfileMemory:
-    """Stores user profile memory parameters.
+    """Хранит параметры памяти профиля пользователя.
 
     Args:
-        login: User login.
-        namespace: LangGraph Store namespace for isolated memory.
-        store: Store with the memory file.
-        full_name: User full name or ``None``.
-        memory_source: DeepAgents virtual memory file path.
+        login: Login пользователя.
+        namespace: Namespace LangGraph Store для изоляции памяти.
+        store: Store с файлом памяти.
+        memory_source: Виртуальный путь файла памяти deepagents.
 
     Returns:
-        User profile memory parameters container.
+        Контейнер параметров памяти профиля пользователя.
     """
 
     login: str
     namespace: tuple[str, ...]
     store: Any
-    full_name: str | None = None
     memory_source: str = USER_PROFILE_MEMORY_PATH
 
     @property
     def memory_path(self) -> str:
-        """Returns DeepAgents memory file path.
+        """Возвращает путь файла памяти deepagents.
 
         Args:
-            None.
+            Отсутствуют.
 
         Returns:
-            Memory file path like ``/memories/user_profile.md``.
+            Путь файла памяти вида ``/memories/user_profile.md``.
         """
 
         return self.memory_source
@@ -65,14 +63,14 @@ def build_user_profile_memory_reference(
     workspace_root: str | Path,
     memory_root: str | Path,
 ) -> UserProfileMemory:
-    """Creates user profile memory reference without Spark query.
+    """Создает ссылку на память профиля без Spark-запроса.
 
     Args:
-        workspace_root: Runtime workspace used to extract login.
-        memory_root: Directory for JSON memory files.
+        workspace_root: Runtime workspace, из которого извлекается login.
+        memory_root: Директория JSON-файлов памяти.
 
     Returns:
-        User profile memory parameters without reading Spark tables.
+        Параметры памяти профиля пользователя без чтения Spark-таблиц.
     """
 
     login = extract_login_from_path(workspace_root)
@@ -86,14 +84,14 @@ def ensure_user_profile_memory(
     profile: UserProfileMemory,
     spark_session_factory: Any,
 ) -> str | None:
-    """Creates user profile memory file when it is missing.
+    """Создает файл памяти профиля, если он отсутствует.
 
     Args:
-        profile: User profile memory reference.
-        spark_session_factory: SparkSession factory from ``load_data`` tool.
+        profile: Ссылка на память профиля пользователя.
+        spark_session_factory: Фабрика SparkSession из инструмента ``load_data``.
 
     Returns:
-        Memory file content or ``None``.
+        Содержимое файла памяти или ``None``.
     """
 
     existing_item = profile.store.get(profile.namespace, USER_PROFILE_STORE_KEY)
@@ -123,16 +121,16 @@ def ensure_user_profile_memory(
 
 
 def extract_login_from_path(workspace_root: str | Path) -> str:
-    """Extracts numeric login from runtime workspace path.
+    """Извлекает числовой login из runtime workspace path.
 
     Args:
-        workspace_root: Agent runtime workspace path.
+        workspace_root: Runtime workspace path агента.
 
     Returns:
-        First numeric fragment from workspace directory name.
+        Первый числовой фрагмент из имени директории workspace.
 
     Raises:
-        ValueError: If numeric login is not found.
+        ValueError: Если числовой login не найден.
     """
 
     directory_name = Path(workspace_root).expanduser().resolve().name
@@ -143,14 +141,14 @@ def extract_login_from_path(workspace_root: str | Path) -> str:
 
 
 def fetch_user_info(spark: Any, login: str) -> str | None:
-    """Reads user full name from Spark addressbook by sigma login.
+    """Читает ФИО пользователя из Spark addressbook по sigma login.
 
     Args:
-        spark: Active SparkSession.
-        login: User login without domain prefix.
+        spark: Активная SparkSession.
+        login: Login пользователя без доменного префикса.
 
     Returns:
-        User full name or ``None``.
+        ФИО пользователя или ``None``.
     """
 
     from pyspark.sql import functions as f
@@ -172,14 +170,14 @@ def fetch_user_info(spark: Any, login: str) -> str | None:
 
 
 def _build_user_profile_memory_content(login: str, full_name: str) -> str:
-    """Builds markdown content for user profile memory file.
+    """Формирует markdown-содержимое файла памяти профиля пользователя.
 
     Args:
-        login: User login.
-        full_name: User full name.
+        login: Login пользователя.
+        full_name: ФИО пользователя.
 
     Returns:
-        Markdown text for Store.
+        Markdown-текст для Store.
     """
 
     return f"""# User profile
@@ -190,14 +188,14 @@ name: {full_name}
 
 
 def _login_in_memory(content: str, login: str) -> bool:
-    """Checks that memory file contains current login.
+    """Проверяет, что файл памяти содержит текущий login.
 
     Args:
-        content: Memory file text.
-        login: Current user login.
+        content: Текст файла памяти.
+        login: Текущий login пользователя.
 
     Returns:
-        ``True`` when file contains current login.
+        ``True``, если файл содержит текущий login.
     """
 
     return f"login: {login}" in content

@@ -1,26 +1,24 @@
 """Middleware ленивой инициализации памяти профиля пользователя.
 
 Содержит:
-- UserProfileMemoryMiddleware: проверяет файл профиля при первом обращении к модели.
+- UserProfileMemoryMiddleware: создает файл профиля до штатной загрузки памяти.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
 
-from deepagents.middleware._utils import append_to_system_message
-from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
+from langchain.agents.middleware import AgentMiddleware
 
 from deep_agent.memory.user_profile_memory import UserProfileMemory, ensure_user_profile_memory
 
 
 @dataclass
 class UserProfileMemoryMiddleware(AgentMiddleware):
-    """Лениво создает файл памяти профиля пользователя перед первым model call.
+    """Лениво создает файл памяти профиля пользователя перед загрузкой памяти.
 
     Args:
         profile: Ссылка на файл памяти и Store пользователя.
@@ -33,81 +31,65 @@ class UserProfileMemoryMiddleware(AgentMiddleware):
     profile: UserProfileMemory
     spark_session_factory: Any
     _initialized: bool = field(default=False, init=False, repr=False)
-    _content: str | None = field(default=None, init=False, repr=False)
     _lock: Lock = field(default_factory=Lock, init=False, repr=False)
 
-    def wrap_model_call(
+    def before_agent(
         self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        """Создает память профиля и добавляет ее в первый prompt.
+        state: dict[str, Any],
+        runtime: Any,
+        config: Any,
+    ) -> None:
+        """Создает память профиля до штатного чтения файлов памяти deepagents.
 
         Args:
-            request: Запрос к модели.
-            handler: Следующий обработчик model call.
+            state: Текущее состояние агента.
+            runtime: Runtime текущего запуска.
+            config: Конфигурация текущего запуска.
 
         Returns:
-            Ответ модели.
+            None.
         """
 
-        return handler(self._with_user_profile(request))
+        self._ensure_memory()
+        return None
 
-    async def awrap_model_call(
+    async def abefore_agent(
         self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
-        """Асинхронно создает память профиля и добавляет ее в первый prompt.
+        state: dict[str, Any],
+        runtime: Any,
+        config: Any,
+    ) -> None:
+        """Асинхронно создает память профиля до штатного чтения файлов памяти.
 
         Args:
-            request: Запрос к модели.
-            handler: Следующий асинхронный обработчик model call.
+            state: Текущее состояние агента.
+            runtime: Runtime текущего запуска.
+            config: Конфигурация текущего запуска.
 
         Returns:
-            Ответ модели.
+            None.
         """
 
-        updated_request = await asyncio.to_thread(self._with_user_profile, request)
-        return await handler(updated_request)
+        await asyncio.to_thread(self._ensure_memory)
+        return None
 
-    def _with_user_profile(self, request: ModelRequest) -> ModelRequest:
-        """Возвращает запрос модели с добавленным профилем пользователя.
-
-        Args:
-            request: Исходный запрос к модели.
-
-        Returns:
-            Исходный или обновленный запрос к модели.
-        """
-
-        content = self._ensure_content()
-        if not content:
-            return request
-        return request.override(
-            system_message=append_to_system_message(
-                request.system_message,
-                f"## Профиль текущего пользователя\n\n{content}",
-            )
-        )
-
-    def _ensure_content(self) -> str | None:
+    def _ensure_memory(self) -> None:
         """Инициализирует память профиля не более одного раза на процесс.
 
         Args:
             Отсутствуют.
 
         Returns:
-            Содержимое файла памяти профиля или ``None``.
+            None.
         """
 
         if self._initialized:
-            return self._content
+            return None
         with self._lock:
             if self._initialized:
-                return self._content
+                return None
             try:
-                self._content = ensure_user_profile_memory(
+                ensure_user_profile_memory(
                     profile=self.profile,
                     spark_session_factory=self.spark_session_factory,
                 )
@@ -117,6 +99,5 @@ class UserProfileMemoryMiddleware(AgentMiddleware):
                     f"{type(error).__name__}: {error}",
                     flush=True,
                 )
-                self._content = None
             self._initialized = True
-            return self._content
+            return None
