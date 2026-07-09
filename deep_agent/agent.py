@@ -26,6 +26,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
 - cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
+- _find_spark_session_factory: поиск SparkSession factory в data-tools.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents.backends import CompositeBackend, StateBackend
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
@@ -73,6 +74,7 @@ from deep_agent.middleware.model_error_middleware import (
     format_model_error,
     is_retryable_model_error,
 )
+from deep_agent.memory.user_profile_memory import build_user_profile_memory_reference
 
 _DEFAULT_CHECKPOINTER = object()
 
@@ -190,16 +192,48 @@ def build_agent(
         _build_tool_output_file_middleware,
     )
 
+    base_data_tools = _normalize_data_tools(data_tools)
+    spark_session_factory = _find_spark_session_factory(base_data_tools)
+    resolved_settings = settings or load_agent_settings(workspace_root)
+    resolved_workspace_root = _resolve_workspace_root(
+        workspace_root or resolved_settings.workspace_root
+    )
+    user_profile_memory = (
+        build_user_profile_memory_reference(
+            workspace_root=resolved_workspace_root,
+            memory_root=resolved_workspace_root / ".deep_agent" / "memory",
+        )
+        if spark_session_factory is not None
+        else None
+    )
+
     context = _build_agent_context(
         model=model,
-        settings=settings,
-        workspace_root=workspace_root,
+        settings=resolved_settings,
+        workspace_root=resolved_workspace_root,
         checkpointer=checkpointer,
         state_artifacts_virtual_dir=state_artifacts_virtual_dir,
         system_prompt_suffix=system_prompt_suffix,
         request_logger=request_logger,
+        user_profile_memory=user_profile_memory,
+        user_profile_spark_session_factory=spark_session_factory,
+        user_memory_store=(
+            user_profile_memory.store
+            if user_profile_memory is not None
+            else None
+        ),
+        user_memory_namespace=(
+            user_profile_memory.namespace
+            if user_profile_memory is not None
+            else None
+        ),
+        user_memory_paths=(
+            [user_profile_memory.memory_path]
+            if user_profile_memory is not None
+            else []
+        ),
     )
-    normalized_data_tools = wrap_data_tools_with_query_code(_normalize_data_tools(data_tools))
+    normalized_data_tools = wrap_data_tools_with_query_code(base_data_tools)
     normalized_supervisor_tools = _normalize_supervisor_tools(supervisor_tools)
     tool_output_file_middleware = _build_tool_output_file_middleware(context)
     backends = _build_agent_backends(context)
@@ -304,6 +338,7 @@ def build_skills_backend(
     tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
+    memory_namespace: tuple[str, ...] | None = None,
 ) -> Any:
     """Собирает backend coding-agent с единым файловым корнем workspace.
 
@@ -314,6 +349,7 @@ def build_skills_backend(
         workspace_root: Корень доступного агенту workspace.
         state_artifacts_virtual_dir: Виртуальная директория, направляемая в ``StateBackend``
             для отображения текстовых артефактов в LangGraph UI.
+        memory_namespace: Namespace StoreBackend для пользовательской памяти.
 
     Returns:
         ``CompositeBackend`` с terminal и полным файловым доступом внутри workspace.
@@ -324,6 +360,11 @@ def build_skills_backend(
         workspace_root or settings.workspace_root
     )
     routes, artifacts_root = _build_state_artifact_routes(state_artifacts_virtual_dir)
+    if memory_namespace is not None:
+        routes = {
+            **routes,
+            "/memories/": StoreBackend(namespace=lambda *args: memory_namespace),
+        }
 
     return CompositeBackend(
         default=Utf8LocalShellBackend(
@@ -564,6 +605,24 @@ def cleanup_session_tool_outputs_dir(session_dir: Path) -> None:
         ``None``. Каталог артефактов является пользовательским результатом и не очищается автоматически.
     """
 
+    return None
+
+
+def _find_spark_session_factory(data_tools: list[BaseTool]) -> Any | None:
+    """Находит фабрику SparkSession в metadata инструмента ``load_data``.
+
+    Args:
+        data_tools: Список исходных data-tools до обертки прозрачности.
+
+    Returns:
+        Фабрика SparkSession или ``None``.
+    """
+
+    for tool in data_tools:
+        metadata = getattr(tool, "metadata", None) or {}
+        factory = metadata.get("spark_session_factory")
+        if callable(factory):
+            return factory
     return None
 
 

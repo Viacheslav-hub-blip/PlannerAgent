@@ -36,6 +36,7 @@ from deep_agent.middleware.request_logging_middleware import (
 )
 from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
 from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
+from deep_agent.middleware.user_profile_memory_middleware import UserProfileMemoryMiddleware
 from deep_agent.prompts.skills_context_prompt import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
@@ -80,6 +81,11 @@ class _AgentBuildContext:
         checkpointer: Checkpointer LangGraph или маркер штатной памяти.
         system_prompt_suffix: Дополнительный prompt supervisor.
         request_logger: Логгер пользовательских запросов или ``None``.
+        user_profile_memory: Ссылка на память профиля пользователя или ``None``.
+        user_profile_spark_session_factory: Фабрика SparkSession для профиля или ``None``.
+        user_memory_store: Store с долговременной памятью пользователя или ``None``.
+        user_memory_namespace: Namespace памяти пользователя или ``None``.
+        user_memory_paths: Список виртуальных файлов памяти пользователя.
 
     Returns:
         Контейнер без поведения, используемый helper-функциями сборки.
@@ -96,6 +102,11 @@ class _AgentBuildContext:
     checkpointer: Any
     system_prompt_suffix: str | None
     request_logger: AgentRequestLogger | None
+    user_profile_memory: Any | None
+    user_profile_spark_session_factory: Any | None
+    user_memory_store: Any | None
+    user_memory_namespace: tuple[str, ...] | None
+    user_memory_paths: list[str] | None
 
 
 @dataclass(frozen=True)
@@ -182,6 +193,11 @@ def _build_agent_context(
     state_artifacts_virtual_dir: str | None,
     system_prompt_suffix: str | None,
     request_logger: AgentRequestLogger | None = None,
+    user_profile_memory: Any | None = None,
+    user_profile_spark_session_factory: Any | None = None,
+    user_memory_store: Any | None = None,
+    user_memory_namespace: tuple[str, ...] | None = None,
+    user_memory_paths: list[str] | None = None,
 ) -> _AgentBuildContext:
     """Готовит настройки, модель и вычисленные пути одного запуска агента.
 
@@ -193,6 +209,11 @@ def _build_agent_context(
         state_artifacts_virtual_dir: Виртуальная директория state-артефактов UI.
         system_prompt_suffix: Дополнительный prompt supervisor.
         request_logger: Логгер пользовательских запросов или ``None``.
+        user_profile_memory: Ссылка на память профиля пользователя или ``None``.
+        user_profile_spark_session_factory: Фабрика SparkSession для профиля или ``None``.
+        user_memory_store: Store с долговременной памятью пользователя или ``None``.
+        user_memory_namespace: Namespace памяти пользователя или ``None``.
+        user_memory_paths: Список виртуальных файлов памяти пользователя.
 
     Returns:
         Контекст сборки с нормализованными путями и моделью.
@@ -236,6 +257,11 @@ def _build_agent_context(
         checkpointer=checkpointer,
         system_prompt_suffix=system_prompt_suffix,
         request_logger=request_logger,
+        user_profile_memory=user_profile_memory,
+        user_profile_spark_session_factory=user_profile_spark_session_factory,
+        user_memory_store=user_memory_store,
+        user_memory_namespace=user_memory_namespace,
+        user_memory_paths=user_memory_paths,
     )
 
 
@@ -281,6 +307,7 @@ def _build_agent_backends(context: _AgentBuildContext) -> _AgentBackends:
             tool_outputs_dir=context.tool_outputs_dir,
             workspace_root=context.workspace_root,
             state_artifacts_virtual_dir=context.state_artifacts_virtual_dir,
+            memory_namespace=context.user_memory_namespace,
         ),
         coding=build_skills_backend(
             context.settings,
@@ -566,6 +593,17 @@ def _build_supervisor_graph(
                 if context.request_logger is not None
                 else []
             ),
+            *(
+                [
+                    UserProfileMemoryMiddleware(
+                        profile=context.user_profile_memory,
+                        spark_session_factory=context.user_profile_spark_session_factory,
+                    )
+                ]
+                if context.user_profile_memory is not None
+                and context.user_profile_spark_session_factory is not None
+                else []
+            ),
             skills_middleware.supervisor,
             *_build_native_runtime_middleware(
                 context.settings,
@@ -577,12 +615,16 @@ def _build_supervisor_graph(
                 hidden_tool_names=("edit_file",),
             ),
         ],
-        memory=[context.agents_memory_path],
+        memory=[
+            context.agents_memory_path,
+            *(context.user_memory_paths or []),
+        ],
         checkpointer=(
             build_conversation_checkpointer()
             if context.checkpointer is _DEFAULT_CHECKPOINTER
             else context.checkpointer
         ),
+        store=context.user_memory_store,
     )
 
 

@@ -165,14 +165,17 @@ def build_spark_data_tools(
             result["is_aggregation"] = bool(parsed["aggregations"])
         return result
 
-    return [
-        StructuredTool.from_function(
-            func=read_table,
-            name="load_data",
-            description=READ_TABLE_DESCRIPTION,
-            args_schema=ReadTableInput,
-        )
-    ]
+    tool = StructuredTool.from_function(
+        func=read_table,
+        name="load_data",
+        description=READ_TABLE_DESCRIPTION,
+        args_schema=ReadTableInput,
+    )
+    tool.metadata = {
+        **(tool.metadata or {}),
+        "spark_session_factory": spark_session_factory,
+    }
+    return [tool]
 
 
 @contextmanager
