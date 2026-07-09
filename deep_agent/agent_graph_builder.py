@@ -52,7 +52,6 @@ from deep_agent.tools.python_execution_tool import build_python_tool
 from deep_agent.tools.project_structure_tool import build_get_project_structure_tool
 from deep_agent.tools.refactor_review_tool import build_review_refactor_tool
 from deep_agent.tools.skill_loader_tool import build_load_skills_tool
-from deep_agent.tools.user_memory_tool import build_save_user_fact_tool
 from deep_agent.agent import (
     _DEFAULT_CHECKPOINTER,
     _agents_memory_path,
@@ -136,7 +135,6 @@ class _AgentTools:
         project_structure_tool: Инструмент просмотра структуры проекта.
         jupyter_notebook_tool: Инструмент конвертации notebooks.
         review_refactor_tool: Инструмент локального ревью refactor.
-        user_memory_tool: Инструмент сохранения фактов пользователя или ``None``.
 
     Returns:
         Контейнер tools для helper-функций сборки.
@@ -149,7 +147,6 @@ class _AgentTools:
     project_structure_tool: Any
     jupyter_notebook_tool: Any
     review_refactor_tool: Any
-    user_memory_tool: Any | None
 
 
 @dataclass(frozen=True)
@@ -351,11 +348,6 @@ def _build_agent_tools(
         review_refactor_tool=build_review_refactor_tool(
             model=context.model,
             workspace_root=context.workspace_root,
-        ),
-        user_memory_tool=(
-            build_save_user_fact_tool(context.user_profile_memory)
-            if context.user_profile_memory is not None
-            else None
         ),
     )
 
@@ -577,7 +569,6 @@ def _build_supervisor_graph(
             tools.load_skills_tool,
             tools.python_tool,
             tools.project_structure_tool,
-            *([tools.user_memory_tool] if tools.user_memory_tool is not None else []),
             *tools.supervisor_tools,
         ],
         system_prompt=prompts.supervisor_system_prompt,
