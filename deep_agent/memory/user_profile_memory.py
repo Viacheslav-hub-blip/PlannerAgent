@@ -17,12 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deepagents.backends.utils import create_file_data
-
-from deep_agent.memory.simple_file_store import SimpleFileStore
-
-USER_PROFILE_MEMORY_PATH = "/memories/user_profile.md"
-USER_PROFILE_STORE_KEY = "/user_profile.md"
+USER_PROFILE_MEMORY_PATH = "/.deep_agent/memory/user_profile.md"
 
 
 @dataclass(frozen=True)
@@ -31,8 +26,7 @@ class UserProfileMemory:
 
     Args:
         login: Login пользователя.
-        namespace: Namespace LangGraph Store для изоляции памяти.
-        store: Store с файлом памяти.
+        file_path: Физический путь к файлу памяти профиля.
         memory_source: Виртуальный путь файла памяти deepagents.
 
     Returns:
@@ -40,8 +34,7 @@ class UserProfileMemory:
     """
 
     login: str
-    namespace: tuple[str, ...]
-    store: Any
+    file_path: Path
     memory_source: str = USER_PROFILE_MEMORY_PATH
 
     @property
@@ -52,7 +45,7 @@ class UserProfileMemory:
             Отсутствуют.
 
         Returns:
-            Путь файла памяти вида ``/memories/user_profile.md``.
+            Путь файла памяти вида ``/.deep_agent/memory/user_profile.md``.
         """
 
         return self.memory_source
@@ -61,22 +54,19 @@ class UserProfileMemory:
 def build_user_profile_memory_reference(
     *,
     workspace_root: str | Path,
-    memory_root: str | Path,
 ) -> UserProfileMemory:
     """Создает ссылку на память профиля без Spark-запроса.
 
     Args:
         workspace_root: Runtime workspace, из которого извлекается login.
-        memory_root: Директория JSON-файлов памяти.
 
     Returns:
         Параметры памяти профиля пользователя без чтения Spark-таблиц.
     """
 
     login = extract_login_from_path(workspace_root)
-    namespace = ("user-profile", login)
-    store = SimpleFileStore(root_dir=str(memory_root))
-    return UserProfileMemory(login=login, namespace=namespace, store=store)
+    file_path = Path(workspace_root).expanduser().resolve() / ".deep_agent" / "memory" / "user_profile.md"
+    return UserProfileMemory(login=login, file_path=file_path)
 
 
 def ensure_user_profile_memory(
@@ -94,9 +84,8 @@ def ensure_user_profile_memory(
         Содержимое файла памяти или ``None``.
     """
 
-    existing_item = profile.store.get(profile.namespace, USER_PROFILE_STORE_KEY)
-    if existing_item is not None:
-        content = existing_item.value.get("content", "")
+    if profile.file_path.exists():
+        content = profile.file_path.read_text(encoding="utf-8")
         if _login_in_memory(content, profile.login):
             return content
 
@@ -112,11 +101,8 @@ def ensure_user_profile_memory(
         return None
 
     content = _build_user_profile_memory_content(profile.login, full_name)
-    profile.store.put(
-        profile.namespace,
-        USER_PROFILE_STORE_KEY,
-        create_file_data(content),
-    )
+    profile.file_path.parent.mkdir(parents=True, exist_ok=True)
+    profile.file_path.write_text(content, encoding="utf-8")
     return content
 
 
@@ -133,10 +119,17 @@ def extract_login_from_path(workspace_root: str | Path) -> str:
         ValueError: Если числовой login не найден.
     """
 
-    directory_name = Path(workspace_root).expanduser().resolve().name
-    match = re.search(r"\d+", directory_name)
+    resolved_path = Path(workspace_root).expanduser().resolve()
+    for part in resolved_path.parts:
+        lowered_part = part.lower()
+        if any(marker in lowered_part for marker in ("omega", "sigma", "sbrf")):
+            match = re.search(r"\d+", part)
+            if match:
+                return match.group()
+
+    match = re.search(r"\d{4,}", str(resolved_path))
     if not match:
-        raise ValueError(f"Не удалось найти логин в пути: {workspace_root}")
+        raise ValueError(f"Не удалось найти login в пути: {workspace_root}")
     return match.group()
 
 
@@ -184,6 +177,8 @@ def _build_user_profile_memory_content(login: str, full_name: str) -> str:
 
 login: {login}
 name: {full_name}
+
+## Facts
 """
 
 

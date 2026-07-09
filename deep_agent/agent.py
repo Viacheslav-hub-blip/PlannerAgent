@@ -34,7 +34,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
     ContextEditingMiddleware,
@@ -201,7 +201,6 @@ def build_agent(
     user_profile_memory = (
         build_user_profile_memory_reference(
             workspace_root=resolved_workspace_root,
-            memory_root=resolved_workspace_root / ".deep_agent" / "memory",
         )
         if spark_session_factory is not None
         else None
@@ -217,16 +216,6 @@ def build_agent(
         request_logger=request_logger,
         user_profile_memory=user_profile_memory,
         user_profile_spark_session_factory=spark_session_factory,
-        user_memory_store=(
-            user_profile_memory.store
-            if user_profile_memory is not None
-            else None
-        ),
-        user_memory_namespace=(
-            user_profile_memory.namespace
-            if user_profile_memory is not None
-            else None
-        ),
         user_memory_paths=(
             [user_profile_memory.memory_path]
             if user_profile_memory is not None
@@ -338,7 +327,6 @@ def build_skills_backend(
     tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
-    memory_namespace: tuple[str, ...] | None = None,
 ) -> Any:
     """Собирает backend coding-agent с единым файловым корнем workspace.
 
@@ -349,7 +337,6 @@ def build_skills_backend(
         workspace_root: Корень доступного агенту workspace.
         state_artifacts_virtual_dir: Виртуальная директория, направляемая в ``StateBackend``
             для отображения текстовых артефактов в LangGraph UI.
-        memory_namespace: Namespace StoreBackend для пользовательской памяти.
 
     Returns:
         ``CompositeBackend`` с terminal и полным файловым доступом внутри workspace.
@@ -360,11 +347,6 @@ def build_skills_backend(
         workspace_root or settings.workspace_root
     )
     routes, artifacts_root = _build_state_artifact_routes(state_artifacts_virtual_dir)
-    if memory_namespace is not None:
-        routes = {
-            **routes,
-            "/memories/": StoreBackend(namespace=lambda *args: memory_namespace),
-        }
 
     return CompositeBackend(
         default=Utf8LocalShellBackend(

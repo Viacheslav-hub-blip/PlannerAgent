@@ -52,6 +52,7 @@ from deep_agent.tools.python_execution_tool import build_python_tool
 from deep_agent.tools.project_structure_tool import build_get_project_structure_tool
 from deep_agent.tools.refactor_review_tool import build_review_refactor_tool
 from deep_agent.tools.skill_loader_tool import build_load_skills_tool
+from deep_agent.tools.user_memory_tool import build_save_user_fact_tool
 from deep_agent.agent import (
     _DEFAULT_CHECKPOINTER,
     _agents_memory_path,
@@ -83,8 +84,6 @@ class _AgentBuildContext:
         request_logger: Логгер пользовательских запросов или ``None``.
         user_profile_memory: Ссылка на память профиля пользователя или ``None``.
         user_profile_spark_session_factory: Фабрика SparkSession для профиля или ``None``.
-        user_memory_store: Store с долговременной памятью пользователя или ``None``.
-        user_memory_namespace: Namespace памяти пользователя или ``None``.
         user_memory_paths: Список виртуальных файлов памяти пользователя.
 
     Returns:
@@ -104,8 +103,6 @@ class _AgentBuildContext:
     request_logger: AgentRequestLogger | None
     user_profile_memory: Any | None
     user_profile_spark_session_factory: Any | None
-    user_memory_store: Any | None
-    user_memory_namespace: tuple[str, ...] | None
     user_memory_paths: list[str] | None
 
 
@@ -139,6 +136,7 @@ class _AgentTools:
         project_structure_tool: Инструмент просмотра структуры проекта.
         jupyter_notebook_tool: Инструмент конвертации notebooks.
         review_refactor_tool: Инструмент локального ревью refactor.
+        user_memory_tool: Инструмент сохранения фактов пользователя или ``None``.
 
     Returns:
         Контейнер tools для helper-функций сборки.
@@ -151,6 +149,7 @@ class _AgentTools:
     project_structure_tool: Any
     jupyter_notebook_tool: Any
     review_refactor_tool: Any
+    user_memory_tool: Any | None
 
 
 @dataclass(frozen=True)
@@ -195,8 +194,6 @@ def _build_agent_context(
     request_logger: AgentRequestLogger | None = None,
     user_profile_memory: Any | None = None,
     user_profile_spark_session_factory: Any | None = None,
-    user_memory_store: Any | None = None,
-    user_memory_namespace: tuple[str, ...] | None = None,
     user_memory_paths: list[str] | None = None,
 ) -> _AgentBuildContext:
     """Готовит настройки, модель и вычисленные пути одного запуска агента.
@@ -211,8 +208,6 @@ def _build_agent_context(
         request_logger: Логгер пользовательских запросов или ``None``.
         user_profile_memory: Ссылка на память профиля пользователя или ``None``.
         user_profile_spark_session_factory: Фабрика SparkSession для профиля или ``None``.
-        user_memory_store: Store с долговременной памятью пользователя или ``None``.
-        user_memory_namespace: Namespace памяти пользователя или ``None``.
         user_memory_paths: Список виртуальных файлов памяти пользователя.
 
     Returns:
@@ -259,8 +254,6 @@ def _build_agent_context(
         request_logger=request_logger,
         user_profile_memory=user_profile_memory,
         user_profile_spark_session_factory=user_profile_spark_session_factory,
-        user_memory_store=user_memory_store,
-        user_memory_namespace=user_memory_namespace,
         user_memory_paths=user_memory_paths,
     )
 
@@ -307,7 +300,6 @@ def _build_agent_backends(context: _AgentBuildContext) -> _AgentBackends:
             tool_outputs_dir=context.tool_outputs_dir,
             workspace_root=context.workspace_root,
             state_artifacts_virtual_dir=context.state_artifacts_virtual_dir,
-            memory_namespace=context.user_memory_namespace,
         ),
         coding=build_skills_backend(
             context.settings,
@@ -359,6 +351,11 @@ def _build_agent_tools(
         review_refactor_tool=build_review_refactor_tool(
             model=context.model,
             workspace_root=context.workspace_root,
+        ),
+        user_memory_tool=(
+            build_save_user_fact_tool(context.user_profile_memory)
+            if context.user_profile_memory is not None
+            else None
         ),
     )
 
@@ -580,6 +577,7 @@ def _build_supervisor_graph(
             tools.load_skills_tool,
             tools.python_tool,
             tools.project_structure_tool,
+            *([tools.user_memory_tool] if tools.user_memory_tool is not None else []),
             *tools.supervisor_tools,
         ],
         system_prompt=prompts.supervisor_system_prompt,
@@ -624,7 +622,6 @@ def _build_supervisor_graph(
             if context.checkpointer is _DEFAULT_CHECKPOINTER
             else context.checkpointer
         ),
-        store=context.user_memory_store,
     )
 
 

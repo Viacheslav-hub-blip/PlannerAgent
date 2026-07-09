@@ -21,7 +21,7 @@ class UserProfileMemoryMiddleware(AgentMiddleware):
     """Лениво создает файл памяти профиля пользователя перед загрузкой памяти.
 
     Args:
-        profile: Ссылка на файл памяти и Store пользователя.
+        profile: Ссылка на файл памяти профиля пользователя.
         spark_session_factory: Фабрика SparkSession из инструмента ``load_data``.
 
     Returns:
