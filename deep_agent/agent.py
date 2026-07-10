@@ -27,6 +27,7 @@ subagents -> custom tools -> ``create_deep_agent``).
 - create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
 - cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
 - _find_spark_session_factory: поиск SparkSession factory в data-tools.
+- _register_empty_deepagents_base_prompt: отключение базового prompt DeepAgents для модели.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from deepagents import HarnessProfile, register_harness_profile
 from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -42,6 +44,7 @@ from langchain.agents.middleware import (
     ModelRetryMiddleware,
     ToolCallLimitMiddleware,
 )
+from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -78,6 +81,38 @@ from deep_agent.middleware.prompt_logging_middleware import PromptLoggingMiddlew
 from deep_agent.memory.user_profile_memory import build_user_profile_memory_reference
 
 _DEFAULT_CHECKPOINTER = object()
+
+
+def _register_empty_deepagents_base_prompt(model: str | BaseChatModel) -> None:
+    """Регистрирует пустой базовый prompt DeepAgents для переданной модели.
+
+    Args:
+        model: Строковая спецификация модели DeepAgents или экземпляр ``BaseChatModel``.
+
+    Returns:
+        ``None``. Функция обновляет глобальный реестр профилей DeepAgents.
+
+    Raises:
+        ValueError: Если для экземпляра модели нельзя определить provider и identifier.
+    """
+
+    if isinstance(model, str):
+        profile_key = model
+    else:
+        from deepagents._models import get_model_identifier, get_model_provider
+
+        identifier = get_model_identifier(model)
+        provider = get_model_provider(model)
+        if not identifier or not provider:
+            raise ValueError(
+                "Невозможно определить provider и identifier модели для регистрации HarnessProfile."
+            )
+        profile_key = identifier if ":" in identifier else f"{provider}:{identifier}"
+
+    register_harness_profile(
+        profile_key,
+        HarnessProfile(base_system_prompt="", system_prompt_suffix=""),
+    )
 
 
 def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
@@ -194,6 +229,7 @@ def build_agent(
     )
 
     base_data_tools = _normalize_data_tools(data_tools)
+    _register_empty_deepagents_base_prompt(model)
     spark_session_factory = _find_spark_session_factory(base_data_tools)
     resolved_settings = settings or load_agent_settings(workspace_root)
     resolved_workspace_root = _resolve_workspace_root(
