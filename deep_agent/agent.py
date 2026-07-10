@@ -74,6 +74,7 @@ from deep_agent.middleware.model_error_middleware import (
     format_model_error,
     is_retryable_model_error,
 )
+from deep_agent.middleware.prompt_logging_middleware import PromptLoggingMiddleware
 from deep_agent.memory.user_profile_memory import build_user_profile_memory_reference
 
 _DEFAULT_CHECKPOINTER = object()
@@ -319,6 +320,12 @@ def _build_native_runtime_middleware(
                 exit_behavior="end",
             )
         )
+    middleware.append(
+        PromptLoggingMiddleware(
+            log_dir=Path("debug_prompts"),
+            agent_name=agent_name,
+        )
+    )
     return middleware
 
 

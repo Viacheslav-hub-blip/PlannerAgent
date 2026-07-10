@@ -21,6 +21,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
 from deep_agent.middleware.gigachat_runtime_middleware import ThinkToolMiddleware
+from deep_agent.middleware.prompt_logging_middleware import PromptLoggingMiddleware
 from deep_agent.middleware.tool_description_middleware import PromptToolFilterMiddleware
 from deep_agent.execution.filesystem_backend import (
     Utf8FilesystemBackend,
@@ -175,6 +176,10 @@ class ReviewRefactorTool(BaseTool):
                             "write_todos",
                             "task",
                         )
+                    ),
+                    PromptLoggingMiddleware(
+                        log_dir=Path("debug_prompts"),
+                        agent_name="review-refactor-agent",
                     ),
                 ],
                 permissions=[
