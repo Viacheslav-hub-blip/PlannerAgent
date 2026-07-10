@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
+from deepagents.middleware.memory import MemoryMiddleware
 from langchain_core.tools import BaseTool
 
 from deep_agent.agent_settings import AgentSettings, load_agent_settings, workspace_tool_path
@@ -469,6 +470,14 @@ def _build_coding_agent_graph(
         limit_model_calls=True,
         hidden_tool_names=("edit_file",),
     )
+    middleware.insert(
+        -1,
+        MemoryMiddleware(
+            backend=backends.coding,
+            sources=[context.agents_memory_path],
+            add_cache_control=True,
+        ),
+    )
     config = build_coding_subagent_config(
         model=context.model,
         tools=[
@@ -484,7 +493,6 @@ def _build_coding_agent_graph(
     return create_deep_agent(
         **config,
         backend=backends.coding,
-        memory=[context.agents_memory_path],
     )
 
 
@@ -521,6 +529,14 @@ def _build_data_retrieval_agent_graph(
             hidden_tool_names=("get_project_structure", "edit_file"),
         ),
     ]
+    middleware.insert(
+        -1,
+        MemoryMiddleware(
+            backend=backends.data,
+            sources=[context.agents_memory_path],
+            add_cache_control=True,
+        ),
+    )
     config = build_data_retrieval_subagent_config(
         model=context.model,
         data_tools=[
@@ -534,7 +550,6 @@ def _build_data_retrieval_agent_graph(
     return create_deep_agent(
         **config,
         backend=backends.data,
-        memory=[context.agents_memory_path],
     )
 
 
@@ -563,6 +578,26 @@ def _build_supervisor_graph(
         Скомпилированный supervisor graph.
     """
 
+    runtime_middleware = _build_native_runtime_middleware(
+        context.settings,
+        tool_output_file_middleware,
+        filesystem_backend=backends.supervisor,
+        workspace_root=context.workspace_root,
+        agent_name="supervisor",
+        limit_model_calls=False,
+        hidden_tool_names=("edit_file",),
+    )
+    runtime_middleware.insert(
+        -1,
+        MemoryMiddleware(
+            backend=backends.supervisor,
+            sources=[
+                context.agents_memory_path,
+                *(context.user_memory_paths or []),
+            ],
+            add_cache_control=True,
+        ),
+    )
     return create_deep_agent(
         model=context.model,
         tools=[
@@ -594,19 +629,7 @@ def _build_supervisor_graph(
                 else []
             ),
             skills_middleware.supervisor,
-            *_build_native_runtime_middleware(
-                context.settings,
-                tool_output_file_middleware,
-                filesystem_backend=backends.supervisor,
-                workspace_root=context.workspace_root,
-                agent_name="supervisor",
-                limit_model_calls=False,
-                hidden_tool_names=("edit_file",),
-            ),
-        ],
-        memory=[
-            context.agents_memory_path,
-            *(context.user_memory_paths or []),
+            *runtime_middleware,
         ],
         checkpointer=(
             build_conversation_checkpointer()

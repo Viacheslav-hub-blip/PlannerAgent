@@ -1,32 +1,37 @@
-"""Middleware сохранения итоговых system prompt перед вызовом модели.
+"""Middleware сохранения полного запроса перед вызовом модели.
 
 Содержит:
-- PromptLoggingMiddleware: запись system prompt каждого model call в текстовый файл.
-- _message_content_to_text: преобразование content сообщения в текст для файла.
+- PromptLoggingMiddleware: запись полного ``ModelRequest`` каждого model call в JSON.
+- _model_request_to_dict: преобразование ``ModelRequest`` в JSON-совместимую структуру.
+- _tool_to_dict: сериализация инструмента из запроса модели.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
+from langchain_core.messages import message_to_dict
+from langchain_core.utils.function_calling import convert_to_openai_tool
 
 
 @dataclass(frozen=True)
 class PromptLoggingMiddleware(AgentMiddleware):
-    """Сохраняет system prompt, передаваемый следующему обработчику model call.
+    """Сохраняет полный запрос, передаваемый следующему обработчику model call.
 
     Args:
         log_dir: Каталог для файлов с prompt. Создается при первом model call.
         agent_name: Имя агента, добавляемое в имя файла.
 
     Returns:
-        Middleware, не изменяющий запрос и ответ модели.
+        Middleware, не изменяющий запрос и ответ модели. Файл содержит system prompt,
+        сообщения, инструменты и параметры ``ModelRequest``.
     """
 
     log_dir: Path
@@ -37,7 +42,7 @@ class PromptLoggingMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
-        """Сохраняет system prompt при синхронном вызове модели.
+        """Сохраняет полный запрос при синхронном вызове модели.
 
         Args:
             request: Итоговый запрос к модели после предыдущих middleware.
@@ -47,7 +52,7 @@ class PromptLoggingMiddleware(AgentMiddleware):
             Ответ модели без изменений.
         """
 
-        self._save_system_prompt(request)
+        self._save_model_request(request)
         return handler(request)
 
     async def awrap_model_call(
@@ -55,7 +60,7 @@ class PromptLoggingMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelResponse:
-        """Сохраняет system prompt при асинхронном вызове модели.
+        """Сохраняет полный запрос при асинхронном вызове модели.
 
         Args:
             request: Итоговый запрос к модели после предыдущих middleware.
@@ -65,48 +70,78 @@ class PromptLoggingMiddleware(AgentMiddleware):
             Ответ модели без изменений.
         """
 
-        self._save_system_prompt(request)
+        self._save_model_request(request)
         return await handler(request)
 
-    def _save_system_prompt(self, request: ModelRequest) -> None:
-        """Записывает system prompt запроса в отдельный UTF-8 файл.
+    def _save_model_request(self, request: ModelRequest) -> None:
+        """Записывает полный ``ModelRequest`` в отдельный UTF-8 JSON-файл.
 
         Args:
-            request: Запрос к модели, содержащий system message.
+            request: Итоговый запрос к модели после всех предыдущих middleware.
 
         Returns:
-            ``None``. Если system message отсутствует, файл не создается.
+            ``None``.
         """
 
-        if request.system_message is None:
-            return
-
         self.log_dir.mkdir(parents=True, exist_ok=True)
-        file_name = f"system_prompt_{self.agent_name}_{uuid4()}.txt"
+        file_name = f"model_request_{self.agent_name}_{uuid4()}.json"
         (self.log_dir / file_name).write_text(
-            _message_content_to_text(request.system_message.content),
+            json.dumps(
+                _model_request_to_dict(request),
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
             encoding="utf-8",
         )
 
 
-def _message_content_to_text(content: Any) -> str:
-    """Преобразует строковое или блочное content сообщения в текст.
+def _model_request_to_dict(request: ModelRequest) -> dict[str, Any]:
+    """Преобразует ``ModelRequest`` в структуру, пригодную для JSON-записи.
 
     Args:
-        content: Содержимое LangChain-сообщения.
+        request: Итоговый запрос, передаваемый в model handler.
 
     Returns:
-        Текстовое представление содержимого для записи в файл.
+        Словарь с системным сообщением, историей, инструментами и настройками модели.
     """
 
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(
-            str(block.get("text", block)) if isinstance(block, dict) else str(block)
-            for block in content
-        )
-    return str(content)
+    return {
+        "model": {
+            "type": type(request.model).__name__,
+            "identifier": getattr(
+                request.model,
+                "model_name",
+                getattr(request.model, "model", None),
+            ),
+        },
+        "system_message": (
+            message_to_dict(request.system_message)
+            if request.system_message is not None
+            else None
+        ),
+        "messages": [message_to_dict(message) for message in request.messages],
+        "tools": [_tool_to_dict(tool) for tool in request.tools],
+        "tool_choice": request.tool_choice,
+        "response_format": request.response_format,
+        "model_settings": request.model_settings,
+    }
+
+
+def _tool_to_dict(tool: Any) -> dict[str, Any]:
+    """Преобразует инструмент из ``ModelRequest`` в его модельную схему.
+
+    Args:
+        tool: LangChain tool или словарь со схемой инструмента.
+
+    Returns:
+        OpenAI-совместимая схема tool либо ее строковое представление при ошибке.
+    """
+
+    try:
+        return convert_to_openai_tool(tool)
+    except (TypeError, ValueError) as error:
+        return {"serialization_error": str(error), "repr": repr(tool)}
 
 
 __all__ = ["PromptLoggingMiddleware"]
