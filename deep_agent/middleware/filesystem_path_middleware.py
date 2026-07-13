@@ -33,8 +33,6 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
 
     Args:
         workspace_root: Фактический корень workspace текущего запуска.
-        backend: Backend DeepAgents, сохраненный для совместимости конфигурации.
-        enabled: Включена ли нормализация.
 
     Returns:
         Middleware, который передает tool handler только canonical POSIX-пути вида
@@ -42,8 +40,6 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
     """
 
     workspace_root: Path
-    backend: Any
-    enabled: bool = True
 
     def wrap_tool_call(
         self,
@@ -61,8 +57,6 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
             возвращается ``ToolMessage`` со статусом ``error``.
         """
 
-        if not self.enabled:
-            return handler(request)
         normalized_request = _normalize_filesystem_tool_call(
             request,
             workspace_root=self.workspace_root,
@@ -91,8 +85,6 @@ class FilesystemPathContractMiddleware(AgentMiddleware):
             возвращается ``ToolMessage`` со статусом ``error``.
         """
 
-        if not self.enabled:
-            return await handler(request)
         normalized_request = _normalize_filesystem_tool_call(
             request,
             workspace_root=self.workspace_root,

@@ -2,12 +2,11 @@
 
 Содержит:
 - AnalyticsAgentState: state агента с приватными полями предзагрузки skills.
-- extract_state_messages: извлечение истории сообщений из state.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain.agents.middleware import AgentState
 from langchain.agents.middleware.types import PrivateStateAttr
@@ -30,19 +29,4 @@ class AnalyticsAgentState(AgentState):
     ]
     materialized_skill_paths: NotRequired[Annotated[list[str], PrivateStateAttr]]
 
-
-def extract_state_messages(state: Any) -> list[Any]:
-    """Достаёт список сообщений из state (dict-подобный AgentState или объект).
-
-    Возвращает пустой список, если поле ``messages`` отсутствует или не список.
-    Используется middleware, которым нужна история сообщений из ``ToolCallRequest.state``.
-    """
-
-    if isinstance(state, dict):
-        messages = state.get("messages")
-    else:
-        messages = getattr(state, "messages", None)
-    return messages if isinstance(messages, list) else []
-
-
-__all__ = ["AnalyticsAgentState", "extract_state_messages"]
+__all__ = ["AnalyticsAgentState"]

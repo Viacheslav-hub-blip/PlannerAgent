@@ -4,7 +4,6 @@
 - PythonExecutionResult: контейнер результата выполнения Python-кода.
 - PythonInput: схема аргументов инструмента ``python``.
 - PythonTool: LangChain tool выполнения Python-кода в persistent runtime.
-- build_python_tool: фабрика инструмента ``python``.
 - _normalize_code_text: нормализация текста Python-кода.
 - _execute_python_repl: компиляция и выполнение Python-кода.
 - _validate_code_policy: базовая проверка непустого Python-кода.
@@ -298,42 +297,6 @@ class PythonTool(BaseTool):
             description=description,
         )
         return _result_to_json(result, sandbox=self._sandbox)
-
-    async def _arun(
-        self,
-        code: str,
-        description: str = "",
-        **_: Any,
-    ) -> str:
-        """Асинхронная обёртка над :meth:`_run` (выполнение синхронное).
-
-        Args:
-            code: Python-код для выполнения.
-            description: Краткая цель кода.
-            **_: Служебные аргументы LangChain, не используются.
-
-        Returns:
-            JSON-строка с результатом или краткая строка ошибки.
-        """
-
-        return self._run(
-            code=code,
-            description=description,
-        )
-
-
-def build_python_tool(sandbox: DeepAgentPythonSandbox) -> PythonTool:
-    """Фабрика tool ``python`` для supervisor и subagents.
-
-    Args:
-        sandbox: Persistent sandbox с helpers чтения pickle и аналитическими библиотеками.
-
-    Returns:
-        Готовый ``PythonTool`` для регистрации в списке tools.
-    """
-
-    return PythonTool(sandbox=sandbox)
-
 
 def _normalize_code_text(code: str) -> str:
     """Нормализует текст Python-кода перед проверкой.
@@ -798,5 +761,4 @@ __all__ = [
     "PYTHON_TOOL_DESCRIPTION",
     "PYTHON_TOOL_NAME",
     "PythonTool",
-    "build_python_tool",
 ]

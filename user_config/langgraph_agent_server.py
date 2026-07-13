@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import traceback
 from dataclasses import replace
@@ -92,7 +91,6 @@ def build_ui_agent_settings() -> AgentSettings:
         agents_file_name=project_relative_agents_file,
         skills_root=PROJECT_ROOT / "skills",
         tool_outputs_dir=PROJECT_ROOT / "artifacts",
-        trace_log_dir=PROJECT_ROOT / "artifacts",
     )
 
 
@@ -117,13 +115,6 @@ def create_spark_session() -> Any:
             sys.path.insert(0, path)
 
     from pyspark.sql import SparkSession
-    import pyspark.sql.functions as F
-    from pyspark.sql import Window
-
-    from sqlalchemy import create_engine, MetaData, Table
-    import pandas as pd
-
-    _ = (os, F, Window, create_engine, MetaData, Table, pd)
 
     driver_cores = "8"
     driver_memory = "10G"

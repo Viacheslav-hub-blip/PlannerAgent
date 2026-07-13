@@ -5,7 +5,6 @@
 - REVIEW_REFACTOR_TOOL_DESCRIPTION: описание tool ``review_refactor``.
 - ReviewRefactorInput: схема аргументов tool ``review_refactor``.
 - ReviewRefactorTool: tool запуска внутреннего review-agent.
-- build_review_refactor_tool: фабрика tool ``review_refactor``.
 - _resolve_review_file_path: разрешение workspace-пути редактируемого файла.
 - _last_message_text: извлечение финального текста review-agent.
 """
@@ -20,7 +19,6 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
-from deep_agent.middleware.gigachat_runtime_middleware import ThinkToolMiddleware
 from deep_agent.middleware.prompt_logging_middleware import PromptLoggingMiddleware
 from deep_agent.middleware.tool_description_middleware import PromptToolFilterMiddleware
 from deep_agent.execution.filesystem_backend import (
@@ -132,20 +130,6 @@ class ReviewRefactorTool(BaseTool):
         result = self._get_review_agent().invoke({"messages": [HumanMessage(content=prompt)]})
         return _last_message_text(result)
 
-    async def _arun(self, user_request: str, edited_path: str, **kwargs: Any) -> str:
-        """Выполняет асинхронное ревью через синхронную реализацию.
-
-        Args:
-            user_request: Исходная задача пользователя.
-            edited_path: Путь измененного файла внутри workspace.
-            **kwargs: Дополнительные аргументы LangChain.
-
-        Returns:
-            Текст ревью.
-        """
-
-        return self._run(user_request=user_request, edited_path=edited_path, **kwargs)
-
     def _get_review_agent(self) -> Any:
         """Возвращает лениво созданный compiled review-agent.
 
@@ -164,7 +148,6 @@ class ReviewRefactorTool(BaseTool):
                 system_prompt=REVIEW_REFACTOR_AGENT_PROMPT,
                 backend=review_backend,
                 middleware=[
-                    ThinkToolMiddleware(),
                     PromptToolFilterMiddleware(
                         (
                             "ls",
@@ -193,24 +176,6 @@ class ReviewRefactorTool(BaseTool):
                 checkpointer=False,
             )
         return self._review_agent
-
-
-def build_review_refactor_tool(
-    *,
-    model: Any,
-    workspace_root: str | Path | None = None,
-) -> ReviewRefactorTool:
-    """Собирает tool ``review_refactor``.
-
-    Args:
-        model: Chat model LangChain для внутреннего review-agent.
-        workspace_root: Корень workspace для чтения файлов и snapshot.
-
-    Returns:
-        Экземпляр ``ReviewRefactorTool``.
-    """
-
-    return ReviewRefactorTool(model=model, workspace_root=workspace_root)
 
 
 def _resolve_review_file_path(raw_path: str, workspace_root: Path) -> Path:
@@ -276,5 +241,4 @@ __all__ = [
     "REVIEW_REFACTOR_TOOL_DESCRIPTION",
     "ReviewRefactorInput",
     "ReviewRefactorTool",
-    "build_review_refactor_tool",
 ]

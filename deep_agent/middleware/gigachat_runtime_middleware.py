@@ -1,8 +1,6 @@
 """Middleware для устойчивой работы GigaChat в DeepAgent runtime.
 
 Содержит:
-- _think: tool для глубоких промежуточных размышлений.
-- ThinkToolMiddleware: добавление tool ``think`` в доступный runtime.
 - ShellSafetyMiddleware: блокировка небезопасных форм ``execute`` до запуска shell.
 - LoopBreakerMiddleware: обнаружение повторяющихся ошибочных tool-циклов и подсказка сменить стратегию.
 - _messages_from_state: извлечение сообщений из state middleware.
@@ -16,42 +14,6 @@ from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.tools import tool
-from pydantic import Field
-
-
-@tool("think")
-def _think(
-    thought: str = Field(
-        ...,
-        description=(
-            "Глубокие промежуточные размышления. Используй для продумывания правок, "
-            "синхронизации типов, разбора гипотез и выбора минимального изменения."
-        ),
-    ),
-) -> str:
-    """Возвращает глубокое промежуточное размышление без побочных эффектов.
-
-    Args:
-        thought: Текст, который помогает агенту продумать правки, типы, гипотезы и следующий шаг.
-
-    Returns:
-        Та же строка ``thought``. Tool предназначен только для внутренней структуризации,
-        а не для чтения данных, записи файлов или финального ответа.
-    """
-
-    return thought
-
-
-class ThinkToolMiddleware(AgentMiddleware):
-    """Добавляет tool ``think`` во все сборки агента.
-
-    Returns:
-        Middleware с одним дополнительным tool без доступа к файловой системе, shell,
-        данным или внешним API.
-    """
-
-    tools = [_think]
 
 
 class ShellSafetyMiddleware(AgentMiddleware):
@@ -443,5 +405,4 @@ def _messages_from_state(state: Any) -> list[Any]:
 __all__ = [
     "LoopBreakerMiddleware",
     "ShellSafetyMiddleware",
-    "ThinkToolMiddleware",
 ]

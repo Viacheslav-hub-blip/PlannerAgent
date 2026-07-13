@@ -37,19 +37,18 @@ class UserProfileMemoryMiddleware(AgentMiddleware):
         self,
         state: dict[str, Any],
         runtime: Any,
-        config: Any,
     ) -> None:
         """Создает память профиля до штатного чтения файлов памяти deepagents.
 
         Args:
             state: Текущее состояние агента.
             runtime: Runtime текущего запуска.
-            config: Конфигурация текущего запуска.
 
         Returns:
             None.
         """
 
+        del state, runtime
         self._ensure_memory()
         return None
 
@@ -57,19 +56,18 @@ class UserProfileMemoryMiddleware(AgentMiddleware):
         self,
         state: dict[str, Any],
         runtime: Any,
-        config: Any,
     ) -> None:
         """Асинхронно создает память профиля до штатного чтения файлов памяти.
 
         Args:
             state: Текущее состояние агента.
             runtime: Runtime текущего запуска.
-            config: Конфигурация текущего запуска.
 
         Returns:
             None.
         """
 
+        del state, runtime
         await asyncio.to_thread(self._ensure_memory)
         return None
 

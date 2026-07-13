@@ -27,7 +27,7 @@ class UserProfileMemory:
     Args:
         login: Login пользователя.
         file_path: Физический путь к файлу памяти профиля.
-        memory_source: Виртуальный путь файла памяти deepagents.
+        memory_path: Виртуальный путь файла памяти deepagents.
 
     Returns:
         Контейнер параметров памяти профиля пользователя.
@@ -35,20 +35,7 @@ class UserProfileMemory:
 
     login: str
     file_path: Path
-    memory_source: str = USER_PROFILE_MEMORY_PATH
-
-    @property
-    def memory_path(self) -> str:
-        """Возвращает путь файла памяти deepagents.
-
-        Args:
-            Отсутствуют.
-
-        Returns:
-            Путь файла памяти вида ``/.deep_agent/memory/user_profile.md``.
-        """
-
-        return self.memory_source
+    memory_path: str = USER_PROFILE_MEMORY_PATH
 
 
 def build_user_profile_memory_reference(

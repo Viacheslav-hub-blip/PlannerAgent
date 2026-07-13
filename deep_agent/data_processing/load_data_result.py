@@ -12,11 +12,11 @@
 3. при табличном результате возвращает агенту вместе с данными:
    - реальный PySpark-код запроса (строкой);
    - счётчики строк: всего в таблице / подошло под фильтры / возвращено;
-   - данные в виде JSON-записей (для офлоада большие результаты заменяются ссылкой на pkl).
+   - данные или ссылку на JSONL, если базовый ``load_data`` уже сохранил полный результат.
 
 Обёртка использует ``response_format="content_and_artifact"``: ``content`` — текст для
-модели (код запроса + счётчики + данные), ``artifact`` — структура с ``rows`` и метаданными,
-которую читает ``ToolOutputFileMiddleware`` для офлоада больших таблиц.
+модели (код запроса + счётчики + данные), ``artifact`` — структура с путём, preview
+и метаданными результата.
 
 Сам базовый инструмент не меняется: вся прозрачность добавляется здесь, в слое
 обработки результатов data-tools.
@@ -25,7 +25,6 @@
 - wrap_data_tools_with_query_code: оборачивает список data-tools.
 - _wrap_single_tool: создает прозрачную обертку над одним data-tool.
 - _call_base_tool: синхронно вызывает базовый data-tool без вложенного callback-события.
-- _call_base_tool_async: асинхронно вызывает базовый data-tool без вложенного callback-события.
 - _format_result: готовит content/artifact для ответа инструмента.
 - _format_file_artifact_result: готовит ответ для data-tool, который уже сохранил результат в файл.
 - _build_success_content: строит текст успешного результата.
@@ -76,32 +75,19 @@ def _wrap_single_tool(tool: BaseTool) -> BaseTool:
 
     description = f"{tool.description}\n\n{_TRANSPARENCY_NOTE}"
 
-    async def _arun(**kwargs: Any) -> tuple[str, Any]:
-        """Асинхронно вызывает базовый tool и оборачивает результат в (content, artifact)."""
-
-        raw = await _call_base_tool_async(tool=tool, kwargs=kwargs)
-        return _format_result(kwargs, raw)
-
     def _run(**kwargs: Any) -> tuple[str, Any]:
         """Синхронно вызывает базовый tool и оборачивает результат в (content, artifact)."""
 
         raw = _call_base_tool(tool=tool, kwargs=kwargs)
         return _format_result(kwargs, raw)
 
-    factory_kwargs: dict[str, Any] = {
-        "name": tool.name,
-        "description": description,
-        "args_schema": tool.args_schema,
-        "response_format": "content_and_artifact",
-    }
-    if getattr(tool, "func", None) is not None:
-        factory_kwargs["func"] = _run
-    if getattr(tool, "coroutine", None) is not None:
-        factory_kwargs["coroutine"] = _arun
-    if "func" not in factory_kwargs and "coroutine" not in factory_kwargs:
-        # Базовый инструмент без явного func/coroutine — поддержим хотя бы async-путь.
-        factory_kwargs["coroutine"] = _arun
-    return StructuredTool.from_function(**factory_kwargs)
+    return StructuredTool.from_function(
+        func=_run,
+        name=tool.name,
+        description=description,
+        args_schema=tool.args_schema,
+        response_format="content_and_artifact",
+    )
 
 
 def _call_base_tool(*, tool: BaseTool, kwargs: dict[str, Any]) -> Any:
@@ -121,33 +107,11 @@ def _call_base_tool(*, tool: BaseTool, kwargs: dict[str, Any]) -> Any:
     return tool.invoke(kwargs, config={"callbacks": []})
 
 
-async def _call_base_tool_async(*, tool: BaseTool, kwargs: dict[str, Any]) -> Any:
-    """Асинхронно вызывает базовый data-tool без вложенного LangChain callback-события.
-
-    Args:
-        tool: Исходный инструмент чтения данных, который оборачивается слоем прозрачности.
-        kwargs: Аргументы вызова инструмента после валидации схемы LangChain.
-
-    Returns:
-        Сырой результат базового инструмента: DataFrame, текст ошибки или другой поддержанный объект.
-    """
-
-    coroutine = getattr(tool, "coroutine", None)
-    if callable(coroutine):
-        return await coroutine(**kwargs)
-    func = getattr(tool, "func", None)
-    if callable(func):
-        return func(**kwargs)
-    return await tool.ainvoke(kwargs, config={"callbacks": []})
-
-
 _TRANSPARENCY_NOTE = (
     "Прозрачность результата: вместе с данными инструмент возвращает реальный "
     "PySpark-код фактического запроса и число строк результата. Инструмент возвращает "
-    "ВСЕ строки, попавшие под запрос: полный набор всегда сохраняется в pickle для "
-    "переиспользования без повторного load_data; если результат помещается в контекст, "
-    "он также приходит inline, если большой — в контекст только preview, а полный набор в "
-    "файле. "
+    "ВСЕ строки, попавшие под запрос: Spark load_data сохраняет полный набор в JSONL для "
+    "переиспользования без повторного запроса, а в контекст возвращает preview и путь. "
     "Обычный select возвращает строки как есть, БЕЗ устранения дублей: "
     "уникальные значения выводи сам по полному набору."
 )
@@ -201,8 +165,8 @@ def _format_file_artifact_result(raw: dict[str, Any]) -> tuple[str, Any]:
             колонками, preview и служебной metadata.
 
     Returns:
-        Пара ``(content, artifact)`` для LangChain tool response. Artifact не содержит
-        полного набора строк и поэтому не отправляется в повторный pickle-offload.
+        Пара ``(content, artifact)`` для LangChain tool response. Artifact содержит
+        путь и preview, а полный набор уже находится в JSONL.
     """
 
     workspace_file = str(raw.get("workspace_file") or "")
@@ -258,8 +222,7 @@ def _build_success_content(
 
     Намеренно НЕ сообщаем «всего в таблице» и «подошло под фильтры» — эти числа из
     исходной таблицы только путают модель. Этот текст — инлайн-результат, целиком
-    переданный в контекст; если результат большой, его заменит summary offload-middleware
-    с пометкой, что в контексте лишь preview, а полный набор лежит в файле.
+    переданный в контекст. Основной Spark tool возвращает вместо этой ветки file artifact.
     """
 
     if is_aggregation:

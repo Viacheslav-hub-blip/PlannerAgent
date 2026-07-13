@@ -12,7 +12,7 @@
 - lifecycle-статус каждого subagent (`pending`, `running`, `complete`, `error`);
 - поток сообщений и вложенные tool calls каждого subagent;
 - текстовые артефакты из `/artifacts/`;
-- история threads и запросы на approval для `write_file`/`edit_file`.
+- история threads и потоковые события subagents.
 
 Скрытая цепочка рассуждений модели не публикуется.
 
@@ -89,7 +89,7 @@ Python-инициализация агента не живёт в `local_ui`. La
 - Assistant ID: `analytics-agent`.
 
 Если страница белая, а в логе Next.js есть `Blocked cross-origin request ... from "127.0.0.1"`,
-перезапустите `start.ps1` после обновления репозитория. В dev-режиме Next.js 16 блокирует
+перезапустите `run_ui.py` после обновления репозитория. В dev-режиме Next.js 16 блокирует
 `/_next/*`, если UI открыт по `127.0.0.1`, а dev server слушает только `localhost`. Временный
 обход: откройте `http://localhost:3000` или очистите `localStorage` ключ `deep-agent-config`,
 если в Settings сохранён старый deployment URL.
@@ -97,7 +97,7 @@ Python-инициализация агента не живёт в `local_ui`. La
 Другие порты:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiPort 3100
+python run_ui.py --agent-port 2124 --ui-port 3100
 ```
 
 ## Ошибки
@@ -128,9 +128,9 @@ powershell -ExecutionPolicy Bypass -File local_ui\start.ps1 -AgentPort 2124 -UiP
 
 Локальный patch обновляет frontend SDK, синхронизирует переключение threads через
 `switchThread`, включает `fetchStateHistory`, `filterSubagentMessages`, связывает `task` с
-`stream.subagents` по `tool_call.id` и строит approval UI по `stream.interrupts`.
+`stream.subagents` по `tool_call.id`.
 Поэтому карточка subagent обновляется во время выполнения, показывает задачу,
-lifecycle-статус, сообщения, вложенные tool calls, итоговый результат и approval для
+lifecycle-статус, сообщения, вложенные tool calls и итоговый результат для
 `write_file`/`edit_file` внутри subagent.
 
 В этом минимальном проходе большой архив

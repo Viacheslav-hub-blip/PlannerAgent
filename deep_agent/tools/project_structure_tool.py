@@ -5,7 +5,6 @@
 - GET_PROJECT_STRUCTURE_DESCRIPTION: описание инструмента для модели.
 - GetProjectStructureInput: схема аргументов инструмента ``get_project_structure``.
 - GetProjectStructureTool: LangChain tool для возврата структуры проекта.
-- build_get_project_structure_tool: фабрика инструмента структуры проекта.
 - build_project_structure_report: сборка текстового отчета о внутренней структуре агента.
 - _iter_agent_structure_lines: построение дерева файлов агента.
 - _iter_tree_lines: рекурсивный обход дерева проекта.
@@ -124,48 +123,6 @@ class GetProjectStructureTool(BaseTool):
             skills_root=self._skills_root,
             max_tree_entries=max(1, int(max_entries)),
         )
-
-    async def _arun(
-        self,
-        max_entries: int = 450,
-        **_: Any,
-    ) -> str:
-        """Асинхронная обёртка над :meth:`_run`.
-
-        Args:
-            max_entries: Максимальное число строк дерева файлов.
-            **_: Служебные аргументы LangChain, не используются.
-
-        Returns:
-            Markdown-отчет со структурой проекта.
-        """
-
-        return self._run(max_entries=max_entries)
-
-
-def build_get_project_structure_tool(
-    *,
-    workspace_root: Path,
-    agent_root: Path | None = None,
-    skills_root: Path | None = None,
-) -> GetProjectStructureTool:
-    """Собирает tool ``get_project_structure``.
-
-    Args:
-        workspace_root: Фактический корень workspace текущего запуска.
-        agent_root: Фактическая папка реализации агента внутри workspace.
-        skills_root: Фактическая папка skills внутри workspace.
-
-    Returns:
-        Готовый ``GetProjectStructureTool``.
-    """
-
-    return GetProjectStructureTool(
-        workspace_root=workspace_root,
-        agent_root=agent_root,
-        skills_root=skills_root,
-    )
-
 
 def build_project_structure_report(
     *,
@@ -317,5 +274,4 @@ __all__ = [
     "GetProjectStructureInput",
     "GetProjectStructureTool",
     "build_project_structure_report",
-    "build_get_project_structure_tool",
 ]

@@ -4,13 +4,10 @@
 - _AgentBuildContext: контейнер настроек и путей одного запуска.
 - _AgentBackends: контейнер backend-ов graph.
 - _AgentTools: контейнер tools graph.
-- _AgentPromptBundle: контейнер prompt-блоков graph.
 - _SkillsMiddlewareBundle: контейнер skills middleware.
 - _build_agent_context: подготовка настроек, модели и путей.
-- _build_tool_output_file_middleware: сборка middleware сохранения outputs.
 - _build_agent_backends: сборка backend-ов.
 - _build_agent_tools: сборка tools.
-- _build_agent_prompts: сборка prompt-блоков.
 - _build_skills_middleware: сборка skills middleware.
 - _build_subagent_graphs: сборка compiled subagents.
 - _build_coding_agent_graph: сборка coding-agent.
@@ -27,6 +24,7 @@ from typing import Any
 from deepagents import create_deep_agent
 from deepagents.middleware.memory import MemoryMiddleware
 from langchain_core.tools import BaseTool
+from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.agent_settings import AgentSettings, load_agent_settings, workspace_tool_path
 from deep_agent.execution.python_sandbox import build_python_sandbox
@@ -36,22 +34,24 @@ from deep_agent.middleware.request_logging_middleware import (
     AgentRequestLoggingMiddleware,
 )
 from deep_agent.middleware.todo_reset_middleware import TodoResetMiddleware
-from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
 from deep_agent.middleware.user_profile_memory_middleware import UserProfileMemoryMiddleware
 from deep_agent.prompts.skills_context_prompt import (
     DATA_RETRIEVAL_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
     SUPERVISOR_PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
 )
 from deep_agent.prompts.supervisor_prompt import SYSTEM_PROMPT
+from deep_agent.prompts.coding_agent_prompt import CODING_AGENT_PROMPT
+from deep_agent.prompts.data_retrieval_agent_prompt import DATA_RETRIEVAL_PROMPT
 from deep_agent.subagents import (
-    build_coding_subagent_config,
-    build_data_retrieval_subagent_config,
-    build_supervisor_subagent_configs,
+    CODING_AGENT_DESCRIPTION,
+    CODING_AGENT_NAME,
+    DATA_RETRIEVAL_AGENT_DESCRIPTION,
+    DATA_RETRIEVAL_AGENT_NAME,
 )
-from deep_agent.tools.jupyter_notebook_tool import build_convert_jupyter_notebook_tool
-from deep_agent.tools.python_execution_tool import build_python_tool
-from deep_agent.tools.project_structure_tool import build_get_project_structure_tool
-from deep_agent.tools.refactor_review_tool import build_review_refactor_tool
+from deep_agent.tools.jupyter_notebook_tool import ConvertJupyterNotebookTool
+from deep_agent.tools.python_execution_tool import PythonTool
+from deep_agent.tools.project_structure_tool import GetProjectStructureTool
+from deep_agent.tools.refactor_review_tool import ReviewRefactorTool
 from deep_agent.tools.skill_loader_tool import build_load_skills_tool
 from deep_agent.agent import (
     _DEFAULT_CHECKPOINTER,
@@ -60,12 +60,12 @@ from deep_agent.agent import (
     _rebase_tool_outputs_path,
     _rebase_workspace_path,
     _resolve_workspace_root,
-    build_conversation_checkpointer,
-    build_skills_backend,
-    build_supervisor_backend,
-    create_session_tool_outputs_dir,
+    build_filesystem_workspace_backend,
+    build_shell_workspace_backend,
 )
 from deep_agent.execution.filesystem_backend import configure_read_file_default_limit
+
+
 @dataclass(frozen=True)
 class _AgentBuildContext:
     """Хранит вычисленные пути и настройки одного запуска сборки агента.
@@ -151,20 +151,6 @@ class _AgentTools:
 
 
 @dataclass(frozen=True)
-class _AgentPromptBundle:
-    """Хранит итоговый prompt главного агента.
-
-    Args:
-        supervisor_system_prompt: Итоговый системный prompt supervisor.
-
-    Returns:
-        Контейнер prompt-текста для сборки graph.
-    """
-
-    supervisor_system_prompt: str
-
-
-@dataclass(frozen=True)
 class _SkillsMiddlewareBundle:
     """Хранит middleware предзагрузки skills для supervisor и data-agent.
 
@@ -228,7 +214,8 @@ def _build_agent_context(
         resolved_settings.workspace_root,
         resolved_workspace_root,
     )
-    tool_outputs_dir = create_session_tool_outputs_dir(resolved_tool_outputs_root)
+    resolved_tool_outputs_root.mkdir(parents=True, exist_ok=True)
+    tool_outputs_dir = resolved_tool_outputs_root.resolve()
     skills_workspace_dir = workspace_tool_path(
         resolved_skills_root,
         resolved_workspace_root,
@@ -256,27 +243,6 @@ def _build_agent_context(
     )
 
 
-def _build_tool_output_file_middleware(context: _AgentBuildContext) -> ToolOutputFileMiddleware:
-    """Создает middleware сохранения крупных tool outputs в файлы.
-
-    Args:
-        context: Контекст сборки агента.
-
-    Returns:
-        Настроенный ``ToolOutputFileMiddleware``.
-    """
-
-    settings = context.settings
-    return ToolOutputFileMiddleware(
-        output_dir=context.tool_outputs_dir,
-        workspace_root=context.workspace_root,
-        min_rows_to_save=settings.tool_output_min_rows_to_save,
-        min_content_chars_to_save=settings.tool_output_min_content_chars_to_save,
-        preview_rows=settings.tool_output_preview_rows,
-        inline_original_content_chars=settings.tool_output_inline_original_chars,
-    )
-
-
 def _build_agent_backends(context: _AgentBuildContext) -> _AgentBackends:
     """Собирает backend-ы для supervisor, coding-agent и data-retrieval-agent.
 
@@ -288,20 +254,17 @@ def _build_agent_backends(context: _AgentBuildContext) -> _AgentBackends:
     """
 
     return _AgentBackends(
-        data=build_supervisor_backend(
+        data=build_filesystem_workspace_backend(
             context.settings,
-            tool_outputs_dir=context.tool_outputs_dir,
             workspace_root=context.workspace_root,
         ),
-        supervisor=build_skills_backend(
+        supervisor=build_shell_workspace_backend(
             context.settings,
-            tool_outputs_dir=context.tool_outputs_dir,
             workspace_root=context.workspace_root,
             state_artifacts_virtual_dir=context.state_artifacts_virtual_dir,
         ),
-        coding=build_skills_backend(
+        coding=build_shell_workspace_backend(
             context.settings,
-            tool_outputs_dir=context.tool_outputs_dir,
             workspace_root=context.workspace_root,
         ),
     )
@@ -332,42 +295,24 @@ def _build_agent_tools(
     return _AgentTools(
         data_tools=data_tools,
         supervisor_tools=supervisor_tools,
-        python_tool=build_python_tool(python_sandbox),
+        python_tool=PythonTool(sandbox=python_sandbox),
         load_skills_tool=build_load_skills_tool(
             context.settings,
             skills_root=context.skills_root,
             workspace_root=context.workspace_root,
         ),
-        project_structure_tool=build_get_project_structure_tool(
+        project_structure_tool=GetProjectStructureTool(
             workspace_root=context.workspace_root,
             agent_root=context.skills_root.parent,
             skills_root=context.skills_root,
         ),
-        jupyter_notebook_tool=build_convert_jupyter_notebook_tool(
+        jupyter_notebook_tool=ConvertJupyterNotebookTool(
             workspace_root=context.workspace_root,
         ),
-        review_refactor_tool=build_review_refactor_tool(
+        review_refactor_tool=ReviewRefactorTool(
             model=context.model,
             workspace_root=context.workspace_root,
         ),
-    )
-
-
-def _build_agent_prompts(context: _AgentBuildContext) -> _AgentPromptBundle:
-    """Собирает итоговый prompt для supervisor.
-
-    Args:
-        context: Контекст сборки агента.
-
-    Returns:
-        Контейнер supervisor prompt.
-    """
-
-    supervisor_system_prompt = SYSTEM_PROMPT
-    if context.system_prompt_suffix:
-        supervisor_system_prompt = f"{supervisor_system_prompt}\n\n{context.system_prompt_suffix.strip()}"
-    return _AgentPromptBundle(
-        supervisor_system_prompt=supervisor_system_prompt,
     )
 
 
@@ -408,7 +353,6 @@ def _build_subagent_graphs(
     backends: _AgentBackends,
     tools: _AgentTools,
     skills_middleware: _SkillsMiddlewareBundle,
-    tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> list[dict[str, Any]]:
     """Собирает compiled coding-agent и data-retrieval-agent для supervisor.
 
@@ -417,7 +361,6 @@ def _build_subagent_graphs(
         backends: Backend-ы graph.
         tools: Общие tools.
         skills_middleware: Middleware предзагрузки skills.
-        tool_output_file_middleware: Middleware сохранения крупных outputs.
 
     Returns:
         Список subagent-конфигураций для supervisor.
@@ -427,19 +370,25 @@ def _build_subagent_graphs(
         context=context,
         backends=backends,
         tools=tools,
-        tool_output_file_middleware=tool_output_file_middleware,
     )
     data_retrieval_agent = _build_data_retrieval_agent_graph(
         context=context,
         backends=backends,
         tools=tools,
         skills_middleware=skills_middleware,
-        tool_output_file_middleware=tool_output_file_middleware,
     )
-    return build_supervisor_subagent_configs(
-        coding_agent=coding_agent,
-        data_retrieval_agent=data_retrieval_agent,
-    )
+    return [
+        {
+            "name": CODING_AGENT_NAME,
+            "description": CODING_AGENT_DESCRIPTION,
+            "runnable": coding_agent,
+        },
+        {
+            "name": DATA_RETRIEVAL_AGENT_NAME,
+            "description": DATA_RETRIEVAL_AGENT_DESCRIPTION,
+            "runnable": data_retrieval_agent,
+        },
+    ]
 
 
 def _build_coding_agent_graph(
@@ -447,7 +396,6 @@ def _build_coding_agent_graph(
     context: _AgentBuildContext,
     backends: _AgentBackends,
     tools: _AgentTools,
-    tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> Any:
     """Собирает compiled coding-agent.
 
@@ -455,7 +403,6 @@ def _build_coding_agent_graph(
         context: Контекст сборки агента.
         backends: Backend-ы graph.
         tools: Общие tools.
-        tool_output_file_middleware: Middleware сохранения крупных outputs.
 
     Returns:
         Скомпилированный coding-agent.
@@ -463,8 +410,6 @@ def _build_coding_agent_graph(
 
     middleware = _build_native_runtime_middleware(
         context.settings,
-        tool_output_file_middleware,
-        filesystem_backend=backends.coding,
         workspace_root=context.workspace_root,
         agent_name="coding-agent",
         limit_model_calls=True,
@@ -478,7 +423,9 @@ def _build_coding_agent_graph(
             add_cache_control=True,
         ),
     )
-    config = build_coding_subagent_config(
+    return create_deep_agent(
+        name=CODING_AGENT_NAME,
+        system_prompt=CODING_AGENT_PROMPT,
         model=context.model,
         tools=[
             tools.load_skills_tool,
@@ -487,11 +434,7 @@ def _build_coding_agent_graph(
             tools.jupyter_notebook_tool,
             tools.review_refactor_tool,
         ],
-        common_middleware=middleware,
-        skill_sources=[context.skills_workspace_dir],
-    )
-    return create_deep_agent(
-        **config,
+        middleware=middleware,
         backend=backends.coding,
     )
 
@@ -502,7 +445,6 @@ def _build_data_retrieval_agent_graph(
     backends: _AgentBackends,
     tools: _AgentTools,
     skills_middleware: _SkillsMiddlewareBundle,
-    tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> Any:
     """Собирает compiled data-retrieval-agent.
 
@@ -511,7 +453,6 @@ def _build_data_retrieval_agent_graph(
         backends: Backend-ы graph.
         tools: Общие tools.
         skills_middleware: Middleware предзагрузки skills.
-        tool_output_file_middleware: Middleware сохранения крупных outputs.
 
     Returns:
         Скомпилированный data-retrieval-agent.
@@ -521,12 +462,10 @@ def _build_data_retrieval_agent_graph(
         skills_middleware.subagent,
         *_build_native_runtime_middleware(
             context.settings,
-            tool_output_file_middleware,
-            filesystem_backend=backends.data,
             workspace_root=context.workspace_root,
             agent_name="data-retrieval-agent",
             limit_model_calls=True,
-            hidden_tool_names=("get_project_structure", "edit_file"),
+            hidden_tool_names=("edit_file",),
         ),
     ]
     middleware.insert(
@@ -537,18 +476,16 @@ def _build_data_retrieval_agent_graph(
             add_cache_control=True,
         ),
     )
-    config = build_data_retrieval_subagent_config(
+    return create_deep_agent(
+        name=DATA_RETRIEVAL_AGENT_NAME,
+        system_prompt=DATA_RETRIEVAL_PROMPT,
         model=context.model,
-        data_tools=[
+        tools=[
             *tools.data_tools,
             tools.load_skills_tool,
             tools.python_tool,
         ],
-        common_middleware=middleware,
-        skill_sources=[context.skills_workspace_dir],
-    )
-    return create_deep_agent(
-        **config,
+        middleware=middleware,
         backend=backends.data,
     )
 
@@ -558,10 +495,8 @@ def _build_supervisor_graph(
     context: _AgentBuildContext,
     backends: _AgentBackends,
     tools: _AgentTools,
-    prompts: _AgentPromptBundle,
     subagents: list[dict[str, Any]],
     skills_middleware: _SkillsMiddlewareBundle,
-    tool_output_file_middleware: ToolOutputFileMiddleware,
 ) -> Any:
     """Собирает финальный DeepAgents supervisor graph.
 
@@ -569,10 +504,8 @@ def _build_supervisor_graph(
         context: Контекст сборки агента.
         backends: Backend-ы graph.
         tools: Общие tools.
-        prompts: Общие prompt-блоки.
         subagents: Скомпилированные subagents для supervisor.
         skills_middleware: Middleware предзагрузки skills.
-        tool_output_file_middleware: Middleware сохранения крупных outputs.
 
     Returns:
         Скомпилированный supervisor graph.
@@ -580,8 +513,6 @@ def _build_supervisor_graph(
 
     runtime_middleware = _build_native_runtime_middleware(
         context.settings,
-        tool_output_file_middleware,
-        filesystem_backend=backends.supervisor,
         workspace_root=context.workspace_root,
         agent_name="supervisor",
         limit_model_calls=False,
@@ -598,6 +529,9 @@ def _build_supervisor_graph(
             add_cache_control=True,
         ),
     )
+    supervisor_system_prompt = SYSTEM_PROMPT
+    if context.system_prompt_suffix:
+        supervisor_system_prompt = f"{supervisor_system_prompt}\n\n{context.system_prompt_suffix.strip()}"
     return create_deep_agent(
         model=context.model,
         tools=[
@@ -606,9 +540,8 @@ def _build_supervisor_graph(
             tools.project_structure_tool,
             *tools.supervisor_tools,
         ],
-        system_prompt=prompts.supervisor_system_prompt,
+        system_prompt=supervisor_system_prompt,
         subagents=subagents,
-        skills=[context.skills_workspace_dir],
         backend=backends.supervisor,
         middleware=[
             TodoResetMiddleware(),
@@ -632,7 +565,7 @@ def _build_supervisor_graph(
             *runtime_middleware,
         ],
         checkpointer=(
-            build_conversation_checkpointer()
+            InMemorySaver()
             if context.checkpointer is _DEFAULT_CHECKPOINTER
             else context.checkpointer
         ),

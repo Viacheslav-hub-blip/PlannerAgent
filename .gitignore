@@ -16,5 +16,8 @@ local_ui/.env
 local_ui/.runtime/
 artifacts/
 *.log
+.langgraph_api/
+
+deep_agent/_request_log_config.py
 
 deep-agents-ui-node20-linux-x86_64.tar.gz

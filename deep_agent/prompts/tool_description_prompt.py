@@ -164,7 +164,7 @@ write_file(file_path="/summary.md", content="<complete markdown report>")
 - не записывай helper script вместо requested output file; scripts - только intermediate tools;
 - не оставляй requested output files empty или placeholders, если пользователь явно не просил это;
 - `/` - настроенный корень workspace пользователя;
-- `/artifacts` предназначен для data exports, offloaded table results и intermediate transformation outputs; не сохраняй
+- `/artifacts` предназначен для data exports и intermediate transformation outputs; не сохраняй
   туда каждый user-facing file по умолчанию;
 - `/deep_agent/` - директория реализации агента, а не output folder;
 - не записывай в `/deep_agent/`, если задача явно не меняет agent code, prompts, tests или skills;

@@ -5,7 +5,6 @@
 - CONVERT_JUPYTER_NOTEBOOK_DESCRIPTION: описание tool для модели.
 - ConvertJupyterNotebookInput: схема аргументов tool ``convert_jupyter_notebook``.
 - ConvertJupyterNotebookTool: LangChain tool конвертации ``.py`` percent-script и ``.ipynb``.
-- build_convert_jupyter_notebook_tool: фабрика tool ``convert_jupyter_notebook``.
 - convert_jupyter_notebook_file: конвертация файла notebook или percent-script.
 - build_notebook_from_python_text: сборка notebook из текстового Python/percent-script.
 - _py_to_ipynb: преобразование ``.py`` percent-script в структуру notebook.
@@ -165,55 +164,6 @@ class ConvertJupyterNotebookTool(BaseTool):
             kernel_name=kernel_name,
             overwrite=overwrite,
         )
-
-    async def _arun(
-        self,
-        mode: Literal["py_to_ipynb", "ipynb_to_py"],
-        source_path: str,
-        output_path: str,
-        kernel_name: str = "python3",
-        overwrite: bool = False,
-        **kwargs: Any,
-    ) -> str:
-        """Выполняет асинхронную конвертацию notebook-файла через синхронную реализацию.
-
-        Args:
-            mode: Направление конвертации.
-            source_path: Исходный путь внутри workspace.
-            output_path: Целевой путь внутри workspace.
-            kernel_name: Имя kernel для ``.ipynb``.
-            overwrite: Разрешение перезаписи целевого файла.
-            **kwargs: Дополнительные аргументы LangChain.
-
-        Returns:
-            JSON-строка с результатом конвертации.
-        """
-
-        return self._run(
-            mode=mode,
-            source_path=source_path,
-            output_path=output_path,
-            kernel_name=kernel_name,
-            overwrite=overwrite,
-            **kwargs,
-        )
-
-
-def build_convert_jupyter_notebook_tool(
-    *,
-    workspace_root: str | Path | None = None,
-) -> ConvertJupyterNotebookTool:
-    """Собирает tool ``convert_jupyter_notebook``.
-
-    Args:
-        workspace_root: Корень workspace для ограничения файловых операций.
-
-    Returns:
-        Экземпляр ``ConvertJupyterNotebookTool``.
-    """
-
-    return ConvertJupyterNotebookTool(workspace_root=workspace_root)
-
 
 def convert_jupyter_notebook_file(
     *,
@@ -689,7 +639,6 @@ __all__ = [
     "CONVERT_JUPYTER_NOTEBOOK_TOOL_NAME",
     "ConvertJupyterNotebookInput",
     "ConvertJupyterNotebookTool",
-    "build_convert_jupyter_notebook_tool",
     "build_notebook_from_python_text",
     "convert_jupyter_notebook_file",
 ]

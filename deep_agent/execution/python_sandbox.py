@@ -48,7 +48,7 @@ class DeepAgentPythonSandbox:
         Args:
             working_directory: Рабочая директория для относительных путей в коде.
             readable_roots: Информационные корни workspace и tool outputs для ответа tool.
-            tool_outputs_dir: Папка spill-файлов (`.pkl`) после offload middleware.
+            tool_outputs_dir: Папка артефактов Python и data tools.
         """
 
         self.working_directory = working_directory.resolve()
@@ -300,7 +300,7 @@ def build_python_sandbox(
 
     Args:
         settings: Настройки агента; если ``None`` — загружаются из JSON-конфига.
-        tool_outputs_dir: Папка текущей сессии для временных/offload-артефактов; если ``None``,
+        tool_outputs_dir: Папка артефактов текущего graph; если ``None``,
             используется базовая папка из настроек.
         workspace_root: Рабочая директория агента; если ``None``, используется settings.
 

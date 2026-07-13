@@ -3,7 +3,6 @@
 Содержит:
 - AgentRequestLogger: создание таблицы и запись запроса пользователя в PostgreSQL.
 - AgentRequestLoggingMiddleware: middleware записи только пользовательского запроса.
-- build_agent_request_logger: сборка логгера из явной конфигурации.
 - _latest_human_message: получение последнего human-сообщения из state.
 - _message_content_to_text: преобразование содержимого сообщения в текст запроса.
 - _resolve_user_login: извлечение логина пользователя из абсолютных путей процесса.
@@ -278,34 +277,6 @@ class AgentRequestLoggingMiddleware(AgentMiddleware[RequestLoggingState]):
         return await asyncio.to_thread(self.before_agent, state, runtime)
 
 
-def build_agent_request_logger(config: dict[str, Any] | None) -> AgentRequestLogger | None:
-    """Собирает логгер запросов из явно переданной конфигурации.
-
-    Args:
-        config: Словарь с ключами ``connection_string``, ``table_name``,
-            ``schema_name``, ``pool_recycle`` и ``enabled``.
-
-    Returns:
-        ``AgentRequestLogger`` или ``None``, если логирование выключено.
-    """
-
-    if not config:
-        return None
-
-    enabled = bool(config.get("enabled"))
-    connection_string = str(config.get("connection_string") or "").strip()
-    if not enabled or not connection_string:
-        return None
-
-    return AgentRequestLogger(
-        connection_string=connection_string,
-        table_name=str(config.get("table_name") or DEFAULT_REQUEST_LOG_TABLE),
-        schema_name=config.get("schema_name", DEFAULT_REQUEST_LOG_SCHEMA),
-        pool_recycle=int(config.get("pool_recycle") or DEFAULT_DB_POOL_RECYCLE),
-        enabled=True,
-    )
-
-
 def _latest_human_message(state: RequestLoggingState) -> Any | None:
     """Возвращает последнее human-сообщение из state.
 
@@ -407,5 +378,4 @@ __all__ = [
     "AgentRequestLogger",
     "AgentRequestLoggingMiddleware",
     "RequestLoggingState",
-    "build_agent_request_logger",
 ]

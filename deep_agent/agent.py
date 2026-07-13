@@ -14,20 +14,16 @@ subagents -> custom tools -> ``create_deep_agent``).
 
 Служебные функции:
 - build_agent: сборка supervisor и subagents.
-- _normalize_data_tools: проверка и нормализация списка инструментов.
-- _normalize_supervisor_tools: проверка и нормализация supervisor-инструментов.
-- build_skills_backend: сборка shell-capable workspace backend для supervisor и coding-agent.
-- build_supervisor_backend: сборка filesystem-only backend для data-agent.
-- build_conversation_checkpointer: создание памяти текущего диалога LangGraph.
+- _normalize_tools: проверка и нормализация списка инструментов.
+- build_shell_workspace_backend: сборка shell-capable workspace backend для supervisor и coding-agent.
+- build_filesystem_workspace_backend: сборка filesystem-only backend для data-agent.
 - _normalize_virtual_directory: нормализация state-маршрута текстовых артефактов.
 - _build_state_artifact_routes: сборка безопасных route-ов для state-артефактов.
 - _is_reserved_workspace_artifact_route: проверка конфликта route-а с реальными artifacts.
 - _resolve_workspace_root: проверка рабочей директории.
 - _agents_memory_path: workspace-путь ``AGENTS.md``.
-- create_session_tool_outputs_dir: создание папки tool outputs для одного запуска.
-- cleanup_session_tool_outputs_dir: удаление папки tool outputs одного запуска.
 - _find_spark_session_factory: поиск SparkSession factory в data-tools.
-- _register_empty_deepagents_base_prompt: отключение базового prompt DeepAgents для модели.
+- _register_deepagents_profile: отключение базового prompt и general-purpose subagent DeepAgents.
 """
 
 from __future__ import annotations
@@ -35,7 +31,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from deepagents import HarnessProfile, register_harness_profile
+from deepagents import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
 from deepagents.backends import CompositeBackend, StateBackend
 from langchain.agents.middleware import (
     ClearToolUsesEdit,
@@ -46,7 +42,6 @@ from langchain.agents.middleware import (
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
-from langgraph.checkpoint.memory import InMemorySaver
 
 from deep_agent.execution.filesystem_backend import (
     Utf8FilesystemBackend,
@@ -57,7 +52,6 @@ from deep_agent.middleware.filesystem_path_middleware import FilesystemPathContr
 from deep_agent.middleware.gigachat_runtime_middleware import (
     LoopBreakerMiddleware,
     ShellSafetyMiddleware,
-    ThinkToolMiddleware,
 )
 from deep_agent.middleware.tool_context_middleware import ToolContextNoticeMiddleware
 from deep_agent.middleware.tool_description_middleware import (
@@ -72,7 +66,6 @@ from deep_agent.agent_settings import (
     load_agent_settings,
     workspace_tool_path,
 )
-from deep_agent.middleware.tool_output_file_middleware import ToolOutputFileMiddleware
 from deep_agent.middleware.model_error_middleware import (
     format_model_error,
     is_retryable_model_error,
@@ -83,14 +76,15 @@ from deep_agent.memory.user_profile_memory import build_user_profile_memory_refe
 _DEFAULT_CHECKPOINTER = object()
 
 
-def _register_empty_deepagents_base_prompt(model: str | BaseChatModel) -> None:
-    """Регистрирует пустой базовый prompt DeepAgents для переданной модели.
+def _register_deepagents_profile(model: str | BaseChatModel) -> None:
+    """Настраивает служебный профиль DeepAgents для переданной модели.
 
     Args:
         model: Строковая спецификация модели DeepAgents или экземпляр ``BaseChatModel``.
 
     Returns:
-        ``None``. Функция обновляет глобальный реестр профилей DeepAgents.
+        ``None``. Функция отключает базовый prompt и автоматический general-purpose
+        subagent, оставляя только явно собранные роли проекта.
 
     Raises:
         ValueError: Если для экземпляра модели нельзя определить provider и identifier.
@@ -111,54 +105,47 @@ def _register_empty_deepagents_base_prompt(model: str | BaseChatModel) -> None:
 
     register_harness_profile(
         profile_key,
-        HarnessProfile(base_system_prompt="", system_prompt_suffix=""),
+        HarnessProfile(
+            base_system_prompt="",
+            system_prompt_suffix="",
+            general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+        ),
     )
 
 
-def _normalize_data_tools(raw_tools: Any) -> list[BaseTool]:
-    """Приводит явно переданные data-tools к списку ``BaseTool`` с проверкой типов.
+def _normalize_tools(
+    raw_tools: Any,
+    *,
+    parameter_name: str,
+    allow_none: bool = False,
+) -> list[BaseTool]:
+    """Приводит переданные инструменты к списку ``BaseTool`` с проверкой типов.
 
     Args:
-        raw_tools: Один ``BaseTool`` или список/кортеж ``BaseTool`` для data-agent.
+        raw_tools: Один ``BaseTool``, список/кортеж tools или ``None``.
+        parameter_name: Имя параметра для понятного текста ошибки.
+        allow_none: Разрешено ли значение ``None``.
 
     Returns:
         Список валидированных data-tools.
     """
 
-    if isinstance(raw_tools, BaseTool):
-        return [raw_tools]
-    if not isinstance(raw_tools, (list, tuple)):
-        raise TypeError("data_tools должен быть BaseTool или списком BaseTool.")
-
-    tools: list[BaseTool] = []
-    for item in raw_tools:
-        if not isinstance(item, BaseTool):
-            raise TypeError(f"data_tools содержит объект не BaseTool: {type(item).__name__}")
-        tools.append(item)
-    return tools
-
-
-def _normalize_supervisor_tools(raw_tools: Any) -> list[BaseTool]:
-    """Приводит явно переданные supervisor-tools к списку ``BaseTool`` с проверкой типов.
-
-    Args:
-        raw_tools: ``None``, один ``BaseTool`` или список/кортеж ``BaseTool`` для supervisor.
-
-    Returns:
-        Список валидированных supervisor-tools.
-    """
-
-    if raw_tools is None:
+    if raw_tools is None and allow_none:
         return []
     if isinstance(raw_tools, BaseTool):
         return [raw_tools]
     if not isinstance(raw_tools, (list, tuple)):
-        raise TypeError("supervisor_tools должен быть BaseTool, списком BaseTool или None.")
+        none_suffix = " или None" if allow_none else ""
+        raise TypeError(
+            f"{parameter_name} должен быть BaseTool, списком BaseTool{none_suffix}."
+        )
 
     tools: list[BaseTool] = []
     for item in raw_tools:
         if not isinstance(item, BaseTool):
-            raise TypeError(f"supervisor_tools содержит объект не BaseTool: {type(item).__name__}")
+            raise TypeError(
+                f"{parameter_name} содержит объект не BaseTool: {type(item).__name__}"
+            )
         tools.append(item)
     return tools
 
@@ -186,14 +173,14 @@ def build_agent(
 
     1. Settings — все пороги и пути из ``agent_settings.py`` или готового ``settings``.
     2. Data tools — явно переданные инструменты чтения данных (`load_data`).
-    3. Middleware — project-specific offload больших tool outputs в pickle плюс
-       встроенные middleware LangChain/Deep Agents:
+    3. Middleware — project-specific skills, paths и diagnostics плюс встроенные
+       middleware LangChain/Deep Agents:
        ContextEditingMiddleware (очистка старых tool-результатов при лимите токенов),
        ToolCallLimitMiddleware (общий бюджет вызовов tools),
        ModelRetryMiddleware (повторы ошибок модели),
        нативный ModelCallLimitMiddleware (бюджет ходов одного запуска субагента).
        Кастомизация: пороги в settings; модель выбора skills.
-    4. Backend — workspace с terminal, skills и spill-файлами.
+    4. Backend — workspace с terminal, skills и артефактами.
     5. Subagents — отдельный `coding-agent` для кода и `data-retrieval-agent` для таблиц.
     6. Custom tools supervisor — `python` и явно переданные внешние tools.
     7. Сборка `create_deep_agent(...)` со всеми частями.
@@ -220,16 +207,14 @@ def build_agent(
     from deep_agent.agent_graph_builder import (
         _build_agent_backends,
         _build_agent_context,
-        _build_agent_prompts,
         _build_agent_tools,
         _build_skills_middleware,
         _build_subagent_graphs,
         _build_supervisor_graph,
-        _build_tool_output_file_middleware,
     )
 
-    base_data_tools = _normalize_data_tools(data_tools)
-    _register_empty_deepagents_base_prompt(model)
+    base_data_tools = _normalize_tools(data_tools, parameter_name="data_tools")
+    _register_deepagents_profile(model)
     spark_session_factory = _find_spark_session_factory(base_data_tools)
     resolved_settings = settings or load_agent_settings(workspace_root)
     resolved_workspace_root = _resolve_workspace_root(
@@ -260,39 +245,36 @@ def build_agent(
         ),
     )
     normalized_data_tools = wrap_data_tools_with_query_code(base_data_tools)
-    normalized_supervisor_tools = _normalize_supervisor_tools(supervisor_tools)
-    tool_output_file_middleware = _build_tool_output_file_middleware(context)
+    normalized_supervisor_tools = _normalize_tools(
+        supervisor_tools,
+        parameter_name="supervisor_tools",
+        allow_none=True,
+    )
     backends = _build_agent_backends(context)
     tools = _build_agent_tools(
         context,
         data_tools=normalized_data_tools,
         supervisor_tools=normalized_supervisor_tools,
     )
-    prompts = _build_agent_prompts(context)
     skills_middleware = _build_skills_middleware(context)
     subagents = _build_subagent_graphs(
         context=context,
         backends=backends,
         tools=tools,
         skills_middleware=skills_middleware,
-        tool_output_file_middleware=tool_output_file_middleware,
     )
     return _build_supervisor_graph(
         context=context,
         backends=backends,
         tools=tools,
-        prompts=prompts,
         subagents=subagents,
         skills_middleware=skills_middleware,
-        tool_output_file_middleware=tool_output_file_middleware,
     )
 
 
 def _build_native_runtime_middleware(
     settings: AgentSettings,
-    tool_output_file_middleware: ToolOutputFileMiddleware,
     *,
-    filesystem_backend: Any | None = None,
     workspace_root: Path | None = None,
     agent_name: str = "supervisor",
     limit_model_calls: bool,
@@ -302,8 +284,6 @@ def _build_native_runtime_middleware(
 
     Args:
         settings: Настройки лимитов и управления контекстом.
-        tool_output_file_middleware: Единственный project-specific middleware.
-        filesystem_backend: Backend filesystem tools для нормализации путей и проверки записи.
         workspace_root: Корень workspace для canonical POSIX-путей filesystem tools.
         agent_name: Имя агента для служебного логирования.
         limit_model_calls: Нужно ли ограничивать число model calls для subagent.
@@ -316,7 +296,6 @@ def _build_native_runtime_middleware(
     middleware: list[Any] = [
         DiagnosticLoggingMiddleware(agent_name),
         PromptToolDescriptionsMiddleware(TOOL_DESCRIPTION_OVERRIDES),
-        ThinkToolMiddleware(),
         ShellSafetyMiddleware(),
         LoopBreakerMiddleware(),
         ModelRetryMiddleware(
@@ -324,7 +303,6 @@ def _build_native_runtime_middleware(
             retry_on=is_retryable_model_error,
             on_failure=format_model_error,
         ),
-        tool_output_file_middleware,
         ContextEditingMiddleware(
             edits=[
                 ClearToolUsesEdit(
@@ -340,12 +318,11 @@ def _build_native_runtime_middleware(
     ]
     if hidden_tool_names:
         middleware.insert(1, PromptToolFilterMiddleware(tuple(hidden_tool_names)))
-    if filesystem_backend is not None and workspace_root is not None:
+    if workspace_root is not None:
         middleware.insert(
             3,
             FilesystemPathContractMiddleware(
                 workspace_root=workspace_root.resolve(),
-                backend=filesystem_backend,
             ),
     )
     middleware.append(ToolContextNoticeMiddleware())
@@ -365,9 +342,8 @@ def _build_native_runtime_middleware(
     return middleware
 
 
-def build_skills_backend(
+def build_shell_workspace_backend(
     settings: AgentSettings | None = None,
-    tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
 ) -> Any:
@@ -375,8 +351,6 @@ def build_skills_backend(
 
     Args:
         settings: Настройки агента; если ``None`` — используются Python-defaults.
-        tool_outputs_dir: Папка tool outputs текущего запуска; может находиться
-            внутри workspace или быть внешним абсолютным путём.
         workspace_root: Корень доступного агенту workspace.
         state_artifacts_virtual_dir: Виртуальная директория, направляемая в ``StateBackend``
             для отображения текстовых артефактов в LangGraph UI.
@@ -405,9 +379,8 @@ def build_skills_backend(
     )
 
 
-def build_supervisor_backend(
+def build_filesystem_workspace_backend(
     settings: AgentSettings | None = None,
-    tool_outputs_dir: Path | None = None,
     workspace_root: str | Path | None = None,
     state_artifacts_virtual_dir: str | None = None,
 ) -> Any:
@@ -415,8 +388,6 @@ def build_supervisor_backend(
 
     Args:
         settings: Настройки агента; если ``None``, загружаются defaults.
-        tool_outputs_dir: Папка pickle-результатов внутри workspace или внешний
-            абсолютный путь.
         workspace_root: Единый корень доступного файлового пространства.
         state_artifacts_virtual_dir: Виртуальная директория UI-артефактов.
 
@@ -495,17 +466,6 @@ def _is_reserved_workspace_artifact_route(virtual_dir: str) -> bool:
 
     first_part = virtual_dir.strip("/").split("/", 1)[0]
     return first_part == DEFAULT_TOOL_OUTPUTS_RELATIVE_PATH
-
-
-def build_conversation_checkpointer() -> InMemorySaver:
-    """Создаёт штатную краткосрочную память LangGraph для диалога.
-
-    Returns:
-        ``InMemorySaver``, сохраняющий сообщения и state между вызовами с одинаковым
-        ``thread_id`` в пределах процесса.
-    """
-
-    return InMemorySaver()
 
 
 def _resolve_workspace_root(value: str | Path) -> Path:
@@ -606,33 +566,6 @@ def _agents_memory_path(file_name: str, workspace_root: str | Path) -> str:
     return workspace_tool_path(root.joinpath(*PurePosixPath(normalized).parts), root)
 
 
-def create_session_tool_outputs_dir(base_dir: Path) -> Path:
-    """Создаёт единый каталог tool outputs для артефактов агента.
-
-    Args:
-        base_dir: Базовая директория артефактов.
-
-    Returns:
-        Абсолютный путь к единому каталогу артефактов.
-    """
-
-    base_dir.mkdir(parents=True, exist_ok=True)
-    return base_dir.resolve()
-
-
-def cleanup_session_tool_outputs_dir(session_dir: Path) -> None:
-    """Сохраняет единый каталог артефактов и ничего не удаляет.
-
-    Args:
-        session_dir: Единый каталог артефактов.
-
-    Returns:
-        ``None``. Каталог артефактов является пользовательским результатом и не очищается автоматически.
-    """
-
-    return None
-
-
 def _find_spark_session_factory(data_tools: list[BaseTool]) -> Any | None:
     """Находит фабрику SparkSession в metadata инструмента ``load_data``.
 
@@ -653,11 +586,8 @@ def _find_spark_session_factory(data_tools: list[BaseTool]) -> Any | None:
 
 __all__ = [
     "build_agent",
-    "build_conversation_checkpointer",
-    "build_skills_backend",
-    "build_supervisor_backend",
-    "cleanup_session_tool_outputs_dir",
-    "create_session_tool_outputs_dir",
+    "build_filesystem_workspace_backend",
+    "build_shell_workspace_backend",
 ]
 
 

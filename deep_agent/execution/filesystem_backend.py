@@ -1,12 +1,9 @@
-﻿"""Backend файловой системы и локального shell с UTF-8 fallback-поиском.
+"""Backend файловой системы и локального shell для единого workspace.
 
 Содержит:
 - configure_read_file_default_limit: настройка default limit встроенного ``read_file``.
-- WorkspacePathPrefixMixin: единое отображение полного workspace-префикса в tools.
-- WorkspacePathPrefixMixin.write: запись текстового файла с разрешенной перезаписью.
-- WorkspacePathPrefixMixin._write_notebook: создание ``.ipynb`` из текста ``write_file``.
-- WorkspacePathPrefixMixin.edit: редактирование файла с сохранением исходного snapshot.
-- Utf8SearchMixin: общий UTF-8 fallback-поиск для локальных backend.
+- WorkspaceFilesystemMixin: пути, запись файлов/notebook и review snapshots.
+- WorkspaceReadMixin: чтение notebook и явная пометка неполной страницы.
 - Utf8FilesystemBackend: локальное расширение ``FilesystemBackend`` с явным чтением UTF-8.
 - Utf8LocalShellBackend: локальный shell backend рабочего workspace с UTF-8 поиском.
 - _converted_notebook_script_path: путь percent-script для принудительного чтения notebook.
@@ -22,13 +19,10 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
-import re
 import shlex
 from pathlib import Path
 
-import wcmatch.glob as wcglob
 from deepagents.backends import FilesystemBackend, LocalShellBackend
 from deepagents.backends.protocol import EditResult, ReadResult, WriteResult
 
@@ -40,8 +34,6 @@ from deep_agent.tools.jupyter_notebook_tool import (
     build_notebook_from_python_text,
     convert_jupyter_notebook_file,
 )
-
-logger = logging.getLogger(__name__)
 
 REVIEW_SNAPSHOT_DIR = ".deep_agent/review_snapshots"
 NOTEBOOK_SCRIPT_CACHE_DIR = ".deep_agent/notebook_scripts"
@@ -74,8 +66,8 @@ def configure_read_file_default_limit(limit: int) -> None:
     filesystem_middleware.ReadFileSchema.model_rebuild(force=True)
 
 
-class WorkspacePathPrefixMixin:
-    """Добавляет backend полные workspace-пути в формате tools.
+class WorkspaceFilesystemMixin:
+    """Добавляет backend единые workspace-пути, запись notebook и review snapshots.
 
     Args:
         *args: Позиционные аргументы базового backend.
@@ -254,15 +246,15 @@ class WorkspacePathPrefixMixin:
         return f"/{relative_path}"
 
 
-class Utf8SearchMixin(WorkspacePathPrefixMixin):
-    """Добавляет backend явное чтение UTF-8 в Python fallback grep.
+class WorkspaceReadMixin(WorkspaceFilesystemMixin):
+    """Добавляет backend чтение notebook и контроль пагинации текстовых файлов.
 
     Args:
         *args: Позиционные аргументы, передаваемые в базовый ``FilesystemBackend``.
         **kwargs: Именованные аргументы, передаваемые в базовый ``FilesystemBackend``.
 
     Returns:
-        Экземпляр backend с UTF-8 fallback-поиском.
+        Экземпляр backend с единым чтением текстовых файлов и notebook.
     """
 
     def read(
@@ -322,79 +314,12 @@ class Utf8SearchMixin(WorkspacePathPrefixMixin):
             _append_incomplete_read_notice(result, next_offset)
         return result
 
-    def _python_search(
-        self,
-        pattern: str,
-        base_full: Path,
-        include_glob: str | None,
-    ) -> tuple[dict[str, list[tuple[int, str]]], str | None]:
-        """Ищет текст в файлах через Python fallback с чтением файлов как UTF-8.
-
-        Args:
-            pattern: Экранированный regex-паттерн для поиска литеральной строки.
-            base_full: Абсолютный путь к директории или файлу, где выполняется поиск.
-            include_glob: Необязательный glob-фильтр файлов.
-
-        Returns:
-            Кортеж из словаря совпадений и опциональной ошибки частичного обхода.
-        """
-
-        regex = re.compile(pattern)
-        results: dict[str, list[tuple[int, str]]] = {}
-        root = base_full if base_full.is_dir() else base_full.parent
-
-        try:
-            for fp in root.rglob("*"):
-                try:
-                    if not fp.is_file():
-                        continue
-                except (PermissionError, OSError, RuntimeError):
-                    continue
-
-                if include_glob:
-                    rel_path = str(fp.relative_to(root))
-                    if not wcglob.globmatch(rel_path, include_glob, flags=wcglob.BRACE | wcglob.GLOBSTAR):
-                        continue
-
-                try:
-                    if fp.stat().st_size > self.max_file_size_bytes:
-                        continue
-                except (OSError, RuntimeError):
-                    continue
-
-                try:
-                    content = fp.read_text(encoding="utf-8")
-                except (UnicodeDecodeError, PermissionError, OSError, RuntimeError):
-                    continue
-
-                for line_num, line in enumerate(content.splitlines(), 1):
-                    if regex.search(line):
-                        if self.virtual_mode:
-                            try:
-                                virt_path = self._to_virtual_path(fp)
-                            except ValueError:
-                                logger.debug("Skipping grep result outside root: %s", fp)
-                                continue
-                            except (OSError, RuntimeError):
-                                logger.warning("Could not resolve grep result path: %s", fp, exc_info=True)
-                                continue
-                        else:
-                            virt_path = str(fp)
-                        results.setdefault(virt_path, []).append((line_num, line))
-        except (OSError, RuntimeError) as exc:
-            message = f"Grep of '{base_full}' aborted after {len(results)} matching file(s): {exc}"
-            logger.warning("%s", message, exc_info=True)
-            return results, message
-
-        return results, None
+class Utf8FilesystemBackend(WorkspaceReadMixin, FilesystemBackend):
+    """FilesystemBackend с workspace paths, notebook read/write и pagination."""
 
 
-class Utf8FilesystemBackend(Utf8SearchMixin, FilesystemBackend):
-    """FilesystemBackend с явной UTF-8 кодировкой для Python fallback grep."""
-
-
-class Utf8LocalShellBackend(Utf8SearchMixin, LocalShellBackend):
-    """LocalShellBackend рабочего workspace с UTF-8 fallback grep и workspace path rewrite."""
+class Utf8LocalShellBackend(WorkspaceReadMixin, LocalShellBackend):
+    """LocalShellBackend рабочего workspace с notebook support и path rewrite."""
 
     def execute(
         self,
@@ -622,8 +547,8 @@ def _quote_shell_path(path: str) -> str:
 __all__ = [
     "Utf8FilesystemBackend",
     "Utf8LocalShellBackend",
-    "Utf8SearchMixin",
-    "WorkspacePathPrefixMixin",
+    "WorkspaceFilesystemMixin",
+    "WorkspaceReadMixin",
     "configure_read_file_default_limit",
     "review_snapshot_path_for_file",
 ]

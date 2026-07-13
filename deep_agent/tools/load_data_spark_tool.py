@@ -10,9 +10,7 @@
 - _register_spark_shutdown_handlers: регистрация cleanup при завершении процесса;
 - _spark_shutdown_signals: список сигналов для cleanup Spark session;
 - _read_table: выполнение подготовленного запроса;
-- _format_unexpected_load_data_error: форматирование непредвиденной ошибки выполнения;
-- _request_spark_query_approval: запрос HITL-подтверждения перед Spark action;
-- build_load_data_approval_description: построение preview для HITL-подтверждения.
+- _format_unexpected_load_data_error: форматирование непредвиденной ошибки выполнения.
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import BaseTool, StructuredTool
-from langgraph.types import interrupt
 
 from deep_agent.data_processing.load_data_query_models import ReadTableInput
 from deep_agent.data_processing.load_data_query_parser import _extract_query_args_with_llm
@@ -66,7 +63,7 @@ READ_TABLE_DESCRIPTION = (
     "- нужно проверить наличие записей, получить фактические поля события или посчитать агрегат "
     "по данным источника.\n\n"
     "Когда не использовать:\n"
-    "- нужно обработать уже выгруженный pickle/offload-файл: используй код поверх сохраненного результата, "
+    "- нужно обработать уже выгруженный artifact-файл: используй код поверх сохраненного результата, "
     "а не повторный load_data;\n"
     "Параметры:\n"
     "- query (str, обяз.): SQL-подобный запрос. В query обязательно укажи LOAD/FROM с именем Spark-таблицы или view, "
@@ -83,7 +80,7 @@ READ_TABLE_DESCRIPTION = (
     "  ORDER BY <column> ASC|DESC\n"
     "  LIMIT <int>  -- только при явном пользовательском ограничении строк\n\n"
     "Вместо LOAD можно использовать FROM, но имя источника должно быть Spark-таблицей или view, а не файловым путём, "
-    "именем файла, workspace_file или pkl.\n\n"
+    "именем файла или workspace_file.\n\n"
     "Операторы WHERE:\n"
     "- равенство: =, ==, eq, equals -> внутренне нормализуется в eq;\n"
     "- не равно: !=, <>, ne, not_equals -> ne;\n"
@@ -107,7 +104,6 @@ def build_spark_data_tools(
     output_dir: str | Path = DEFAULT_SPARK_OUTPUT_DIR,
     workspace_root: str | Path | None = None,
     preview_rows: int = DEFAULT_SPARK_PREVIEW_ROWS,
-    require_approval: bool = False,
 ) -> list[BaseTool]:
     """Создает инструмент ``load_data`` с новой Spark session на каждый вызов.
 
@@ -118,7 +114,6 @@ def build_spark_data_tools(
         workspace_root: Корень workspace для построения пути вида ``/artifacts/file.jsonl``.
             Если ``None``, используется текущая рабочая директория.
         preview_rows: Число строк preview, возвращаемых в контекст вместе с путем к artifact.
-        require_approval: Нужно ли запрашивать HITL-подтверждение PySpark-кода перед Spark action.
 
     Returns:
         Список с одним LangChain tool ``load_data``.
@@ -154,7 +149,6 @@ def build_spark_data_tools(
                     output_dir=resolved_output_dir,
                     workspace_root=resolved_workspace_root,
                     preview_rows=preview_rows,
-                    require_approval=require_approval,
                     **parsed,
                 )
         except Exception as exc:
@@ -340,7 +334,6 @@ def _read_table(
     output_dir: Path | None = None,
     workspace_root: Path | None = None,
     preview_rows: int = DEFAULT_SPARK_PREVIEW_ROWS,
-    require_approval: bool = True,
     table_name: str,
     select_columns: Any,
     filters: Any,
@@ -350,7 +343,7 @@ def _read_table(
     order_by: Any,
     max_rows: int | None,
 ) -> Any:
-    """Выполняет Spark-запрос и возвращает pandas DataFrame.
+    """Выполняет подготовленный Spark-запрос и сохраняет результат в JSONL.
 
     Args:
         spark: Активная Spark session.
@@ -358,7 +351,6 @@ def _read_table(
         output_dir: Каталог для сохранения JSONL artifact с полным результатом.
         workspace_root: Корень workspace для построения человекочитаемого artifact-пути.
         preview_rows: Число строк preview, возвращаемых в ответе инструмента.
-        require_approval: Нужно ли останавливать граф на HITL-подтверждение PySpark-кода.
         table_name: Имя таблицы Spark или view.
         select_columns: Поля результата списком.
         filters: Фильтры списком объектов.
@@ -442,17 +434,6 @@ def _read_table(
             stage = "apply_limit"
             result = result.limit(max(0, int(max_rows)))
 
-        if require_approval:
-            stage = "request_approval"
-            approval_result = _request_spark_query_approval(
-                original_query=original_query,
-                query_code=query_code,
-                table_alias=table_alias,
-                output_path=export_path,
-            )
-            if approval_result:
-                return approval_result
-
         stage = "count"
         row_count = _run_spark_action_with_progress(
             spark=spark,
@@ -519,128 +500,8 @@ def _format_unexpected_load_data_error(*, stage: str, exc: Exception) -> str:
     )
 
 
-def _request_spark_query_approval(
-    *,
-    original_query: str,
-    query_code: str,
-    table_alias: str,
-    output_path: Path,
-) -> str:
-    """Запрашивает HITL-подтверждение перед выполнением Spark action.
-
-    Args:
-        original_query: SQL-подобный запрос пользователя или модели.
-        query_code: Реальный PySpark-код, который будет выполнен после подтверждения.
-        table_alias: Короткое имя источника данных.
-        output_path: Финальный JSONL-файл, куда будет сохранён результат.
-
-    Returns:
-        Пустая строка при одобрении или текст отказа, если пользователь отклонил запрос.
-    """
-
-    response = interrupt(
-        {
-            "action_requests": [
-                {
-                    "name": "load_data",
-                    "args": {"query": original_query},
-                    "description": (
-                        "Подтвердите выполнение Spark-запроса.\n\n"
-                        f"Источник: {table_alias}\n"
-                        f"Artifact: {output_path.resolve()}\n\n"
-                        "Реальный PySpark-код с подставленными значениями:\n"
-                        f"```python\n{query_code}\n```"
-                    ),
-                }
-            ],
-            "review_configs": [
-                {
-                    "action_name": "load_data",
-                    "allowed_decisions": ["approve", "reject"],
-                }
-            ],
-        }
-    )
-    decisions = response.get("decisions") if isinstance(response, dict) else None
-    decision = decisions[0] if isinstance(decisions, list) and decisions else {}
-    if not isinstance(decision, dict) or decision.get("type") == "approve":
-        return ""
-    message = decision.get("message") or "Пользователь отклонил выполнение Spark-запроса."
-    return f"Запрос load_data отклонён до выполнения Spark action: {message}"
-
-
-def build_load_data_approval_description(
-    *,
-    query: str,
-    query_parser_model: Any | None,
-    output_dir: str | Path = DEFAULT_SPARK_OUTPUT_DIR,
-    workspace_root: str | Path | None = None,
-) -> str:
-    """Строит описание HITL-подтверждения ``load_data`` без выполнения Spark action.
-
-    Args:
-        query: SQL-подобный запрос из аргументов tool call ``load_data``.
-        query_parser_model: Chat-модель для разбора ``query`` в структурированные аргументы.
-        output_dir: Каталог будущего JSONL artifact.
-        workspace_root: Корень workspace для абсолютного пути artifact.
-
-    Returns:
-        Текст approval request с исходным запросом, artifact path и реальным PySpark-кодом.
-    """
-
-    try:
-        parsed = _extract_query_args_with_llm(query=query, query_parser_model=query_parser_model)
-        resolved_workspace_root = Path(workspace_root or Path.cwd()).resolve()
-        resolved_output_dir = _resolve_output_dir(
-            output_dir=output_dir,
-            workspace_root=resolved_workspace_root,
-        )
-        table_alias = str(parsed["table_name"]).strip()
-        resolved_table_name = _resolve_table_name(table_alias)
-        export_path = _build_export_file_path(
-            output_dir=resolved_output_dir,
-            table_alias=table_alias,
-            select_columns=parsed["select_columns"],
-            filters=parsed["filters"],
-            derived_columns=parsed["derived_columns"],
-            group_by=parsed["group_by"],
-            aggregations=parsed["aggregations"],
-            order_by=parsed["order_by"],
-            max_rows=parsed["max_rows"],
-        )
-        temp_output_dir = export_path.with_suffix(export_path.suffix + ".tmp")
-        query_code = _build_pyspark_query_code(
-            resolved_table_name=resolved_table_name,
-            select_columns=parsed["select_columns"],
-            filters=parsed["filters"],
-            derived_columns=parsed["derived_columns"],
-            group_by=parsed["group_by"],
-            aggregations=parsed["aggregations"],
-            order_by=parsed["order_by"],
-            max_rows=parsed["max_rows"],
-            output_path=temp_output_dir,
-            final_output_path=export_path,
-        )
-        return (
-            "Подтвердите выполнение Spark-запроса.\n\n"
-            f"Источник: {table_alias}\n"
-            f"Artifact: {export_path.resolve()}\n\n"
-            f"Исходный SQL-подобный запрос:\n{query.strip()}\n\n"
-            "Реальный PySpark-код с подставленными значениями:\n"
-            f"```python\n{query_code}\n```"
-        )
-    except Exception as exc:
-        return (
-            "Подтвердите выполнение `load_data`.\n\n"
-            "Не удалось заранее построить PySpark preview для approval request.\n"
-            f"Причина: {exc}\n\n"
-            f"Аргумент query:\n{query.strip()}"
-        )
-
-
 __all__ = [
     "READ_TABLE_DESCRIPTION",
-    "build_load_data_approval_description",
     "build_spark_data_tools",
     "stop_active_spark_sessions",
 ]

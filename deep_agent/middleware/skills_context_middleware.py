@@ -40,9 +40,6 @@ from pydantic import BaseModel, Field
 from deepagents.middleware._utils import append_to_system_message
 
 from deep_agent.agent_state import AnalyticsAgentState
-from deep_agent.prompts.skills_context_prompt import (
-    PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE,
-)
 
 
 class SelectedSkillPaths(BaseModel):
@@ -130,12 +127,12 @@ class PreloadedSkillsContextMiddleware(AgentMiddleware[AnalyticsAgentState]):
     """
 
     skills_root: Path
+    prompt_template: str
     skills_workspace_dir: str = "/skills/"
     max_chars_per_file: int = 18000
     model: Any | None = None
     select_skills: bool = True
     shared_selection: dict[str, Any] = field(default_factory=dict, compare=False)
-    prompt_template: str = PRELOADED_SKILLS_CONTEXT_PROMPT_TEMPLATE
 
     state_schema = AnalyticsAgentState
 

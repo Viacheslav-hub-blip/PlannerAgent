@@ -17,7 +17,7 @@ middleware, tools и слой выполнения.
 - `data_processing/` — модели, parser, нормализация и helper-ы `load_data`.
 - `tools/` — LangChain tools.
 - `middleware/` — middleware агента.
-- `execution/` — файловый доступ, Python sandbox и trace logger.
+- `execution/` — файловый доступ и Python sandbox.
 
 ## Границы ответственности
 
