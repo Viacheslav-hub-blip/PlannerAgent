@@ -31,7 +31,7 @@ flowchart TB
 | Роль | Project tools | Backend |
 | --- | --- | --- |
 | Supervisor | `load_skills`, `python`, `get_project_structure`, внешние `supervisor_tools` | `Utf8LocalShellBackend` |
-| coding-agent | `load_skills`, `python`, `get_project_structure`, `convert_jupyter_notebook`, `review_refactor` | `Utf8LocalShellBackend` |
+| coding-agent | `load_skills`, `python`, `get_project_structure`, `convert_jupyter_notebook` | `Utf8LocalShellBackend` |
 | data-retrieval-agent | `data_tools`, `load_skills`, `python` | `Utf8FilesystemBackend` |
 
 `edit_file` скрыт от всех трёх ролей только на уровне prompt. Это не security
@@ -80,6 +80,5 @@ PKL-offload middleware больше нет.
 
 - `artifacts/*.jsonl` — полный результат Spark `load_data`;
 - `.deep_agent/memory/` — профиль пользователя;
-- `.deep_agent/review_snapshots/` — исходные версии файлов для review;
 - `.deep_agent/notebook_scripts/` — служебные notebook scripts;
 - `debug_prompts/*.json` — фактические model requests.

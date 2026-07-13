@@ -16,8 +16,8 @@ flowchart TB
     Supervisor --> Answer["AIMessage"]
 ```
 
-Автоматического `general-purpose` subagent нет. Review-agent создаётся лениво внутри
-`review_refactor` и не является отдельной ролью supervisor.
+Автоматического `general-purpose` subagent нет. В graph входят только явно собранные
+`coding-agent` и `data-retrieval-agent`.
 
 ## State
 

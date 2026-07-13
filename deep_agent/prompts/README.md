@@ -7,5 +7,4 @@
 - `coding_agent_prompt.py` - coding-agent;
 - `skills_context_prompt.py` - шаблоны контекста skills;
 - `tool_description_prompt.py` - описания встроенных tools;
-- `load_data_query_parser_prompt.py` - разбор SQL-похожего запроса `load_data`;
-- `refactor_review_prompt.py` - внутренняя проверка результата рефакторинга.
+- `load_data_query_parser_prompt.py` - разбор SQL-похожего запроса `load_data`.

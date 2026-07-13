@@ -110,7 +110,7 @@ build_agent(
 | Класс/контейнер | Создаётся в | Кому передаётся и зачем |
 | --- | --- | --- |
 | `AgentSettings` | `agent_settings.py` | В `build_agent`, затем во все builders, backends и middleware с лимитами. |
-| `DeepAgentsKitaiChatModel` | `gigachat_kitai_model.py` | Одна model для supervisor, подагентов, skills selector и review-agent. |
+| `DeepAgentsKitaiChatModel` | `gigachat_kitai_model.py` | Одна model для supervisor, подагентов и skills selector. |
 | `_AgentBuildContext` | `agent_graph_builder.py` | Собирает вычисленные пути, model, settings, checkpointer, logger и Spark factory одного graph. |
 | `_AgentBackends` | `agent_graph_builder.py` | Хранит три backend: supervisor, coding и data. |
 | `_AgentTools` | `agent_graph_builder.py` | Хранит готовые экземпляры project tools и role-specific входные списки. |
@@ -120,7 +120,7 @@ build_agent(
 | `PythonTool` | `tools/python_execution_tool.py` | Один экземпляр передаётся всем трём ролям. |
 | `WorkspaceFilesystemMixin` -> `WorkspaceReadMixin` | `execution/filesystem_backend.py` | Общие workspace paths, запись, notebook и pagination для двух backend. |
 | `Utf8LocalShellBackend` | `build_shell_workspace_backend()` | Backend supervisor/coding с filesystem и shell. |
-| `Utf8FilesystemBackend` | `build_filesystem_workspace_backend()` | Backend data-agent и read-only review-agent без shell. |
+| `Utf8FilesystemBackend` | `build_filesystem_workspace_backend()` | Backend data-agent без shell. |
 | `ReadTableInput` -> `ParsedDataQuery` | `data_processing/load_data_query_models.py` | Первая схема валидирует tool call, вторая принимает structured output parser и идёт в Spark pipeline. |
 | `UserProfileMemory` | `memory/user_profile_memory.py` | Ссылка на profile file передаётся в `UserProfileMemoryMiddleware`, затем путь читает `MemoryMiddleware`. |
 | `AgentRequestLogger` | `middleware/request_logging_middleware.py` | Adapter создаёт/инициализирует logger и передаёт его в `AgentRequestLoggingMiddleware`. |
@@ -259,7 +259,6 @@ tools/load_data_spark_tool.py
 | `load_skills` | `tools/skill_loader_tool.py` | Аргументы factory-функции | Все три роли. |
 | `get_project_structure` | `tools/project_structure_tool.py` | `GetProjectStructureInput` | Supervisor и coding-agent. |
 | `convert_jupyter_notebook` | `tools/jupyter_notebook_tool.py` | `ConvertJupyterNotebookInput` | Только coding-agent. |
-| `review_refactor` | `tools/refactor_review_tool.py` | `ReviewRefactorInput` | Только coding-agent. |
 
 `python` использует один persistent `DeepAgentPythonSandbox`, созданный на graph. Его globals сохраняются между вызовами. В него заранее добавляются `PROJECT_ROOT`, `WORKSPACE_ROOT`, `ARTIFACTS_DIR`, `resolve_workspace_path`, helpers для pickle и, если установлены, `pd`/`np`.
 
@@ -270,7 +269,7 @@ tools/load_data_spark_tool.py
 | Роль | Явно переданные tools | Backend/native возможности | Скрыто от модели |
 | --- | --- | --- | --- |
 | `supervisor` | `load_skills`, `python`, `get_project_structure`, все `supervisor_tools` | filesystem, shell/`execute`, todo, `task` | `edit_file` |
-| `coding-agent` | `load_skills`, `python`, `get_project_structure`, `convert_jupyter_notebook`, `review_refactor` | filesystem, shell/`execute`, todo | `edit_file` |
+| `coding-agent` | `load_skills`, `python`, `get_project_structure`, `convert_jupyter_notebook` | filesystem, shell/`execute`, todo | `edit_file` |
 | `data-retrieval-agent` | все `data_tools`, `load_skills`, `python` | filesystem без shell, todo | `edit_file` |
 
 Важно: скрытие через `PromptToolFilterMiddleware` убирает metadata tool только из запроса к модели. Оно не удаляет реализацию из backend и не является security boundary. Например, `write_file` остаётся видимым, а supervisor/coding-agent имеют shell. Для настоящего запрета tool надо не регистрировать, выбрать backend без этой возможности или добавить проверяющий middleware.
@@ -338,8 +337,6 @@ def build_search_records_tool() -> BaseTool:
 - несколько внутренних ролей — собрать один экземпляр в `_build_agent_tools(...)` и добавить в нужные role-specific списки.
 
 Для сложного stateful tool можно наследоваться от `BaseTool`, как сделано в `PythonTool`, `GetProjectStructureTool` или `ConvertJupyterNotebookTool`.
-
-Внутри `review_refactor` создаётся ещё один служебный `review-refactor-agent`. Он работает на `Utf8FilesystemBackend` с read-only permission, prompt filter и prompt logging. Для него скрыты write/shell/todo/task tools. Это отдельный graph внутри tool, а не третий подагент supervisor.
 
 ### Как добавить Spark/data tool
 
@@ -512,7 +509,6 @@ class AllowedToolsMiddleware(AgentMiddleware):
 - только supervisor — список `middleware=[...]` в `_build_supervisor_graph(...)`;
 - только data-agent — список в `_build_data_retrieval_agent_graph(...)`;
 - только coding-agent — список в `_build_coding_agent_graph(...)`;
-- внутреннему review-agent — его отдельная сборка в `tools/refactor_review_tool.py`.
 
 Если middleware добавляет private state, расширяй `AnalyticsAgentState` или создай отдельную TypedDict-схему по примеру `RequestLoggingState`/`TodoResetState` и укажи `state_schema`.
 
@@ -567,14 +563,13 @@ Index ручного `load_skills` строится при создании tool
 | Поведение data-retrieval-agent | `deep_agent/prompts/data_retrieval_agent_prompt.py` |
 | Выбор/вставку skills | `deep_agent/prompts/skills_context_prompt.py` и selector prompt внутри middleware |
 | Разбор SQL-похожего query | `deep_agent/prompts/load_data_query_parser_prompt.py` |
-| Review refactor | `deep_agent/prompts/refactor_review_prompt.py` |
 | Описания нативных tools | `deep_agent/prompts/tool_description_prompt.py` |
 
 `system_prompt_suffix` дописывает инструкции только supervisor. Для подагентов нужно менять их prompt constants или расширять builder.
 
 `DeepAgentsKitaiChatModel` адаптирует content blocks LangChain к строкам KitAI, сохраняет служебный `functions_state_id` и сообщает DeepAgents provider/model через `_get_ls_params`. Смена провайдера возможна: передай другой `BaseChatModel` в `build_agent(...)`, но проверь совместимость tool calls, structured output selector и зарегистрированный harness profile.
 
-Сейчас одна и та же model используется supervisor, обоими подагентами, selector skills и внутренним refactor reviewer. Публичного аргумента для разных моделей по ролям нет; для этого надо расширять `_AgentBuildContext` и role builders.
+Сейчас одна и та же model используется supervisor, обоими подагентами и selector skills. Публичного аргумента для разных моделей по ролям нет; для этого надо расширять `_AgentBuildContext` и role builders.
 
 ## Как добавить нового подагента
 
@@ -640,7 +635,6 @@ DEEP_AGENT_REQUEST_LOG_TABLE=agent_request_logs
 - `local_ui/.runtime/logs/` — stdout/stderr Agent Server;
 - `debug_prompts/*.json` — итоговый `ModelRequest` каждой роли;
 - `artifacts/*.jsonl` — полные Spark-выгрузки;
-- `.deep_agent/review_snapshots/` — snapshots для refactor review;
 - `.deep_agent/notebook_scripts/` — cache конвертации notebook;
 
 ## Настройки `AgentSettings`
@@ -748,7 +742,7 @@ settings = replace(
 ### `deep_agent/execution/`
 
 - `deep_agent/execution/__init__.py` — пакет.
-- `deep_agent/execution/filesystem_backend.py` — UTF-8 filesystem/shell backend, virtual paths, notebook cache и review snapshots.
+- `deep_agent/execution/filesystem_backend.py` — UTF-8 filesystem/shell backend, virtual paths и notebook cache.
 - `deep_agent/execution/python_sandbox.py` — persistent Python globals и helpers для workspace/artifacts.
 
 ### `deep_agent/memory/`
@@ -779,7 +773,6 @@ settings = replace(
 - `deep_agent/prompts/coding_agent_prompt.py` — system prompt coding-agent.
 - `deep_agent/prompts/data_retrieval_agent_prompt.py` — system prompt data-agent.
 - `deep_agent/prompts/load_data_query_parser_prompt.py` — parser prompt SQL-like -> Pydantic.
-- `deep_agent/prompts/refactor_review_prompt.py` — prompt read-only review-agent.
 - `deep_agent/prompts/skills_context_prompt.py` — шаблоны preloaded skills для ролей.
 - `deep_agent/prompts/tool_description_prompt.py` — descriptions нативных DeepAgents tools.
 
@@ -794,7 +787,6 @@ settings = replace(
 - `deep_agent/tools/project_structure_tool.py` — компактное дерево проекта.
 - `deep_agent/tools/jupyter_notebook_tool.py` — `.py` <-> `.ipynb`.
 - `deep_agent/tools/jupyter_notebook_formatting.py` — разметка/форматирование notebook cells.
-- `deep_agent/tools/refactor_review_tool.py` — read-only review-agent для результата рефакторинга.
 
 ### `docs/`
 
@@ -843,7 +835,6 @@ settings = replace(
 
 - `.venv/` — Python environment.
 - `.deep_agent/memory/` — user profile.
-- `.deep_agent/review_snapshots/` — snapshots review.
 - `.deep_agent/notebook_scripts/` — notebook cache.
 - `artifacts/` — JSONL и пользовательские результаты.
 - `debug_prompts/` — prompt logs; сейчас каталог не добавлен в `.gitignore`, это стоит учесть перед коммитом.

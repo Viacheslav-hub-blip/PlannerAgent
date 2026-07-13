@@ -51,7 +51,6 @@ from deep_agent.subagents import (
 from deep_agent.tools.jupyter_notebook_tool import ConvertJupyterNotebookTool
 from deep_agent.tools.python_execution_tool import PythonTool
 from deep_agent.tools.project_structure_tool import GetProjectStructureTool
-from deep_agent.tools.refactor_review_tool import ReviewRefactorTool
 from deep_agent.tools.skill_loader_tool import build_load_skills_tool
 from deep_agent.agent import (
     _DEFAULT_CHECKPOINTER,
@@ -135,7 +134,6 @@ class _AgentTools:
         load_skills_tool: Инструмент загрузки skills.
         project_structure_tool: Инструмент просмотра структуры проекта.
         jupyter_notebook_tool: Инструмент конвертации notebooks.
-        review_refactor_tool: Инструмент локального ревью refactor.
 
     Returns:
         Контейнер tools для helper-функций сборки.
@@ -147,7 +145,6 @@ class _AgentTools:
     load_skills_tool: Any
     project_structure_tool: Any
     jupyter_notebook_tool: Any
-    review_refactor_tool: Any
 
 
 @dataclass(frozen=True)
@@ -309,10 +306,6 @@ def _build_agent_tools(
         jupyter_notebook_tool=ConvertJupyterNotebookTool(
             workspace_root=context.workspace_root,
         ),
-        review_refactor_tool=ReviewRefactorTool(
-            model=context.model,
-            workspace_root=context.workspace_root,
-        ),
     )
 
 
@@ -433,7 +426,6 @@ def _build_coding_agent_graph(
             tools.python_tool,
             tools.project_structure_tool,
             tools.jupyter_notebook_tool,
-            tools.review_refactor_tool,
         ],
         middleware=middleware,
         backend=backends.coding,
