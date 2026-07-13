@@ -59,7 +59,7 @@ ReadTableInput.query
   -> ParsedDataQuery
   -> Spark DataFrame
   -> count
-  -> artifacts/load_data_<source>_<hash>.jsonl
+  -> artifacts/load_data_<table-alias>_where_<filters>_<timestamp>.jsonl
   -> content_and_artifact:
        workspace_file
        absolute_file

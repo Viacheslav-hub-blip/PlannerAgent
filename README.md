@@ -131,9 +131,15 @@ build_agent(
 
 ```text
 /skills/hit-table/SKILL.md
-/artifacts/load_data_....jsonl
+/artifacts/load_data_hits_where_event_dt_between_20260701_20260713_main_rule_contains_deny_20260713_154230_128441.jsonl
 /deepagent/AGENTS.md
 ```
+
+Имя Spark artifact строится без hash: в него последовательно входят источник,
+читаемые фрагменты фильтров и время создания. Поля результата, grouping,
+aggregations, derived columns, sorting и limit в имя не добавляются. Поэтому модель
+и человек могут понять назначение файла по короткому пути, а повторная выгрузка не
+перезаписывает предыдущий результат.
 
 
 `FilesystemPathContractMiddleware` нормализует пути tool calls и добавляет preview файловых операций. Это удобный контракт путей, но не отдельная песочница безопасности. Аналогично `python` называется sandbox, но выполняет Python в процессе и должен считаться доверенным инструментом внутри разрешённого workspace.
@@ -412,7 +418,7 @@ Middleware подключаются списком в `create_deep_agent(...)`. 
 
 У data-agent перед runtime stack стоит `PreloadedSkillsContextMiddleware` в режиме чтения общего выбора. У coding-agent этого middleware нет; при необходимости он вызывает `load_skills` явно.
 
-DeepAgents добавляет собственные штатные middleware вокруг переданного списка: todo, filesystem, subagents, summarization и совместимость tool calls. Нативный skills catalog не подключается, потому что проект использует собственный selector и `load_skills`.
+DeepAgents добавляет собственные штатные middleware вокруг переданного списка: todo, filesystem, subagents, summarization, совместимость tool calls и нативный skills catalog. Во все три `create_deep_agent(...)` передаётся `skills=[context.skills_workspace_dir]`, поэтому supervisor и оба подагента видят в prompt индекс доступных skills с их `name` и `description`. Собственный selector и `load_skills` остаются: selector заранее подставляет полный текст релевантных skills, а tool позволяет модели явно дозагрузить нужный skill и связанные файлы.
 
 ### Назначение middleware
 
@@ -528,16 +534,19 @@ skills/<skill-name>/
 
 ### Как skills попадают в контекст
 
-1. Supervisor middleware рекурсивно находит `SKILL.md`.
-2. Из каждого файла строится компактный index.
-3. Та же chat model делает structured selection по последнему user query.
-4. Пути валидируются; при ошибке предусмотрена одна исправляющая попытка.
-5. Полный текст выбранных `SKILL.md` читается с лимитом и сохраняется в private state.
-6. Supervisor получает этот текст в system message.
-7. Data-agent использует общий in-memory selection cache и получает тот же контекст без второго selector call.
-8. Coding-agent при необходимости загружает полный skill через `load_skills`.
+1. Нативный `SkillsMiddleware` DeepAgents добавляет в prompt каждой роли индекс доступных skills с `name` и `description`.
+2. Поэтому supervisor, coding-agent и data-agent знают, какие skills существуют, и могут осознанно вызвать `load_skills`.
+3. Дополнительно supervisor middleware рекурсивно находит `SKILL.md` и строит свой компактный index для автоматического выбора.
+4. Та же chat model делает structured selection по последнему user query.
+5. Пути валидируются; при ошибке предусмотрена одна исправляющая попытка.
+6. Полный текст выбранных `SKILL.md` читается с лимитом и сохраняется в private state.
+7. Supervisor получает этот текст в system message.
+8. Data-agent использует общий in-memory selection cache и получает тот же контекст без второго selector call.
+9. Любая роль при необходимости явно загружает полный skill или связанные файлы через `load_skills`.
 
 `load_skills` умеет искать skill по имени/path и дозагружать связанные markdown-файлы. Ограничения и правила устройства каталога описаны в `skills/README.md`.
+
+Нативный index, автоматический selector и `load_skills` намеренно работают вместе: index сообщает основной модели о доступных skills, selector заранее добавляет наиболее релевантные инструкции, а tool оставляет модели возможность самостоятельно загрузить дополнительные материалы.
 
 ### Как добавить skill
 

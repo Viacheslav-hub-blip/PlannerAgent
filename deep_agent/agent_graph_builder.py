@@ -427,6 +427,7 @@ def _build_coding_agent_graph(
         name=CODING_AGENT_NAME,
         system_prompt=CODING_AGENT_PROMPT,
         model=context.model,
+        skills=[context.skills_workspace_dir],
         tools=[
             tools.load_skills_tool,
             tools.python_tool,
@@ -480,6 +481,7 @@ def _build_data_retrieval_agent_graph(
         name=DATA_RETRIEVAL_AGENT_NAME,
         system_prompt=DATA_RETRIEVAL_PROMPT,
         model=context.model,
+        skills=[context.skills_workspace_dir],
         tools=[
             *tools.data_tools,
             tools.load_skills_tool,
@@ -534,6 +536,7 @@ def _build_supervisor_graph(
         supervisor_system_prompt = f"{supervisor_system_prompt}\n\n{context.system_prompt_suffix.strip()}"
     return create_deep_agent(
         model=context.model,
+        skills=[context.skills_workspace_dir],
         tools=[
             tools.load_skills_tool,
             tools.python_tool,

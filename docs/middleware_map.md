@@ -28,18 +28,19 @@ flowchart LR
 
 | Роль | Middleware перед общим stack | Скрытые tools | Дополнение |
 | --- | --- | --- | --- |
-| Supervisor | `TodoReset`, опциональные `AgentRequestLogging` и `UserProfileMemory`, `PreloadedSkillsContext` | `edit_file` | Skills selector выбирает и загружает полный текст релевантных skills. |
-| coding-agent | нет | `edit_file` | Имеет `ModelCallLimit`; дополнительные skills загружает через `load_skills`. |
-| data-retrieval-agent | `PreloadedSkillsContext` в режиме чтения общего выбора | `edit_file` | Получает тот же skill context, который выбрал supervisor. |
+| Supervisor | нативный `SkillsMiddleware`, `TodoReset`, опциональные `AgentRequestLogging` и `UserProfileMemory`, `PreloadedSkillsContext` | `edit_file` | Видит index skills; selector выбирает и загружает полный текст релевантных skills. |
+| coding-agent | нативный `SkillsMiddleware` | `edit_file` | Видит index skills, имеет `ModelCallLimit`; дополнительные skills загружает через `load_skills`. |
+| data-retrieval-agent | нативный `SkillsMiddleware`, `PreloadedSkillsContext` в режиме чтения общего выбора | `edit_file` | Видит index skills и получает тот же полный skill context, который выбрал supervisor. |
 | review-refactor-agent | нет | filesystem write, shell, todo и task | Использует prompt filter, prompt logging и deny-permission на запись. |
 
 ## Что добавляет DeepAgents
 
 Внешний `create_deep_agent` добавляет штатные todo, filesystem, summarization,
-patch-tool-calls и, когда переданы compiled subagents, tool `task`. Нативный
-`SkillsMiddleware` не подключается: проект использует собственный selector и
-`load_skills`. Автоматический `general-purpose` subagent отключён через
-`HarnessProfile`.
+patch-tool-calls и, когда переданы compiled subagents, tool `task`. Во все три
+основные роли передан каталог `skills`, поэтому нативный `SkillsMiddleware`
+добавляет index с `name` и `description` в prompt. Собственный selector и
+`load_skills` остаются для автоматической и явной загрузки полного текста.
+Автоматический `general-purpose` subagent отключён через `HarnessProfile`.
 
 HITL отсутствует: проект не передаёт `interrupt_on`, не использует permission
 `mode="interrupt"` и не вызывает `interrupt()` из Spark tool.

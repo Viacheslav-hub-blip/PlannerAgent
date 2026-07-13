@@ -90,7 +90,10 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Question["Последний пользовательский вопрос"] --> Index["Сканирование skills/**/SKILL.md<br/>name + description → компактный index"]
+    NativeIndex["Нативный SkillsMiddleware:<br/>name + description всех skills"] --> SupervisorPrompt
+    NativeIndex --> DataPrompt
+    NativeIndex --> CodingPrompt
+    Question["Последний пользовательский вопрос"] --> Index["PreloadedSkillsContext:<br/>сканирование SKILL.md → компактный index"]
     Index --> Selector["KitAI selector со structured output"]
     Question --> Selector
     Selector --> Check{"Пути валидны и находятся<br/>в skills root?"}
@@ -106,7 +109,10 @@ flowchart TB
     Cache -. "Не подключён к preloading middleware" .-> CodingPrompt["coding-agent:<br/>загружает skills через load_skills"]
 ```
 
-В модель добавляется только содержимое выбранных SKILL.md, а не вся папка skills. Дополнительные связанные markdown-файлы подагент может запросить через load_skills.
+Каждая основная модель видит нативный index skills с `name` и `description`.
+Дополнительно supervisor и data-agent получают полный текст автоматически
+выбранных `SKILL.md`, но не всю папку skills. Связанные markdown-файлы и другие
+skills любая роль может запросить через `load_skills`.
 
 ## 4. Жизнь одного model/tool шага
 

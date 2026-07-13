@@ -39,11 +39,13 @@ boundary. Data-agent не имеет рабочего shell backend, но filesy
 
 ## Skills
 
-Supervisor строит компактный index всех `SKILL.md`, отдельным structured-output
+Нативный `SkillsMiddleware` DeepAgents добавляет index всех skills с `name` и
+`description` в prompt supervisor, coding-agent и data-agent. Поэтому каждая
+основная модель знает, что можно загрузить через `load_skills`. Дополнительно
+supervisor строит компактный index всех `SKILL.md`, отдельным structured-output
 вызовом выбирает релевантные файлы и полностью добавляет их в system message.
-Data-agent читает тот же выбор через общий `shared_selection`. Coding-agent при
-необходимости вызывает `load_skills` сам. Нативный каталог skills DeepAgents не
-подключён, чтобы один и тот же список не попадал в prompt вторым способом.
+Data-agent читает тот же выбор через общий `shared_selection`, а любая роль при
+необходимости может явно вызвать `load_skills`.
 
 ## Spark
 

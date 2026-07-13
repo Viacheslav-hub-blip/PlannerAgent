@@ -15,7 +15,8 @@
 - _emit_spark_status_progress: отправка progress по Spark stages/tasks;
 - _emit_load_data_progress: отправка custom progress-события;
 - _resolve_output_dir: нормализация каталога artifacts;
-- _build_export_file_path: построение стабильного пути JSONL artifact;
+- _build_export_file_path: построение читаемого пути JSONL artifact;
+- _artifact_value_fragment: преобразование части запроса в безопасный фрагмент имени;
 - _workspace_artifact_path: построение workspace-пути artifact;
 - _remove_path_inside_parent: безопасное удаление временного пути.
 """
@@ -24,9 +25,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -441,38 +444,57 @@ def _build_export_file_path(
     order_by: Any,
     max_rows: int | None,
 ) -> Path:
-    """Строит стабильный путь JSONL artifact для конкретного Spark-запроса.
+    """Строит путь JSONL artifact из таблицы, фильтров и времени создания.
 
     Args:
         output_dir: Каталог артефактов.
         table_alias: Имя Spark-таблицы или view.
-        select_columns: Поля результата.
+        select_columns: Поля результата; сохраняются в сигнатуре и не участвуют в имени.
         filters: Фильтры.
-        derived_columns: Вычисляемые колонки.
-        group_by: Поля группировки.
-        aggregations: Агрегаты.
-        order_by: Сортировка.
-        max_rows: Максимальное число строк.
+        derived_columns: Вычисляемые колонки; не участвуют в имени.
+        group_by: Поля группировки; не участвуют в имени.
+        aggregations: Агрегаты; не участвуют в имени.
+        order_by: Сортировка; не участвует в имени.
+        max_rows: Максимальное число строк; не участвует в имени.
 
     Returns:
-        Путь вида ``<output_dir>/load_data_<table>_<hash>.jsonl``.
+        Путь с именем таблицы, фильтрами и временем создания.
     """
 
-    fingerprint = repr(
-        (
-            table_alias,
-            select_columns,
-            filters,
-            derived_columns,
-            group_by,
-            aggregations,
-            order_by,
-            max_rows,
-        )
-    )
-    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:12]
-    safe_table = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in table_alias) or "table"
-    return (output_dir / f"load_data_{safe_table}_{digest}.jsonl").resolve()
+    del select_columns, derived_columns, group_by, aggregations, order_by, max_rows
+    readable_parts = [_artifact_value_fragment(table_alias) or "table"]
+    filters_fragment = _artifact_value_fragment(filters)
+    if filters_fragment:
+        readable_parts.append(f"where_{filters_fragment}")
+
+    readable_query = "_".join(readable_parts)[:160].rstrip("_")
+    created_at = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    return (output_dir / f"load_data_{readable_query}_{created_at}.jsonl").resolve()
+
+
+def _artifact_value_fragment(value: Any) -> str:
+    """Преобразует значение части запроса в читаемый безопасный фрагмент имени.
+
+    Args:
+        value: Строка, число, Pydantic-модель, словарь или коллекция параметров запроса.
+
+    Returns:
+        Нормализованный фрагмент без пробелов и служебных символов.
+    """
+
+    if value is None:
+        return ""
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(exclude_none=True, exclude_defaults=True)
+    if isinstance(value, dict):
+        fragments = [_artifact_value_fragment(item) for item in value.values()]
+        return "_".join(fragment for fragment in fragments if fragment)
+    if isinstance(value, (list, tuple, set)):
+        fragments = [_artifact_value_fragment(item) for item in value]
+        return "_".join(fragment for fragment in fragments if fragment)
+
+    normalized = re.sub(r"[^\w-]+", "_", str(value).casefold(), flags=re.UNICODE)
+    return re.sub(r"_+", "_", normalized).strip("_")
 
 
 def _workspace_artifact_path(*, file_path: Path, workspace_root: Path) -> str:
