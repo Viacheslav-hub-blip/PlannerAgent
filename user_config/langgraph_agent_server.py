@@ -5,22 +5,31 @@
 - build_ui_agent_settings: сборка путей UI с workspace на уровень выше проекта.
 - create_spark_session: фабрика SparkSession для пользовательского Spark-конфига.
 - build_langgraph_agent_server_agent: сборка агента для LangGraph Agent Server.
-- agent: экспортируемый граф, который читает ``local_ui/langgraph.json``.
+- agent: экспортируемая фабрика графа с атрибутами Phoenix для текущего чата.
 """
 
 from __future__ import annotations
 
 import sys
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
+
 from deep_agent.agent import build_agent
 from deep_agent._request_log_config import build_default_agent_request_logger
 from deep_agent.agent_settings import AgentSettings, load_agent_settings
 from deep_agent.gigachat_kitai_model import build_gigachat_kitai_model
+from deep_agent.memory.user_profile_memory import extract_login_from_path
+from deep_agent.phoenix_tracing import (
+    initialize_phoenix_tracing,
+    phoenix_tracing_context,
+)
 from deep_agent.tools.load_data_spark_tool import build_spark_data_tools
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -194,6 +203,10 @@ def build_langgraph_agent_server_agent() -> Any:
             f"key_exists={_path_exists(KITAI_MODEL_CONFIG.get('key_file'))}"
         )
 
+        last_step = "phoenix_tracing.initialized"
+        tracing_enabled = initialize_phoenix_tracing() is not None
+        _diagnostic_log(f"{last_step} enabled={tracing_enabled}")
+
         last_step = "settings.loaded"
         settings = build_ui_agent_settings()
         _diagnostic_log(
@@ -244,6 +257,27 @@ def build_langgraph_agent_server_agent() -> Any:
         raise
 
 
-agent = build_langgraph_agent_server_agent()
+_AGENT_GRAPH = build_langgraph_agent_server_agent()
+
+
+@asynccontextmanager
+async def agent(config: RunnableConfig) -> AsyncIterator[Any]:
+    """Возвращает готовый граф с Phoenix-атрибутами пользователя и чата.
+
+    Args:
+        config: Конфигурация запуска LangGraph, содержащая ``thread_id`` чата.
+
+    Yields:
+        Один заранее собранный граф DeepAgent. Весь запуск выполняется внутри
+        Phoenix-сессии ``<user_id>:<thread_id>``.
+    """
+
+    try:
+        user_id = extract_login_from_path(WORKSPACE_ROOT)
+    except (OSError, ValueError):
+        user_id = ""
+    thread_id = str(config.get("configurable", {}).get("thread_id", ""))
+    with phoenix_tracing_context(user_id=user_id, thread_id=thread_id):
+        yield _AGENT_GRAPH
 
 
